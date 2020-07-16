@@ -33,12 +33,20 @@
 #region CUSTOM Settings Profile {58E2FE09-07BB-4adb-8A93-E49C5BF2301F} for file system query task - actual filesystem crawl for SINV/FILECOLL
 # Custom settings
 [hashtable]$SINVCUSTOMProfileSettings = [ordered]@{
-    BatchSize = 100;
+    PolicyID = "CustomThrottlingProfile";
+    PolicyVersion = 1;
+    PolicyRuleID = 1;
+    PolicySource = "Local";
+    ProfileID="{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}";
+    BatchSize = 400;
+    ControlUsage=$true;
     OnAC_PercentageOfTimeoutToWait = 10;
     OnAC_EvaluationPeriodLengthSec = 20;
     OnAC_IdlePeriodLengthSec = 30;
     OnAC_MinIdleDiskPercentage = 30;
     OnAC_ConsiderUserInputAsActivity = $false;
+    OnBattery_BehaviorType=1;
+    OnLowBattery_BehaviorType =0;
     }
 #endregion
 
@@ -61,6 +69,7 @@
 
 #region pre-work
 # get sq inv profiles
+#  Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig"
 $SINVProfiles = Get-WmiObject -Namespace "ROOT\ccm\Policy\DefaultMachine\RequestedConfig" -class "CCM_Service_ResourceProfileInformation"
 # filter for file system query task profile
 $SINVFILECOLLProfile =  $SINVProfiles.where({$_.ProfileID -eq '{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}'})

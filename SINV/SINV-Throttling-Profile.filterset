@@ -65,4 +65,22 @@
     <IsRegex>False</IsRegex>
     <IsEnabled>True</IsEnabled>
   </Filter>
+  <Filter>
+    <Component>Message</Component>
+    <Operator>Contains</Operator>
+    <ValueBlob>AAEAAAD/////AQAAAAAAAAAGAQAAADBDQ01fU2VydmljZV9SZXNvdXJjZVByb2ZpbGVJbmZvcm1hdGlvbi5Qcm9maWxlSUQL</ValueBlob>
+    <Type>Include</Type>
+    <IsRegex>False</IsRegex>
+    <IsEnabled>True</IsEnabled>
+  </Filter>
+  <Filter>
+    <Component>Message</Component>
+    <Operator>Contains</Operator>
+    <ValueBlob>AAEAAAD/////AQAAAAAAAAAGAQAAADBDQ01fU2VydmljZV9SZXNvdXJjZVByb2ZpbGVJbmZvcm1hdGlvbi5Qcm9maWxlSUQL</ValueBlob>
+    <Type>Highlight</Type>
+    <IsRegex>False</IsRegex>
+    <IsEnabled>True</IsEnabled>
+    <BackgroundColor>#FFFF8080</BackgroundColor>
+    <ForegroundColor>#FF000000</ForegroundColor>
+  </Filter>
 </Filterset>
