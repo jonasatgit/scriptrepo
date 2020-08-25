@@ -18,6 +18,7 @@
 .DESCRIPTION
    This Script will check and or delete the custom policy set via Set-SINVThrottlingPolicy.ps1 and is design to run as a ConfigMgr configuration item
    Use the same script as the detection and as the remediation script and just change the variable $Remediate accordingly
+   Source: https://github.com/jonasatgit/scriptrepo/tree/master/SINV
 .EXAMPLE
    $Remediate = $false => The script will just check the existence of the custom policy
    $Remediate = $true => The script will check and delete the custom policy, wich sets the settings back to the default state 

@@ -12,7 +12,7 @@
 # if Microsoft has been advised of the possibility of such damages.
 #
 #************************************************************************************************************
-
+# source https://github.com/jonasatgit/scriptrepo/blob/master/General/Show-FolderSize.ps1
 # Tiny script to format the results of SysinternalsSuite du.exe to find folders with the most data in it 
 
 param

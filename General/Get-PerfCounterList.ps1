@@ -13,7 +13,7 @@
 # if Microsoft has been advised of the possibility of such damages.
 #
 #************************************************************************************************************
-
+# Source: https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
 # tiny script to output all available performance counter
 # needs to be run as an admin
 
@@ -34,7 +34,7 @@ $outObj = $counterList | ForEach-Object {
 }
 
 
-$selectedObjects = $outObj | Out-GridView -Title 'PerfCounter' -OutputMode Multiple
+[array]$selectedObjects = $outObj | Out-GridView -Title 'PerfCounter' -OutputMode Multiple
 
 
 $outObj = $counterList.Where{($_.CounterSetName -in $selectedObjects.CounterSetName)} | ForEach-Object {

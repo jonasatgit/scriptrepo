@@ -18,6 +18,7 @@
 .DESCRIPTION
    This Script will check and or remediate Software Inventory Profile Settings for ProfileID {58E2FE09-07BB-4adb-8A93-E49C5BF2301F} and is design to run as a ConfigMgr configuration item
    Use the same script as the detection and as the remediation script and just change the variable $Remediate accordingly
+   Source: https://github.com/jonasatgit/scriptrepo/tree/master/SINV
 .EXAMPLE
    $Remediate = $false => The script will just check the settings, but will not set them
    $Remediate = $true => The script will set the custom profile settings
