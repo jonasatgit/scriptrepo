@@ -406,7 +406,7 @@ function Test-SQLServerVersion
 function Test-WSUSVersion
 {
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([object])]
     param()
 
     $commandName = $MyInvocation.MyCommand.Name
@@ -425,7 +425,7 @@ function Test-WSUSVersion
         Write-Verbose "$commandName`: Server OS version: $($serverOSVersion.ToString())"
     }
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult, Info
     
     Write-Verbose "$commandName`: Getting WsusService.exe version"    
     $regPath = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
@@ -440,7 +440,8 @@ function Test-WSUSVersion
 
         if($wsusServiceEntries.UsingSSL -ne 1)
         {
-            Write-Warning "$commandName`: WSUS configuration not following best practices. SSL should be enabled. UsingSSL = $($wsusServiceEntries.UsingSSL)"
+            Write-Verbose "$commandName`: WSUS configuration not following best practices. SSL should be enabled. UsingSSL = $($wsusServiceEntries.UsingSSL)"
+            $outObj.Info = "WSUS configuration not following best practices. SSL should be enabled."
         }   
 
         # only applicable to Server 2012 or 2012 R2, higher versions are TLS 1.2 capable
@@ -477,7 +478,7 @@ function Test-WSUSVersion
             }
             Default
             {
-                Write-Warning "$commandName`:Unknown OS version: $majorMinor"
+                Write-Verbose "$commandName`:Unknown OS version: $majorMinor"
                 [version]$wsusServiceVersion = '0.0'
                 $outObj.MinRequiredVersion = $minWsusServiceVersion.ToString()
             }
@@ -1056,6 +1057,7 @@ function Get-OSTypeInfo
     }
 }
 #endregion
+
 #region Test-SiteServer
 function Test-SiteServer
 {
@@ -1215,5 +1217,209 @@ function Get-SQLServerConnectionString
             } 
         } 
     }
+}
+#endregion
+
+#region MAIN SCRIPT
+$statusObj = New-Object psobject | Select-Object OverallTestStatus,
+                                                    OSName, 
+                                                    OSVersion,
+                                                    OSType,
+                                                    IsSiteServer, 
+                                                    IsSiteRole, 
+                                                    IsReportingServicePoint, 
+                                                    IsSUPAndWSUS, 
+                                                    IsSecondarySite,
+                                                    TestCMGSettings,
+                                                    TestSQLServerVersionOfSite,
+                                                    TestSQLServerVersionOfWSUS,
+                                                    TestSQLServerVersionOfSSRS,
+                                                    TestSQLServerVersionOfSecSite,
+                                                    TestSQLClientVersion,
+                                                    TestWSUSVersion,
+                                                    TestSCHANNELSettings,
+                                                    TestSCHANNELKeyExchangeAlgorithms,
+                                                    TestSCHANNELHashes,
+                                                    TestSCHANNELCiphers,
+                                                    TestCipherSuites,
+                                                    TestNetFrameworkVersion,
+                                                    TestNetFrameworkSettings
+
+
+$osInfo = Get-OSTypeInfo
+
+$statusObj.OSName = $osInfo.Caption
+$statusObj.OSVersion = $osInfo.Version
+$statusObj.OSType = $osInfo.ProductTypeName
+$statusObj.IsSiteServer = Test-SiteServer
+$statusObj.IsSiteRole = Test-SiteRole
+$statusObj.IsReportingServicePoint = Test-ReportingServicePoint
+$statusObj.IsSUPAndWSUS = Test-SoftwareUpdatePointAndWSUS
+$statusObj.IsSecondarySite = Test-SecondarySite
+
+
+# different tests based on what type of system we detected 
+if ($statusObj.IsSiteServer)
+{
+    Write-Verbose "$commandName`: DETECTED: Site Server detected!"
+    $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SiteServer
+    $statusObj.TestSQLServerVersionOfSite = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
+    $statusObj.TestCMGSettings = Test-CMGSettings 
+    $statusObj.TestSQLClientVersion = Test-SQLClientVersion
+}
+
+if ($statusObj.IsSiteRole)
+{
+    Write-Verbose "$commandName`: DETECTED: Site role"
+    $statusObj.TestSQLClientVersion = Test-SQLClientVersion
+}
+
+if ($statusObj.IsSecondarySite)
+{
+    Write-Verbose "$commandName`: DETECTED: Secondary Site"
+    $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SecondarySite
+    $statusObj.TestSQLServerVersionOfSecSite = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
+    $statusObj.TestSQLClientVersion = Test-SQLClientVersion
+}
+
+if ($statusObj.IsSUPAndWSUS)
+{
+    Write-Verbose "$commandName`: DETECTED: Software Update Point and WSUS"
+    $statusObj.TestWSUSVersion = Test-WSUSVersion 
+    $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType WSUS
+    if ($SQLServerConnectionString) # only if SQL Server and not WID
+    {
+        $statusObj.TestSQLServerVersionOfWSUS = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
+    }
+}
+
+if ($statusObj.TsReportingServicePoint)
+{
+    Write-Verbose "$commandName`: DETECTED: Reporting Service Point"
+    $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SSRS
+    $statusObj.TestSQLServerVersionOfSSRS = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
+}
+
+# validate tests for all types
+if ($statusObj.TsSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
+{
+    $statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
+    $statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
+    $statusObj.TestNetFrameworkSettings = Test-NetFrameworkSettings
+    if ($CipherChecks)
+    {
+        $statusObj.TestSCHANNELKeyExchangeAlgorithms = Test-SCHANNELKeyExchangeAlgorithms
+        $statusObj.TestSCHANNELHashes = Test-SCHANNELHashes
+        $statusObj.TestSCHANNELCiphers = Test-SCHANNELCiphers
+        $statusObj.TestCipherSuites = Test-CipherSuites
+    }
+}
+
+if ($osInfo.ProductType -eq 1)
+{
+    # workstation detected
+    Write-Verbose "$commandName`: Client detected"
+    #Test-WinHTTPSettings
+}
+
+# setting tests not needed to true for the overall check
+$resultTestSCHANNELKeyExchangeAlgorithms = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELKeyExchangeAlgorithms)){$true}else{$statusObj.TestSCHANNELKeyExchangeAlgorithms}
+$resultTestSCHANNELHashes = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELHashes)){$true}else{$statusObj.TestSCHANNELHashes}
+$resultTestSCHANNELCiphers = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELCiphers)){$true}else{$statusObj.TestSCHANNELCiphers}
+$resultTestCipherSuites = if([string]::IsNullOrEmpty($statusObj.TestCipherSuites)){$true}else{$statusObj.TestCipherSuites}
+$resultTestSQLServerVersionOfSite = if([string]::IsNullOrEmpty($statusObj.TestSQLServerVersionOfSite.TestResult)){$true}else{$statusObj.TestSQLServerVersionOfSite.TestResult}
+$resultTestSQLServerVersionOfSSRS = if([string]::IsNullOrEmpty($statusObj.TestSQLServerVersionOfSSRS.TestResult)){$true}else{$statusObj.TestSQLServerVersionOfSSRS.TestResult}
+$resultTestSQLServerVersionOfSecSite = if([string]::IsNullOrEmpty($statusObj.TestSQLServerVersionOfSecSite.TestResult)){$true}else{$statusObj.TestSQLServerVersionOfSecSite.TestResult}
+$resultTestSQLClientVersion = if([string]::IsNullOrEmpty($statusObj.TestSQLClientVersion.TestResult)){$true}else{$statusObj.TestSQLClientVersion.TestResult}
+$resultTestWSUSVersion = if([string]::IsNullOrEmpty($statusObj.TestWSUSVersion.TestResult)){$true}else{$statusObj.TestWSUSVersion.TestResult}
+$resultTestNetFrameworkVersion = if([string]::IsNullOrEmpty($statusObj.TestNetFrameworkVersion.TestResult)){$true}else{$statusObj.TestNetFrameworkVersion.TestResult}
+
+# checking overall test state
+if ($resultTestSQLServerVersionOfSite `
+    -and $resultTestSQLServerVersionOfSSRS `
+    -and $resultTestSQLServerVersionOfSecSite `
+    -and $resultTestSQLClientVersion `
+    -and $resultTestWSUSVersion `
+    -and $resultTestNetFrameworkVersion `
+    -and $statusObj.TestNetFrameworkSettings `
+    -and $statusObj.TestSCHANNELSettings `
+    -and $resultTestSCHANNELKeyExchangeAlgorithms `
+    -and $resultTestSCHANNELHashes `
+    -and $resultTestSCHANNELCiphers `
+    -and $resultTestCipherSuites)
+{
+    $statusObj.OverallTestStatus = "Passed"
+}
+else
+{
+    $statusObj.OverallTestStatus = "Failed"
+}
+
+# show additional information more readable
+if ($InfoMode)
+{
+    Write-Host " "
+    if ($osInfo.ProductType -eq 2)
+    {
+        Write-Warning "Domain Controller detected! Be careful when changing SCHANNEL settings on Domain Controllers!"
+    }
+
+    Write-Host "For more information use the -Verbose switch: `"$commandName -InfoMode -Verbose`""
+    Write-Host "Or just: `"$commandName -Verbose`""
+    Write-Host "Verbose will also output links to each each test to help remediate any wrong configurations"
+    Write-Host "For additional Cipher checks use the `"-CipherChecks`" switchS"
+    Write-Host " "
+    Write-Host "----- OS Type Info -----"
+    $statusObj | Select-Object OSName, OSType, OSVersion | Format-List
+    Write-Host "----- ConfigMgr Site Info -----"
+    Write-Host "This section shows what type of ConfigMgr server was detected if the script was run on a server OS"
+    $statusObj | Select-Object IsSiteServer, IsSiteRole, IsReportingServicePoint, IsSUPAndWSUS, IsSecondarySite | Format-List
+    Write-Host "----- Testresults -----"
+    Write-Host "No entry means the test was not neccesary"
+    Write-Host "Each test is based on the following article: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2"
+    Write-Host "If you are unsure about Cipher Suite settings talk to your Active Directory and Security department to find the best settings for your environment"
+    $statusObj | Select-Object OverallTestStatus,
+                                TestCMGSettings,
+                                TestSQLServerVersionOfSite,
+                                TestSQLServerVersionOfWSUS,
+                                TestSQLServerVersionOfSSRS,
+                                TestSQLServerVersionOfSecSite,
+                                TestSQLClientVersion,
+                                TestWSUSVersion,
+                                TestSCHANNELSettings,
+                                TestSCHANNELKeyExchangeAlgorithms,
+                                TestSCHANNELHashes,
+                                TestSCHANNELCiphers,
+                                TestCipherSuites,
+                                TestNetFrameworkVersion,
+                                TestNetFrameworkSettings
+    
+}
+else
+{
+    # output plain object
+    $statusObj | Select-Object OverallTestStatus,
+                                OSName, 
+                                OSVersion,
+                                OSType,
+                                IsSiteServer, 
+                                IsSiteRole, 
+                                IsReportingServicePoint, 
+                                IsSUPAndWSUS, 
+                                IsSecondarySite,
+                                TestCMGSettings,
+                                @{Name = "TestSQLServerVersionOfSite";Expression = {$_.TestSQLServerVersionOfSite.TestResult}},
+                                @{Name = "TestSQLServerVersionOfWSUS";Expression = {$_.TestSQLServerVersionOfWSUS.TestResult}},
+                                @{Name = "TestSQLServerVersionOfSSRS";Expression = {$_.TestSQLServerVersionOfSSRS.TestResult}},
+                                @{Name = "TestSQLServerVersionOfSecSite";Expression = {$_.TestSQLServerVersionOfSecSite.TestResult}},
+                                @{Name = "TestSQLClientVersion";Expression = {$_.TestSQLClientVersion.TestResult}},
+                                @{Name = "TestWSUSVersion";Expression = {$_.TestWSUSVersion.TestResult}},
+                                TestSCHANNELSettings,
+                                TestSCHANNELKeyExchangeAlgorithms,
+                                TestSCHANNELHashes,
+                                TestSCHANNELCiphers,
+                                TestCipherSuites,
+                                @{Name = "TestNetFrameworkVersion";Expression = {$_.TestNetFrameworkVersion.TestResult}},
+                                TestNetFrameworkSettings
 }
 #endregion
