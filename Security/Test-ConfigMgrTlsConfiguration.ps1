@@ -1056,6 +1056,75 @@ function Get-OSTypeInfo
     }
 }
 #endregion
+#region Test-SiteServer
+function Test-SiteServer
+{
+    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2))
+    {
+        return $true
+    }
+    else 
+    {
+        return $false
+    }
+}
+#endregion
+
+#region Test-SecondarySite
+function Test-SecondarySite 
+{
+    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -eq 2))
+    {
+        return $true
+    }
+    else 
+    {
+        return $false
+    }
+}
+#endregion
+
+#region Test-SiteRole 
+function Test-SiteRole 
+{
+    if (get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue)
+    {
+        return $true
+    }
+    else 
+    {
+        return $false
+    }
+}
+#endregion
+
+#region Test-ReportingServicePoint 
+function Test-ReportingServicePoint 
+{
+    if (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Components\SMS_EXECUTIVE\Threads\SMS_SRS_REPORTING_POINT') 
+    {
+        return $true
+    }
+    else 
+    {
+        return $false  
+    }
+}
+#endregion
+
+#region Test-SoftwareUpdatePointAndWSUS
+function Test-SoftwareUpdatePointAndWSUS
+{
+    if ((Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\COMPONENTS\SMS_EXECUTIVE\Threads\SMS_WSUS_CONTROL_MANAGER') -and (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup'))
+    {
+        return $true
+    }
+    else 
+    {
+        return $false  
+    }
+}
+#endregion
 
 #region Get-SQLServerConnectionString 
 function Get-SQLServerConnectionString 
