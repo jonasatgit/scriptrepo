@@ -1056,3 +1056,95 @@ function Get-OSTypeInfo
     }
 }
 #endregion
+
+#region Get-SQLServerConnectionString 
+function Get-SQLServerConnectionString 
+{
+    [CmdletBinding()]
+    [OutputType([string])]
+    param
+    (
+        [ValidateSet("SiteServer", "WSUS", "SSRS", "SecondarySite")]
+        [string]$RoleType
+    )
+
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-Verbose "$commandName`: "
+    switch ($RoleType) 
+    {
+        'SiteServer' 
+        { 
+            $regPath = "HKLM:\SOFTWARE\Microsoft\SMS\SQL Server"
+            $SiteServerEntries = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            #DatabaseName can be INST\DB or just DB
+            if ($SiteServerEntries.'Database Name'.ToCharArray() -contains "\") 
+            {
+                $SQLInstance = $SiteServerEntries.'Database Name'.Split("\")
+                $ConnectionString = $SiteServerEntries.Server + "\" + $SQLInstance[0]
+            }
+            else 
+            {
+                $ConnectionString = $SiteServerEntries.Server
+            }
+            Write-Verbose "$commandName`: SiteServer SQL is: `"$ConnectionString`""
+            return $ConnectionString
+        }
+        'WSUS' 
+        {
+            $regPathWSUS = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
+            $regPathWID = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup\Installed Role Services"
+            $WSUSServerEntries = Get-ItemProperty $regPathWSUS -ErrorAction SilentlyContinue
+            $WIDEntries = Get-ItemProperty $regPathWID -ErrorAction SilentlyContinue
+            #Check if WID is used
+            if ($WIDEntries.'UpdateServices-Database' -eq 2) 
+            {
+                Write-Verbose "$commandName`: WSUS SQL is: `"$WSUSServerEntries.SqlServerName`""
+                return $WSUSServerEntries.SqlServerName
+            }
+            else 
+            {
+                #If WID is installed we don´t need to check the version
+                Write-Verbose "$commandName`: WSUS WID found - no need to check SQL Version"
+                return $false
+            }
+        }
+        'SecondarySite' 
+        {
+            $regPath = "HKLM:\SOFTWARE\Microsoft\SMS\SQL Server"
+            $SiteServerEntries = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            #DatabaseName can be INST\DB or just DB
+            if ($SiteServerEntries.'Database Name'.ToCharArray() -contains "\") 
+            {
+                $SQLInstance = $SiteServerEntries.'Database Name'.Split("\")
+                $ConnectionString = $SiteServerEntries.Server + "\" + $SQLInstance[0]
+            }
+            else 
+            {
+                $ConnectionString = $SiteServerEntries.Server
+            }
+            Write-Verbose "$commandName`: Secondary Site SQL is: `"$ConnectionString`""
+            return $ConnectionString
+        }
+        'SSRS' 
+        {
+            [array]$reportServerList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer" -Class "__NAMESPACE"
+            foreach ($reportServerName in $reportServerList.Name) 
+            {
+                [array]$reportServerVersionList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName" -Class "__NAMESPACE"      
+    
+                foreach ($reportServerVersion in $reportServerVersionList.Name) 
+                {
+                    $query = "SELECT * FROM MSReportServer_ConfigurationSetting"
+                    $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query   
+                    if ($reportServerConfiguration) 
+                    {
+                        #$reportServerConfiguration | Select-Object ServiceName, Version, DatabaseServerName, VirtualDirectoryReportManager, VirtualDirectoryReportServer
+                        Write-Verbose "$commandName`: SSRS SQL is: `"$($reportServerConfiguration.DatabaseServerName)`""
+                        Return $reportServerConfiguration.DatabaseServerName
+                    }
+                }
+            } 
+        } 
+    }
+}
+#endregion
