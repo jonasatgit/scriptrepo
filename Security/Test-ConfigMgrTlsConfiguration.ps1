@@ -556,7 +556,7 @@ function Test-CMGSettings
     
     if (-NOT($expectedValuesSet))
     {
-        Write-ver "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/clients/manage/cmg/setup-cloud-management-gateway"
+        Write-verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/clients/manage/cmg/setup-cloud-management-gateway"
         return $false
     }
     else
