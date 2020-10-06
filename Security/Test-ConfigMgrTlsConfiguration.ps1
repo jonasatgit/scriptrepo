@@ -105,7 +105,7 @@ function Test-SQLClientVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_sql"
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property  InstalledVersion, MinRequiredVersion, TestResult
     $outObj.MinRequiredVersion = $MinSQLClientVersion.ToString()
     Write-Verbose "$commandName`: Minimum SQL ClientVersion: $($MinSQLClientVersion.ToString())"
     $SQLNCLI11RegPath = "HKLM:SOFTWARE\Microsoft\SQLNCLI11"
@@ -161,7 +161,7 @@ function Test-SQLClientVersion
 function Test-NetFrameworkVersion
 {
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([object])]
     param
     (
         [int32]$MinNetFrameworkRelease = 393295
@@ -171,7 +171,7 @@ function Test-NetFrameworkVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_net"
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult
     $outObj.MinRequiredVersion = $MinNetFrameworkRelease
 
     Write-Verbose "$commandName`: Minimum .Net Framework release: $MinNetFrameworkRelease"
@@ -234,8 +234,8 @@ function Test-NetFrameworkSettings
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_net"
 
-    [array]$dotNetVersionList = ('v2.0.50727','v4.0.30319')
-    [array]$regPathPrefixList = ('HKLM:\SOFTWARE\Microsoft\.NETFramework','HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework')
+    [array]$dotNetVersionList = @('v2.0.50727','v4.0.30319')
+    [array]$regPathPrefixList = @('HKLM:\SOFTWARE\Microsoft\.NETFramework','HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework')
 
     [bool]$expectedValuesSet = $true
     foreach ($dotNetVersion in $dotNetVersionList)
@@ -244,7 +244,7 @@ function Test-NetFrameworkSettings
         {
             $regPath = "{0}\{1}" -f $regPathPrefix, $dotNetVersion
             Write-Verbose "$commandName`: Working on: `"$regPath`""
-            $regProperties = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            $regProperties = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
             if ($regProperties)
             {
                 Write-Verbose "$commandName`: SystemDefaultTlsVersions = $($regProperties.SystemDefaultTlsVersions)"
@@ -310,20 +310,20 @@ function Test-SQLServerVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2"
     Write-Verbose "$commandName`: For SQL Express: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/security-and-privacy-for-site-administration#update-sql-server-express-at-secondary-sites"
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult
 
     $connectionString = "Server=$SQLServerName;Database=master;Integrated Security=True"
     Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
     $SqlQuery = "Select SERVERPROPERTY('ProductVersion') as 'Version', SERVERPROPERTY('EngineEdition') as 'EngineEdition'"
     $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
     $SqlConnection.ConnectionString = $connectionString
-    $SqlCmd = New-Object System.Data.SqlClient.SqlCommand
+    $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
     $SqlCmd.Connection = $SqlConnection
     $SqlCmd.CommandText = $SqlQuery
-    $SqlAdapter = New-Object System.Data.SqlClient.SqlDataAdapter
+    $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
     Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
     $SqlAdapter.SelectCommand = $SqlCmd
-    $ds = New-Object System.Data.DataSet
+    $ds = New-Object -TypeName System.Data.DataSet
     $SqlAdapter.Fill($ds) | Out-Null
     $SQLOutput = $ds.Tables[0]
     $SqlCmd.Dispose()
@@ -425,7 +425,7 @@ function Test-WSUSVersion
         Write-Verbose "$commandName`: Server OS version: $($serverOSVersion.ToString())"
     }
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult, Info
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult, Info
     
     Write-Verbose "$commandName`: Getting WsusService.exe version"    
     $regPath = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
@@ -523,7 +523,15 @@ function Test-CMGSettings
     # getting sitecode first
     $query = "SELECT * FROM SMS_ProviderLocation WHERE Machine like '$($env:computername)%' AND ProviderForLocalSite = 'True'"
     Write-Verbose "$commandName`: Running: `"$query`""
-    $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query | Select-Object SiteCode -ExpandProperty SiteCode
+    try
+    {
+        $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query -ErrorAction Stop | Select-Object -ExpandProperty SiteCode
+    }
+    catch 
+    {
+        Write-Warning "$_"
+        return 
+    }
     Write-Verbose "$commandName`: SiteCode: $SiteCode"
     # getting cmg info
     $query = "SELECT * FROM SMS_AzureService WHERE ServiceType = 'CloudProxyService'"
@@ -1049,7 +1057,7 @@ function Get-OSTypeInfo
             3 {$Win32OperatingSystem | Add-Member -Name 'ProductTypeName' -Value 'Server' -MemberType NoteProperty}
             Default {}
         }
-        return $Win32OperatingSystem | Select-Object Caption, Version, ProductType, ProductTypeName
+        return $Win32OperatingSystem | Select-Object -Property Caption, Version, ProductType, ProductTypeName
     }
     else
     {
@@ -1061,42 +1069,21 @@ function Get-OSTypeInfo
 #region Test-SiteServer
 function Test-SiteServer
 {
-    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2))
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (Get-Service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2)
 }
 #endregion
 
 #region Test-SecondarySite
 function Test-SecondarySite 
 {
-    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -eq 2))
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (Get-Service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -eq 2)
 }
 #endregion
 
 #region Test-SiteRole 
 function Test-SiteRole 
 {
-    if (get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue)
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue).Status -eq 'Running'
 }
 #endregion
 
@@ -1221,7 +1208,7 @@ function Get-SQLServerConnectionString
 #endregion
 
 #region MAIN SCRIPT
-$statusObj = New-Object psobject | Select-Object OverallTestStatus,
+$statusObj = New-Object -TypeName psobject | Select-Object -Property OverallTestStatus,
                                                     OSName, 
                                                     OSVersion,
                                                     OSType,
@@ -1370,15 +1357,15 @@ if ($InfoMode)
     Write-Host "For additional Cipher checks use the `"-CipherChecks`" switchS"
     Write-Host " "
     Write-Host "----- OS Type Info -----"
-    $statusObj | Select-Object OSName, OSType, OSVersion | Format-List
+    $statusObj | Select-Object -Property OSName, OSType, OSVersion | Format-List
     Write-Host "----- ConfigMgr Site Info -----"
     Write-Host "This section shows what type of ConfigMgr server was detected if the script was run on a server OS"
-    $statusObj | Select-Object IsSiteServer, IsSiteRole, IsReportingServicePoint, IsSUPAndWSUS, IsSecondarySite | Format-List
+    $statusObj | Select-Object -Property IsSiteServer, IsSiteRole, IsReportingServicePoint, IsSUPAndWSUS, IsSecondarySite | Format-List
     Write-Host "----- Testresults -----"
     Write-Host "No entry means the test was not neccesary"
     Write-Host "Each test is based on the following article: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2"
     Write-Host "If you are unsure about Cipher Suite settings talk to your Active Directory and Security department to find the best settings for your environment"
-    $statusObj | Select-Object OverallTestStatus,
+    $statusObj | Select-Object -Property OverallTestStatus,
                                 TestCMGSettings,
                                 TestSQLServerVersionOfSite,
                                 TestSQLServerVersionOfWSUS,
@@ -1398,7 +1385,7 @@ if ($InfoMode)
 else
 {
     # output plain object
-    $statusObj | Select-Object OverallTestStatus,
+    $statusObj | Select-Object -Property OverallTestStatus,
                                 OSName, 
                                 OSVersion,
                                 OSType,
