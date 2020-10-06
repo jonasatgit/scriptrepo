@@ -1083,14 +1083,7 @@ function Test-SecondarySite
 #region Test-SiteRole 
 function Test-SiteRole 
 {
-    if (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue)
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue).Status -eq 'Running'
 }
 #endregion
 
