@@ -21,6 +21,12 @@ param
 )
 
 $commandName = $MyInvocation.MyCommand.Name
+if (-NOT([bool](([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544"))) # S-1-5-32-544 = admin group
+{
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights an run the script again'
+    break
+}
+#enregion																																	
 #region Base checklist
 <#
 Site servers (central, primary, or secondary)
@@ -105,7 +111,7 @@ function Test-SQLClientVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_sql"
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property  InstalledVersion, MinRequiredVersion, TestResult
     $outObj.MinRequiredVersion = $MinSQLClientVersion.ToString()
     Write-Verbose "$commandName`: Minimum SQL ClientVersion: $($MinSQLClientVersion.ToString())"
     $SQLNCLI11RegPath = "HKLM:SOFTWARE\Microsoft\SQLNCLI11"
@@ -161,7 +167,7 @@ function Test-SQLClientVersion
 function Test-NetFrameworkVersion
 {
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([object])]
     param
     (
         [int32]$MinNetFrameworkRelease = 393295
@@ -171,7 +177,7 @@ function Test-NetFrameworkVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_net"
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult
     $outObj.MinRequiredVersion = $MinNetFrameworkRelease
 
     Write-Verbose "$commandName`: Minimum .Net Framework release: $MinNetFrameworkRelease"
@@ -234,8 +240,8 @@ function Test-NetFrameworkSettings
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server#bkmk_net"
 
-    [array]$dotNetVersionList = ('v2.0.50727','v4.0.30319')
-    [array]$regPathPrefixList = ('HKLM:\SOFTWARE\Microsoft\.NETFramework','HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework')
+    [array]$dotNetVersionList = @('v2.0.50727','v4.0.30319')
+    [array]$regPathPrefixList = @('HKLM:\SOFTWARE\Microsoft\.NETFramework','HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework')
 
     [bool]$expectedValuesSet = $true
     foreach ($dotNetVersion in $dotNetVersionList)
@@ -244,7 +250,7 @@ function Test-NetFrameworkSettings
         {
             $regPath = "{0}\{1}" -f $regPathPrefix, $dotNetVersion
             Write-Verbose "$commandName`: Working on: `"$regPath`""
-            $regProperties = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            $regProperties = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
             if ($regProperties)
             {
                 Write-Verbose "$commandName`: SystemDefaultTlsVersions = $($regProperties.SystemDefaultTlsVersions)"
@@ -300,7 +306,7 @@ function Test-NetFrameworkSettings
 function Test-SQLServerVersion
 {
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([object])]
     param
     (
         [string]$SQLServerName
@@ -310,20 +316,20 @@ function Test-SQLServerVersion
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2"
     Write-Verbose "$commandName`: For SQL Express: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/security-and-privacy-for-site-administration#update-sql-server-express-at-secondary-sites"
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult
 
     $connectionString = "Server=$SQLServerName;Database=master;Integrated Security=True"
     Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
     $SqlQuery = "Select SERVERPROPERTY('ProductVersion') as 'Version', SERVERPROPERTY('EngineEdition') as 'EngineEdition'"
     $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
     $SqlConnection.ConnectionString = $connectionString
-    $SqlCmd = New-Object System.Data.SqlClient.SqlCommand
+    $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
     $SqlCmd.Connection = $SqlConnection
     $SqlCmd.CommandText = $SqlQuery
-    $SqlAdapter = New-Object System.Data.SqlClient.SqlDataAdapter
+    $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
     Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
     $SqlAdapter.SelectCommand = $SqlCmd
-    $ds = New-Object System.Data.DataSet
+    $ds = New-Object -TypeName System.Data.DataSet
     $SqlAdapter.Fill($ds) | Out-Null
     $SQLOutput = $ds.Tables[0]
     $SqlCmd.Dispose()
@@ -425,7 +431,7 @@ function Test-WSUSVersion
         Write-Verbose "$commandName`: Server OS version: $($serverOSVersion.ToString())"
     }
 
-    $outObj = New-Object psobject | Select-Object InstalledVersion, MinRequiredVersion, TestResult, Info
+    $outObj = New-Object -TypeName psobject | Select-Object -Property InstalledVersion, MinRequiredVersion, TestResult, Info
     
     Write-Verbose "$commandName`: Getting WsusService.exe version"    
     $regPath = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
@@ -479,7 +485,7 @@ function Test-WSUSVersion
             Default
             {
                 Write-Verbose "$commandName`:Unknown OS version: $majorMinor"
-                [version]$wsusServiceVersion = '0.0'
+                [version]$minWsusServiceVersion = '999.0' # making sure nothing is higher
                 $outObj.MinRequiredVersion = $minWsusServiceVersion.ToString()
             }
         }
@@ -523,7 +529,15 @@ function Test-CMGSettings
     # getting sitecode first
     $query = "SELECT * FROM SMS_ProviderLocation WHERE Machine like '$($env:computername)%' AND ProviderForLocalSite = 'True'"
     Write-Verbose "$commandName`: Running: `"$query`""
-    $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query | Select-Object SiteCode -ExpandProperty SiteCode
+    try
+    {
+        $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query -ErrorAction Stop | Select-Object -ExpandProperty SiteCode
+    }
+    catch 
+    {
+        Write-Warning "$_"
+        return 
+    }
     Write-Verbose "$commandName`: SiteCode: $SiteCode"
     # getting cmg info
     $query = "SELECT * FROM SMS_AzureService WHERE ServiceType = 'CloudProxyService'"
@@ -771,7 +785,7 @@ function Test-SCHANNELCiphers
         "RC4 56/128" = "Disabled";
         "RC4 64/128" = "Disabled";
         "RC4 128/128" = "Disabled";
-        "Triple DES 168" = "Enabled";
+        "Triple DES 168" = "Disabled"; # Sweet32 birthday attack 
         "AES 128/128" = "Enabled";
         "AES 256/256" = "Enabled"
     }
@@ -815,13 +829,17 @@ function Test-SCHANNELCiphers
 .DESCRIPTION
    # https://docs.microsoft.com/en-us/troubleshoot/windows-server/windows-security/restrict-cryptographic-algorithms-protocols-schannel
    # https://docs.microsoft.com/en-us/windows/win32/secauthn/cipher-suites-in-schannel
-    TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384_P384
+    
+    IMPORTANT:
+    Cipher suites can only be negotiated for TLS versions which support them. The highest supported TLS version is always preferred in the TLS handshake.
 
-    ECDHE = Key Exchnage
-    ECDSA = Signature
+    Example cipher suite string:
+    TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384_P384
+    ECDHE       = Key Exchnage
+    ECDSA       = Signature
     AES_256_GCM = Bulk Encryption (Cypther)
-    SHA384 = Message Authentication
-    P384 = Elliptic Curve
+    SHA384      = Message Authentication
+    P384        = Elliptic Curve (only attached to the string in older OS versions)
 .EXAMPLE
    Test-CipherSuites
 .EXAMPLE
@@ -831,120 +849,194 @@ function Test-CipherSuites
 {
     [CmdletBinding()]
     [OutputType([bool])]
-    param()
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [version]$OSVersion
+    )
 
     $commandName = $MyInvocation.MyCommand.Name
     Write-Verbose "$commandName`: "
     Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/windows/win32/secauthn/cipher-suites-in-schannel"
 
-    $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Cryptography\Configuration\SSL\00010002"
-    # ONLY SERVER 2016 currently
-    $desiredCipherSuiteStates = [ordered]@{
-        "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" = "Enabled";
-        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" = "Enabled";
-        "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384" = "Enabled";
-        "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256" = "Enabled";
-        "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA" = "Enabled";
-        "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA" = "Enabled";
-        "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA" = "Enabled";
-        "TLS_RSA_WITH_AES_256_GCM_SHA384" = "Enabled";
-        "TLS_RSA_WITH_AES_128_GCM_SHA256" = "Enabled";
-        "TLS_RSA_WITH_AES_256_CBC_SHA256" = "Enabled";
-        "TLS_RSA_WITH_AES_128_CBC_SHA256" = "Enabled";
-        "TLS_RSA_WITH_AES_256_CBC_SHA" = "Enabled";
-        "TLS_RSA_WITH_AES_128_CBC_SHA" = "Enabled";
-        "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384" = "Disabled";
-        "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256" = "Disabled";
-        "TLS_DHE_RSA_WITH_AES_256_CBC_SHA" = "Disabled";
-        "TLS_DHE_RSA_WITH_AES_128_CBC_SHA" = "Disabled";
-        "TLS_RSA_WITH_3DES_EDE_CBC_SHA" = "Disabled";
-        "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256" = "Disabled";
-        "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256" = "Disabled";
-        "TLS_DHE_DSS_WITH_AES_256_CBC_SHA" = "Disabled";
-        "TLS_DHE_DSS_WITH_AES_128_CBC_SHA" = "Disabled";
-        "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA" = "Disabled";
-        "TLS_RSA_WITH_RC4_128_SHA" = "Disabled";
-        "TLS_RSA_WITH_RC4_128_MD5" = "Disabled";
-        "TLS_RSA_WITH_NULL_SHA256" = "Disabled";
-        "TLS_RSA_WITH_NULL_SHA" = "Disabled";
-        "TLS_PSK_WITH_AES_256_GCM_SHA384" = "Disabled";
-        "TLS_PSK_WITH_AES_128_GCM_SHA256" = "Disabled";
-        "TLS_PSK_WITH_AES_256_CBC_SHA384" = "Disabled";
-        "TLS_PSK_WITH_AES_128_CBC_SHA256" = "Disabled";
-        "TLS_PSK_WITH_NULL_SHA384" = "Disabled";
-        "TLS_PSK_WITH_NULL_SHA256" = "Disabled"
-    }
-
-
-
-    # building string from hashtable, because the value ist stored that way in the registry
-    # the hashtable is just an easy way of ordering and enabling or disabling cipher suites
-    [string]$desiredCipherSuiteStateString = ""
-    $desiredCipherSuiteStates.GetEnumerator() | ForEach-Object {
-
-        if ($_.Value -eq 'Enabled')
+    Write-Verbose "$commandName`: Using cipher suites for OS version $($OSVersion.ToString())" 
+    $desiredCipherSuiteStates = [ordered]@{}
+    switch ($OSVersion.Build)
+    {
+        '9200' # Window 8 and Windows Server 2012
         {
-            $desiredCipherSuiteStateString += "{0}," -f $_.Name
+
+
+        }
+        '9600' # Windows 8.1 and Server 2012 R2
+        {
+
+
+        }
+        '10586' # Windows 10 1511
+        {
+
+
+        }
+        '14393' # Windows 10 1607 and Windows Server 2016 
+        {
+            $desiredCipherSuiteStates = [ordered]@{
+                    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" = "Enabled";
+                    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" = "Enabled";
+                    "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384" = "Enabled";
+                    "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256" = "Enabled";
+                    "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA" = "Enabled";
+                    "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA" = "Enabled";
+                    "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA" = "Enabled";
+                    "TLS_RSA_WITH_AES_256_GCM_SHA384" = "Enabled";
+                    "TLS_RSA_WITH_AES_128_GCM_SHA256" = "Enabled";
+                    "TLS_RSA_WITH_AES_256_CBC_SHA256" = "Enabled";
+                    "TLS_RSA_WITH_AES_128_CBC_SHA256" = "Enabled";
+                    "TLS_RSA_WITH_AES_256_CBC_SHA" = "Enabled";
+                    "TLS_RSA_WITH_AES_128_CBC_SHA" = "Enabled";
+                    "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384" = "Disabled";
+                    "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256" = "Disabled";
+                    "TLS_DHE_RSA_WITH_AES_256_CBC_SHA" = "Disabled";
+                    "TLS_DHE_RSA_WITH_AES_128_CBC_SHA" = "Disabled";
+                    "TLS_RSA_WITH_3DES_EDE_CBC_SHA" = "Disabled";
+                    "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256" = "Disabled";
+                    "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256" = "Disabled";
+                    "TLS_DHE_DSS_WITH_AES_256_CBC_SHA" = "Disabled";
+                    "TLS_DHE_DSS_WITH_AES_128_CBC_SHA" = "Disabled";
+                    "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA" = "Disabled";
+                    "TLS_RSA_WITH_RC4_128_SHA" = "Disabled";
+                    "TLS_RSA_WITH_RC4_128_MD5" = "Disabled";
+                    "TLS_RSA_WITH_NULL_SHA256" = "Disabled";
+                    "TLS_RSA_WITH_NULL_SHA" = "Disabled";
+                    "TLS_PSK_WITH_AES_256_GCM_SHA384" = "Disabled";
+                    "TLS_PSK_WITH_AES_128_GCM_SHA256" = "Disabled";
+                    "TLS_PSK_WITH_AES_256_CBC_SHA384" = "Disabled";
+                    "TLS_PSK_WITH_AES_128_CBC_SHA256" = "Disabled";
+                    "TLS_PSK_WITH_NULL_SHA384" = "Disabled";
+                    "TLS_PSK_WITH_NULL_SHA256" = "Disabled"
+                }
+        }
+        '15063' # Windows 10 1703
+        {
+
+
+        }
+        '16299' # Windows 10 1709
+        {
+
+
+        }
+        '17134' # Windows 10 1803
+        {
+
+
+        }
+        '17763' # Windows 10 1809 and Server 2019
+        {
+
+
+        }
+        '18362' # Windows 10 1903
+        {
+
+
+        }
+        '18363' # Windows 10 1909
+        {
+
+
+        }
+        '19041' # Windows 10 2004
+        {
+
+
+        }
+        Default
+        {
+            Write-Verbose "$commandName`:Unknown OS version or client OS!"
+            return
         }
     }
-    #removing last comma
-    $desiredCipherSuiteStateString = $desiredCipherSuiteStateString -replace '.$'
 
-    Write-Verbose "$commandName`: Cipher suite order can be adjusted using the following registry path."
-    Write-Verbose "$commandName`: IMPORTANT: the value is just an example and you might need to adjust the values for your environment."
-    Write-Verbose "$commandName`: Path: `"$regPath`""
-    Write-Verbose "$commandName`: REG_SZ: `"Functions`""
-    Write-Verbose "$commandName`: Value: `"$desiredCipherSuiteStateString`""
-
-
-    # getting current cipher suite configuration
-    [array]$currentCipherSuites = Get-TlsCipherSuite -ErrorAction SilentlyContinue
-    if (-NOT($currentCipherSuites))
+    $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Cryptography\Configuration\SSL\00010002"
+    
+    if ($desiredCipherSuiteStates)
     {
-        Write-Verbose "$commandName`: No cipher suite settings found with: `"Get-TlsCipherSuite`""
-        return $false
-    }
-    else
-    {
-        # list of active cipher suites has to have the same entry count as the desired state
-        $enabledCipherSuites = $desiredCipherSuiteStates.GetEnumerator() | Where-Object {$_.Value -eq 'Enabled'}
-        if(-NOT($currentCipherSuites.Count -eq  $enabledCipherSuites.Count))
+        # building string from hashtable, because the value ist stored that way in the registry
+        # the hashtable is just an easy way of ordering and enabling or disabling cipher suites
+        [string]$desiredCipherSuiteStateString = ""
+        $desiredCipherSuiteStates.GetEnumerator() | ForEach-Object {
+
+            if ($_.Value -eq 'Enabled')
+            {
+                $desiredCipherSuiteStateString += "{0}," -f $_.Name
+            }
+        }
+        #removing last comma
+        $desiredCipherSuiteStateString = $desiredCipherSuiteStateString -replace '.$'
+
+        Write-Verbose "$commandName`: Cipher suite order can be adjusted using the following registry path."
+        Write-Verbose "$commandName`: IMPORTANT: the value is just an example and you might need to adjust the values for your environment."
+        Write-Verbose "$commandName`: Path: `"$regPath`""
+        Write-Verbose "$commandName`: REG_SZ: `"Functions`""
+        Write-Verbose "$commandName`: Value: `"$desiredCipherSuiteStateString`""
+
+
+        # getting current cipher suite configuration
+        # IMPORTANT: only working on Windows 10 1607 and Windows Server 2016 or higher
+        [array]$currentCipherSuites = Get-TlsCipherSuite -ErrorAction SilentlyContinue
+        if (-NOT($currentCipherSuites))
         {
-            Write-Verbose "$commandName`: Current cipherSuites not in desired state"
+            Write-Verbose "$commandName`: No cipher suite settings found with: `"Get-TlsCipherSuite`""
             return $false
         }
         else
         {
-            # checking cipher suite order
-
-            $i = 0
-            $desiredStateSet = $true
-            $enabledcipherSuites | ForEach-Object {
-                if (-NOT($_.Name -eq $currentcipherSuites[$i].Name))
-                {
-                    $desiredStateSet = $false
-                }
-                $i++
-            }
-            if ($desiredStateSet)
+            # list of active cipher suites has to have the same entry count as the desired state
+            $enabledCipherSuites = $desiredCipherSuiteStates.GetEnumerator() | Where-Object {$_.Value -eq 'Enabled'}
+            if(-NOT($currentCipherSuites.Count -eq  $enabledCipherSuites.Count))
             {
-                Write-Verbose "$commandName`: cipher suite order set as desired"
-                return $true
+                Write-Verbose "$commandName`: Current cipherSuites not in desired state"
+                return $false
             }
             else
             {
-                Write-Verbose "$commandName`: cipher suite order NOT set as desired"
-                return $false
-            }
-        }     
+                # checking cipher suite order
+
+                $i = 0
+                $desiredStateSet = $true
+                $enabledcipherSuites | ForEach-Object {
+                    if (-NOT($_.Name -eq $currentcipherSuites[$i].Name))
+                    {
+                        $desiredStateSet = $false
+                    }
+                    $i++
+                }
+                if ($desiredStateSet)
+                {
+                    Write-Verbose "$commandName`: cipher suite order set as desired"
+                    return $true
+                }
+                else
+                {
+                    Write-Verbose "$commandName`: cipher suite order NOT set as desired"
+                    return $false
+                }
+            }     
+        }
     }
+    else
+    {
+        return
+    } # end of "if ($desiredCipherSuiteStates)"
 }
 #endregion
+
 
 #region Test-SCHANNELSettings
 <#
@@ -971,8 +1063,8 @@ function Test-SCHANNELSettings
     $desiredProtocolStates = [ordered]@{
         "SSL 2.0" = "Disabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
         "SSL 3.0" = "Disabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
-        "TLS 1.0" = "Enabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
-        "TLS 1.1" = "Enabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
+        "TLS 1.0" = "Disabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
+        "TLS 1.1" = "Disabled"; # Disabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
         "TLS 1.2" = "Enabled"  # Enabled, will automatically validate DisabledByDefault with the opposite value, to ensure the same settings
     }
 
@@ -1049,7 +1141,7 @@ function Get-OSTypeInfo
             3 {$Win32OperatingSystem | Add-Member -Name 'ProductTypeName' -Value 'Server' -MemberType NoteProperty}
             Default {}
         }
-        return $Win32OperatingSystem | Select-Object Caption, Version, ProductType, ProductTypeName
+        return $Win32OperatingSystem | Select-Object -Property Caption, Version, ProductType, ProductTypeName
     }
     else
     {
@@ -1061,42 +1153,21 @@ function Get-OSTypeInfo
 #region Test-SiteServer
 function Test-SiteServer
 {
-    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2))
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (Get-Service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2)
 }
 #endregion
 
 #region Test-SecondarySite
 function Test-SecondarySite 
 {
-    if ((get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (get-service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -eq 2))
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (Get-Service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -eq 2)
 }
 #endregion
 
 #region Test-SiteRole 
 function Test-SiteRole 
 {
-    if (get-service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue)
-    {
-        return $true
-    }
-    else 
-    {
-        return $false
-    }
+   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue).Status -eq 'Running'
 }
 #endregion
 
@@ -1221,7 +1292,7 @@ function Get-SQLServerConnectionString
 #endregion
 
 #region MAIN SCRIPT
-$statusObj = New-Object psobject | Select-Object OverallTestStatus,
+$statusObj = New-Object -TypeName psobject | Select-Object -Property OverallTestStatus,
                                                     OSName, 
                                                     OSVersion,
                                                     OSType,
@@ -1308,10 +1379,17 @@ if ($statusObj.TsSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSU
     $statusObj.TestNetFrameworkSettings = Test-NetFrameworkSettings
     if ($CipherChecks)
     {
-        $statusObj.TestSCHANNELKeyExchangeAlgorithms = Test-SCHANNELKeyExchangeAlgorithms
-        $statusObj.TestSCHANNELHashes = Test-SCHANNELHashes
-        $statusObj.TestSCHANNELCiphers = Test-SCHANNELCiphers
-        $statusObj.TestCipherSuites = Test-CipherSuites
+        if(([version]$osInfo.Version).Build -eq 14393)
+        {
+            $statusObj.TestSCHANNELKeyExchangeAlgorithms = Test-SCHANNELKeyExchangeAlgorithms
+            $statusObj.TestSCHANNELHashes = Test-SCHANNELHashes
+            $statusObj.TestSCHANNELCiphers = Test-SCHANNELCiphers
+            $statusObj.TestCipherSuites = Test-CipherSuites -OSVersion $statusObj.OSVersion
+        }
+        else
+        {
+            if ($InfoMode){Write-Warning "$commandName`: Currently -CipherChecks is only working on Windows 10 1607 and Windows Server 2016!"}
+        }
     }
 }
 
@@ -1370,15 +1448,15 @@ if ($InfoMode)
     Write-Host "For additional Cipher checks use the `"-CipherChecks`" switchS"
     Write-Host " "
     Write-Host "----- OS Type Info -----"
-    $statusObj | Select-Object OSName, OSType, OSVersion | Format-List
+    $statusObj | Select-Object -Property OSName, OSType, OSVersion | Format-List
     Write-Host "----- ConfigMgr Site Info -----"
     Write-Host "This section shows what type of ConfigMgr server was detected if the script was run on a server OS"
-    $statusObj | Select-Object IsSiteServer, IsSiteRole, IsReportingServicePoint, IsSUPAndWSUS, IsSecondarySite | Format-List
+    $statusObj | Select-Object -Property IsSiteServer, IsSiteRole, IsReportingServicePoint, IsSUPAndWSUS, IsSecondarySite | Format-List
     Write-Host "----- Testresults -----"
     Write-Host "No entry means the test was not neccesary"
     Write-Host "Each test is based on the following article: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2"
     Write-Host "If you are unsure about Cipher Suite settings talk to your Active Directory and Security department to find the best settings for your environment"
-    $statusObj | Select-Object OverallTestStatus,
+    $statusObj | Select-Object -Property OverallTestStatus,
                                 TestCMGSettings,
                                 TestSQLServerVersionOfSite,
                                 TestSQLServerVersionOfWSUS,
@@ -1398,7 +1476,7 @@ if ($InfoMode)
 else
 {
     # output plain object
-    $statusObj | Select-Object OverallTestStatus,
+    $statusObj | Select-Object -Property OverallTestStatus,
                                 OSName, 
                                 OSVersion,
                                 OSType,
