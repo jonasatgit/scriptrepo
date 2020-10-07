@@ -1364,7 +1364,7 @@ if ($statusObj.IsSUPAndWSUS)
     }
 }
 
-if ($statusObj.TsReportingServicePoint)
+if ($statusObj.isReportingServicePoint)
 {
     Write-Verbose "$commandName`: DETECTED: Reporting Service Point"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SSRS
@@ -1372,7 +1372,7 @@ if ($statusObj.TsReportingServicePoint)
 }
 
 # validate tests for all types
-if ($statusObj.TsSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
+if ($statusObj.isSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
 {
     $statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
     $statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
