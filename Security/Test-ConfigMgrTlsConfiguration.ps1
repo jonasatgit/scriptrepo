@@ -12,7 +12,7 @@
 # if Microsoft has been advised of the possibility of such damages.
 #
 #************************************************************************************************************
-
+#region 
 [CmdletBinding()]
 param
 (
@@ -21,12 +21,16 @@ param
 )
 
 $commandName = $MyInvocation.MyCommand.Name
-if (-NOT([bool](([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544"))) # S-1-5-32-544 = admin group
+
+#Ensure that the Script is running with elevated Permissions
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights an run the script again'
-    break
+    return 
 }
-#enregion																																	
+
+
+#endregion																																	
 #region Base checklist
 <#
 Site servers (central, primary, or secondary)
@@ -435,7 +439,7 @@ function Test-WSUSVersion
     
     Write-Verbose "$commandName`: Getting WsusService.exe version"    
     $regPath = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
-    $wsusServiceEntries = Get-ItemProperty $regPath -ErrorAction SilentlyContinue 
+    $wsusServiceEntries = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue 
     if ($wsusServiceEntries)
     {
         $WsusServicePath = "{0}{1}" -f ($wsusServiceEntries.TargetDir), "Services\WsusService.exe"
@@ -726,7 +730,7 @@ function Test-SCHANNELHashes
         
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Hashes\{0}" -f ($_.Name)
         Write-Verbose "$commandName`: Working on: `"$regPath`""
-        $regProperties = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+        $regProperties = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
         if ($regProperties)
         {
             $enabledValue = if ($_.Value -eq 'Enabled'){4294967295}else{0} # enabled is decimal 4294967295 or hex 0xffffffff
@@ -795,7 +799,7 @@ function Test-SCHANNELCiphers
         
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\{0}" -f ($_.Name)
         Write-Verbose "$commandName`: Working on: `"$regPath`""
-        $regProperties = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+        $regProperties = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
         if ($regProperties)
         {
             $enabledValue = if ($_.Value -eq 'Enabled'){4294967295}else{0} # enabled is decimal 4294967295 or hex 0xffffffff
@@ -1174,28 +1178,14 @@ function Test-SiteRole
 #region Test-ReportingServicePoint 
 function Test-ReportingServicePoint 
 {
-    if (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Components\SMS_EXECUTIVE\Threads\SMS_SRS_REPORTING_POINT') 
-    {
-        return $true
-    }
-    else 
-    {
-        return $false  
-    }
+    return (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Components\SMS_EXECUTIVE\Threads\SMS_SRS_REPORTING_POINT')
 }
 #endregion
 
 #region Test-SoftwareUpdatePointAndWSUS
 function Test-SoftwareUpdatePointAndWSUS
 {
-    if ((Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\COMPONENTS\SMS_EXECUTIVE\Threads\SMS_WSUS_CONTROL_MANAGER') -and (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup'))
-    {
-        return $true
-    }
-    else 
-    {
-        return $false  
-    }
+  return (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\SMS\COMPONENTS\SMS_EXECUTIVE\Threads\SMS_WSUS_CONTROL_MANAGER') -and (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup')
 }
 #endregion
 
@@ -1217,7 +1207,7 @@ function Get-SQLServerConnectionString
         'SiteServer' 
         { 
             $regPath = "HKLM:\SOFTWARE\Microsoft\SMS\SQL Server"
-            $SiteServerEntries = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            $SiteServerEntries = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
             #DatabaseName can be INST\DB or just DB
             if ($SiteServerEntries.'Database Name'.ToCharArray() -contains "\") 
             {
@@ -1235,8 +1225,8 @@ function Get-SQLServerConnectionString
         {
             $regPathWSUS = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup"
             $regPathWID = "HKLM:\SOFTWARE\Microsoft\Update Services\Server\Setup\Installed Role Services"
-            $WSUSServerEntries = Get-ItemProperty $regPathWSUS -ErrorAction SilentlyContinue
-            $WIDEntries = Get-ItemProperty $regPathWID -ErrorAction SilentlyContinue
+            $WSUSServerEntries = Get-ItemProperty -Path $regPathWSUS -ErrorAction SilentlyContinue
+            $WIDEntries = Get-ItemProperty -Path $regPathWID -ErrorAction SilentlyContinue
             #Check if WID is used
             if ($WIDEntries.'UpdateServices-Database' -eq 2) 
             {
@@ -1253,7 +1243,7 @@ function Get-SQLServerConnectionString
         'SecondarySite' 
         {
             $regPath = "HKLM:\SOFTWARE\Microsoft\SMS\SQL Server"
-            $SiteServerEntries = Get-ItemProperty $regPath -ErrorAction SilentlyContinue
+            $SiteServerEntries = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
             #DatabaseName can be INST\DB or just DB
             if ($SiteServerEntries.'Database Name'.ToCharArray() -contains "\") 
             {
@@ -1269,22 +1259,29 @@ function Get-SQLServerConnectionString
         }
         'SSRS' 
         {
-            [array]$reportServerList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer" -Class "__NAMESPACE"
-            foreach ($reportServerName in $reportServerList.Name) 
+            try
             {
-                [array]$reportServerVersionList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName" -Class "__NAMESPACE"      
-    
-                foreach ($reportServerVersion in $reportServerVersionList.Name) 
+                [array]$reportServerList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer" -Class "__NAMESPACE" -ErrorAction Stop
+                foreach ($reportServerName in $reportServerList.Name) 
                 {
-                    $query = "SELECT * FROM MSReportServer_ConfigurationSetting"
-                    $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query   
-                    if ($reportServerConfiguration) 
+                    [array]$reportServerVersionList = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName" -Class "__NAMESPACE" -ErrorAction Stop      
+        
+                    foreach ($reportServerVersion in $reportServerVersionList.Name) 
                     {
-                        #$reportServerConfiguration | Select-Object ServiceName, Version, DatabaseServerName, VirtualDirectoryReportManager, VirtualDirectoryReportServer
-                        Write-Verbose "$commandName`: SSRS SQL is: `"$($reportServerConfiguration.DatabaseServerName)`""
-                        Return $reportServerConfiguration.DatabaseServerName
+                        $query = "SELECT * FROM MSReportServer_ConfigurationSetting"
+                        $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query  -ErrorAction Stop 
+                        if ($reportServerConfiguration) 
+                        {
+                            #$reportServerConfiguration | Select-Object ServiceName, Version, DatabaseServerName, VirtualDirectoryReportManager, VirtualDirectoryReportServer
+                            Write-Verbose "$commandName`: SSRS SQL is: `"$($reportServerConfiguration.DatabaseServerName)`""
+                            Return $reportServerConfiguration.DatabaseServerName
+                        }
                     }
                 }
+            }
+            catch
+            {
+                    Write-Warning "$_"
             } 
         } 
     }
