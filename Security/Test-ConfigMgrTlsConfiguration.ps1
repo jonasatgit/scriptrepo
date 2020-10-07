@@ -23,7 +23,7 @@ param
 $commandName = $MyInvocation.MyCommand.Name
 if (-NOT([bool](([System.Security.Principal.WindowsIdentity]::GetCurrent()).groups -match "S-1-5-32-544"))) # S-1-5-32-544 = admin group
 {
-    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights an run the script again'
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     break
 }
 #enregion																																	
@@ -1082,7 +1082,7 @@ function Test-SCHANNELSettings
             {
                 $disabledByDefaultValue = if ($_.Value -eq 'Disabled'){1}else{0} 
 
-                $enabledValue = if ($_.Value -eq 'Enabled'){4294967295}else{0} # enabled is decimal 4294967295 or hex 0xffffffff
+                $enabledValue = if ($_.Value -eq 'Enabled'){1}else{0} # enabled is 1
 
                 Write-Verbose "$commandName`: DisabledByDefault = $($regProperties.DisabledByDefault)"
                 Write-Verbose "$commandName`: Enabled = $($regProperties.Enabled)"
