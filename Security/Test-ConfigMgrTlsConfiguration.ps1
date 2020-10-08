@@ -25,7 +25,7 @@ $commandName = $MyInvocation.MyCommand.Name
 #Ensure that the Script is running with elevated Permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
-    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights an run the script again'
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
 
@@ -1086,7 +1086,7 @@ function Test-SCHANNELSettings
             {
                 $disabledByDefaultValue = if ($_.Value -eq 'Disabled'){1}else{0} 
 
-                $enabledValue = if ($_.Value -eq 'Enabled'){4294967295}else{0} # enabled is decimal 4294967295 or hex 0xffffffff
+                $enabledValue = if ($_.Value -eq 'Enabled'){1}else{0} # enabled is 1
 
                 Write-Verbose "$commandName`: DisabledByDefault = $($regProperties.DisabledByDefault)"
                 Write-Verbose "$commandName`: Enabled = $($regProperties.Enabled)"
@@ -1361,7 +1361,7 @@ if ($statusObj.IsSUPAndWSUS)
     }
 }
 
-if ($statusObj.TsReportingServicePoint)
+if ($statusObj.isReportingServicePoint)
 {
     Write-Verbose "$commandName`: DETECTED: Reporting Service Point"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SSRS
@@ -1369,7 +1369,7 @@ if ($statusObj.TsReportingServicePoint)
 }
 
 # validate tests for all types
-if ($statusObj.TsSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
+if ($statusObj.isSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
 {
     $statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
     $statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
