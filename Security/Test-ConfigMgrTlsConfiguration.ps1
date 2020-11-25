@@ -12,6 +12,9 @@
 # if Microsoft has been advised of the possibility of such damages.
 #
 #************************************************************************************************************
+# Changelog:
+# 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
+
 #region 
 [CmdletBinding()]
 param
@@ -1327,23 +1330,28 @@ $statusObj.IsSecondarySite = Test-SecondarySite
 
 
 # different tests based on what type of system we detected 
+[bool]$configMgrSystemDetected = $false
 if ($statusObj.IsSiteServer)
 {
+    $configMgrSystemDetected = $true
     Write-Verbose "$commandName`: DETECTED: Site Server detected!"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SiteServer
     $statusObj.TestSQLServerVersionOfSite = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
     $statusObj.TestCMGSettings = Test-CMGSettings 
     $statusObj.TestSQLClientVersion = Test-SQLClientVersion
+    
 }
 
 if ($statusObj.IsSiteRole)
 {
+    $configMgrSystemDetected = $true
     Write-Verbose "$commandName`: DETECTED: Site role"
     $statusObj.TestSQLClientVersion = Test-SQLClientVersion
 }
 
 if ($statusObj.IsSecondarySite)
 {
+    $configMgrSystemDetected = $true
     Write-Verbose "$commandName`: DETECTED: Secondary Site"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SecondarySite
     $statusObj.TestSQLServerVersionOfSecSite = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
@@ -1352,6 +1360,7 @@ if ($statusObj.IsSecondarySite)
 
 if ($statusObj.IsSUPAndWSUS)
 {
+    $configMgrSystemDetected = $true
     Write-Verbose "$commandName`: DETECTED: Software Update Point and WSUS"
     $statusObj.TestWSUSVersion = Test-WSUSVersion 
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType WSUS
@@ -1363,6 +1372,7 @@ if ($statusObj.IsSUPAndWSUS)
 
 if ($statusObj.isReportingServicePoint)
 {
+    $configMgrSystemDetected = $true
     Write-Verbose "$commandName`: DETECTED: Reporting Service Point"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SSRS
     $statusObj.TestSQLServerVersionOfSSRS = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
@@ -1371,6 +1381,7 @@ if ($statusObj.isReportingServicePoint)
 # validate tests for all types
 if ($statusObj.isSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
 {
+    $configMgrSystemDetected = $true
     $statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
     $statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
     $statusObj.TestNetFrameworkSettings = Test-NetFrameworkSettings
@@ -1397,7 +1408,7 @@ if ($osInfo.ProductType -eq 1)
     #Test-WinHTTPSettings
 }
 
-# setting tests not needed to true for the overall check
+# set tests not needed to "true" for the overall check to be passed
 $resultTestSCHANNELKeyExchangeAlgorithms = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELKeyExchangeAlgorithms)){$true}else{$statusObj.TestSCHANNELKeyExchangeAlgorithms}
 $resultTestSCHANNELHashes = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELHashes)){$true}else{$statusObj.TestSCHANNELHashes}
 $resultTestSCHANNELCiphers = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELCiphers)){$true}else{$statusObj.TestSCHANNELCiphers}
@@ -1408,6 +1419,8 @@ $resultTestSQLServerVersionOfSecSite = if([string]::IsNullOrEmpty($statusObj.Tes
 $resultTestSQLClientVersion = if([string]::IsNullOrEmpty($statusObj.TestSQLClientVersion.TestResult)){$true}else{$statusObj.TestSQLClientVersion.TestResult}
 $resultTestWSUSVersion = if([string]::IsNullOrEmpty($statusObj.TestWSUSVersion.TestResult)){$true}else{$statusObj.TestWSUSVersion.TestResult}
 $resultTestNetFrameworkVersion = if([string]::IsNullOrEmpty($statusObj.TestNetFrameworkVersion.TestResult)){$true}else{$statusObj.TestNetFrameworkVersion.TestResult}
+$resultTestNetFrameworkSettings = if([string]::IsNullOrEmpty($statusObj.TestNetFrameworkSettings)){$true}else{$statusObj.TestNetFrameworkSettings}
+$resultTestSCHANNELSettings = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELSettings)){$true}else{$statusObj.TestSCHANNELSettings}
 
 # checking overall test state
 if ($resultTestSQLServerVersionOfSite `
@@ -1416,8 +1429,8 @@ if ($resultTestSQLServerVersionOfSite `
     -and $resultTestSQLClientVersion `
     -and $resultTestWSUSVersion `
     -and $resultTestNetFrameworkVersion `
-    -and $statusObj.TestNetFrameworkSettings `
-    -and $statusObj.TestSCHANNELSettings `
+    -and $resultTestNetFrameworkSettings `
+    -and $resultTestSCHANNELSettings `
     -and $resultTestSCHANNELKeyExchangeAlgorithms `
     -and $resultTestSCHANNELHashes `
     -and $resultTestSCHANNELCiphers `
@@ -1428,6 +1441,12 @@ if ($resultTestSQLServerVersionOfSite `
 else
 {
     $statusObj.OverallTestStatus = "Failed"
+}
+
+# override status in case no configMgr system was detected
+if (-NOT ($configMgrSystemDetected))
+{
+    $statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."
 }
 
 # show additional information more readable
