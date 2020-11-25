@@ -15,7 +15,82 @@
 # Changelog:
 # 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
 
-#region 
+																																
+<#
+.Synopsis
+    Script to validate the neccesary prerequisites to enforce TLS 1.2 in a ConfigMgr environment
+.DESCRIPTION
+    Every test based on the following article:
+    https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server
+
+    The tests in a nutshell:
+    Site servers (central, primary, or secondary)
+    - Update .NET Framework (Version prüfen)
+     - - NET Framework 4.6.2 and later supports TLS 1.1 and TLS 1.2. Confirm the registry settings, but no additional changes are required.
+     - - Update NET Framework 4.6 and earlier versions to support TLS 1.1 and TLS 1.2. For more information, see .NET Framework versions and dependencies.
+     - - If you're using .NET Framework 4.5.1 or 4.5.2 on Windows 8.1 or Windows Server 2012, the relevant updates and details are also available from the Download Center.
+    - Verify strong cryptography settings (Registry settings)
+
+    Site database server	
+    - Update SQL Server and its client components. Version: "11.*.7001.0"
+    - Microsoft SQL Server 2016 and later support TLS 1.1 and TLS 1.2. Earlier versions and dependent libraries might require updates. For more information, see KB 3135244: TLS 1.2 support for Microsoft SQL Server.
+
+    - SQL Server 2014 SP3 is the SQL supported service pack at the moment. Version: 12.0.6024.0
+    - SQL Server 2012 SP4 is the SQL supported service pack at the moment. Version: 11.0.7001.0
+    - SQL Server 2016 and above is okay: 13.0.1601.5
+
+    Secondary site servers 
+    - Update SQL Server and it's client components to a compliant version of SQL Express
+    - Secondary site servers need to use at least SQL Server 2016 Express with Service Pack 2 (13.2.5026.0) or later.
+
+    Site system roles (also SMS Provider)
+    - Update .NET Framework 
+    - Verify strong cryptography settings
+    - Update SQL Server and its client components on roles that require it, including the SQL Server Native Client
+
+    Reporting services point
+    - Update .NET Framework on the site server, the SQL Reporting Services servers, and any computer with the console
+    - Restart the SMS_Executive service as necessary
+    - Check SQL Version
+
+    Software update point
+    - Update WSUS
+    - For WSUS server that's running Windows Server 2012, install update 4022721 or a later rollup update.
+    - For WSUS server that's running Windows Server 2012 R2, install update 4022720 or a later rollup update
+
+    Cloud management gateway
+    - Enforce TLS 1.2 (check console setting)
+
+    Configuration Manager console	
+    - Update .NET Framework
+    - Verify strong cryptography settings
+
+    Configuration Manager client with HTTPS site system roles
+    - Update Windows to support TLS 1.2 for client-server communications by using WinHTTP
+
+    Software Center
+    - Update .NET Framework
+    - Verify strong cryptography settings
+
+    Windows 7 clients
+    - Before you enable TLS 1.2 on any server components, update Windows to support TLS 1.2 for client-server communications by using WinHTTP. If you enable TLS 1.2 on server components first, you can orphan earlier versions of clients.
+.EXAMPLE
+    Test-ConfigMgrTlsConfiguration.ps1
+.EXAMPLE
+    Test-ConfigMgrTlsConfiguration.ps1 -Infomode
+.EXAMPLE
+    Test-ConfigMgrTlsConfiguration.ps1 -Infomode -Verbose
+.EXAMPLE
+    Test-ConfigMgrTlsConfiguration.ps1 -CipherChecks
+.LINK
+    https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-server
+.LINK 
+    https://github.com/jonasatgit/scriptrepo/tree/master/Security
+    
+#>
+
+
+#region Parameters / Prereqs
 [CmdletBinding()]
 param
 (
@@ -31,63 +106,9 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
-
-
-#endregion																																	
-#region Base checklist
-<#
-Site servers (central, primary, or secondary)
-- Update .NET Framework (Version prüfen)
- - - NET Framework 4.6.2 and later supports TLS 1.1 and TLS 1.2. Confirm the registry settings, but no additional changes are required.
- - - Update NET Framework 4.6 and earlier versions to support TLS 1.1 and TLS 1.2. For more information, see .NET Framework versions and dependencies.
- - - If you're using .NET Framework 4.5.1 or 4.5.2 on Windows 8.1 or Windows Server 2012, the relevant updates and details are also available from the Download Center.
-- Verify strong cryptography settings (Registry settings)
-
-Site database server	
-- Update SQL Server and its client components. Version: "11.*.7001.0"
-- Microsoft SQL Server 2016 and later support TLS 1.1 and TLS 1.2. Earlier versions and dependent libraries might require updates. For more information, see KB 3135244: TLS 1.2 support for Microsoft SQL Server.
-
-- SQL Server 2014 SP3 is the only supported service pack. Version: 12.0.6024.0
-- SQL Server 2012 SP4 is the only supported service pack. Version: 11.0.7001.0
-- SQL Server 2016 and above is okay: 13.0.1601.5 (-ge 13)
-
-Secondary site servers 
-- Update SQL Server and its client components to a compliant version of SQL Express
-- Secondary site servers need to use at least SQL Server 2016 Express with Service Pack 2 (13.2.5026.0) or later.
-
-Site system roles (also SMS Provider)
-- Update .NET Framework 
-- Verify strong cryptography settings
-- Update SQL Server and its client components on roles that require it, including the SQL Server Native Client
-
-Reporting services point
-- Update .NET Framework on the site server, the SQL Reporting Services servers, and any computer with the console
-- Restart the SMS_Executive service as necessary
-- Check SQL Version
-
-Software update point
-- Update WSUS
-- For WSUS server that's running Windows Server 2012, install update 4022721 or a later rollup update.
-- For WSUS server that's running Windows Server 2012 R2, install update 4022720 or a later rollup update
-
-Cloud management gateway
-- Enforce TLS 1.2 (check console setting)
-
-Configuration Manager console	
-- Update .NET Framework
-- Verify strong cryptography settings
-
-Configuration Manager client with HTTPS site system roles
-- Update Windows to support TLS 1.2 for client-server communications by using WinHTTP
-
-Software Center
-- Update .NET Framework
-- Verify strong cryptography settings
-
-Windows 7 clients
-- Before you enable TLS 1.2 on any server components, update Windows to support TLS 1.2 for client-server communications by using WinHTTP. If you enable TLS 1.2 on server components first, you can orphan earlier versions of clients.
-#>
 #endregion
+
+
 
 #region Test-SQLClientVersion
 <#
@@ -1334,7 +1355,7 @@ $statusObj.IsSecondarySite = Test-SecondarySite
 if ($statusObj.IsSiteServer)
 {
     $configMgrSystemDetected = $true
-    Write-Verbose "$commandName`: DETECTED: Site Server detected!"
+    Write-Verbose "$commandName`: DETECTED: Site Server"
     $SQLServerConnectionString = Get-SQLServerConnectionString -RoleType SiteServer
     $statusObj.TestSQLServerVersionOfSite = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
     $statusObj.TestCMGSettings = Test-CMGSettings 
