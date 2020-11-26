@@ -13,6 +13,7 @@
 #
 #************************************************************************************************************
 # Changelog:
+# 20201126: Updated Get-SQLServerConnectionString 
 # 20201126: Changed Test-SiteRole
 # 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
 
@@ -1218,6 +1219,14 @@ function Test-SoftwareUpdatePointAndWSUS
 #endregion
 
 #region Get-SQLServerConnectionString 
+<#
+.Synopsis
+   Get-SQLServerConnectionString 
+.DESCRIPTION
+   Get SQL Server Name from specified Role to use in a SQL Server connection string
+.EXAMPLE
+   Get-SQLServerConnectionString -RoleType SiteServer
+#>
 function Get-SQLServerConnectionString 
 {
     [CmdletBinding()]
@@ -1300,7 +1309,6 @@ function Get-SQLServerConnectionString
                         $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query  -ErrorAction Stop 
                         if ($reportServerConfiguration) 
                         {
-                            #$reportServerConfiguration | Select-Object ServiceName, Version, DatabaseServerName, VirtualDirectoryReportManager, VirtualDirectoryReportServer
                             Write-Verbose "$commandName`: SSRS SQL is: `"$($reportServerConfiguration.DatabaseServerName)`""
                             Return $reportServerConfiguration.DatabaseServerName
                         }
