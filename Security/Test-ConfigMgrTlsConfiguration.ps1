@@ -13,6 +13,7 @@
 #
 #************************************************************************************************************
 # Changelog:
+# 20201126: Changed Test-SiteRole
 # 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
 
 																																
@@ -1195,7 +1196,10 @@ function Test-SecondarySite
 #region Test-SiteRole 
 function Test-SiteRole 
 {
-   return (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue).Status -eq 'Running'
+    if (Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue)
+    {
+        return $true
+    }
 }
 #endregion
 
