@@ -179,7 +179,7 @@ $scheduledTaskScript | Out-File -FilePath "$scheduledTaskScriptPath" -Force
 Log-Line "-----------Started script: $($MyInvocation.MyCommand.Name)"
 
 # get endtime of the next maintenance window
-$ServiceWindows = Get-WmiObject -Namespace root\ccm\ClientSDK -query "select * from CCM_ServiceWindow where Type = 1 or Type = 4" -ErrorAction SilentlyContinue
+[array]$ServiceWindows = Get-WmiObject -Namespace root\ccm\ClientSDK -query "select * from CCM_ServiceWindow where Type = 1 or Type = 4" -ErrorAction SilentlyContinue
 Log-Line "Found $($ServiceWindows.count) ServiceWindows for all deployments or updates"
 if($ServiceWindows)
 {
@@ -198,7 +198,7 @@ if($ServiceWindows)
     Log-Line "Calculated reboot time = $RebootTime"
 }
 
-# remove existing task especially when no service window was found
+# remove existing task especially when no service window was found, but the second script will also abort if there is no service window available.
 try
 {
 	Get-ScheduledTask -TaskName $ScheduledTaskName -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
