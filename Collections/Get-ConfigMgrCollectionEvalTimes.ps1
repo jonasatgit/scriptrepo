@@ -37,6 +37,8 @@
     or
     Results refreshed for collection P11002BB, 0 entries changed   
     or
+    Waiting for async query to complete, have waited 1234 seconds already.
+    or 
     EvaluateCollectionThread thread ends
 
     EvalTypes:
@@ -50,127 +52,229 @@
 .EXAMPLE
     .\Get-ConfigMgrCollectionEvalTimes.ps1 -CollEvalLogPath "F:\Program Files\Microsoft Configuration Manager\Logs"
 .PARAMETER CollEvalLogPath
-    Path to one or multiple colleval.log files
+    Path to one or multiple colleval.log files. Will use SMS_LOG_PATH if nothing has been set.
+.PARAMETER ProviderMachineName
+    Name of the SMS Provider. Will use local system if nothing has been set.
+.PARAMETER SiteCode
+    SiteCode of Site
 #>
 param
 (
     [Parameter(Mandatory=$false)]
-    $CollEvalLogPath = $env:SMS_LOG_PATH
+    [string]$CollEvalLogPath = "$env:SMS_LOG_PATH",
+    [Parameter(Mandatory=$false)]
+    [string]$ProviderMachineName = $env:COMPUTERNAME,
+    [Parameter(Mandatory=$true)]
+    [string]$SiteCode
 )
 
-$collEvalSearchString = "(Start to process graph with (\d*) collections in \[(Primary|Auxiliary|Express|Single) Evaluator\])|Process graph with these collections \[.{8}(,|\])|Results refreshed for collection .*\d* entries changed|(EvaluateCollectionThread thread ends)"
+$collEvalSearchString = "(Start to process graph with (\d*) collections in \[(Primary|Auxiliary|Express|Single) Evaluator\])|Process graph with these collections \[.{8}(,|\])|Results refreshed for collection .*\d* entries changed|(Waiting for async query)|(EvaluateCollectionThread thread ends)"
 
+# parsing log file/s
 $fullEvalList = Get-ChildItem -Path "$CollEvalLogPath\colleval*" | Sort-Object -Property LastWriteTime | Select-String -Pattern $collEvalSearchString
 
-$outObj = New-Object System.Collections.ArrayList
 
-# using property-bag for temp object
-$tmpObj = New-Object psobject | Select-Object EvalType, CollectionCount, RunTimeInSeconds, ChangeCount ,RootCollection, EndTime, DifferenceToLastRun ,Thread
+# getting collection list
+$cimSession = New-CimSession -ComputerName $ProviderMachineName
+$listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$SiteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
+$cimSession | Remove-CimSession
+if(-NOT ($listOfCollections))
+{
+    Write-Warning 'Could not get collection info from WMI, will proceed without collection names.'
+}
 
 $firstStartFound = $false
 $lastEndTime = $null
 $changeCount = 0
 $i = 0
+
+$objLoglineByThread = new-object System.Collections.ArrayList
+# group by thread ID to get the right entries together
 foreach ($logLine in $fullEvalList.Line)
 {
-    $lastLine = $false
+    # using property-bag for temp object
+    $logLineObject = New-Object psobject | Select-Object Step, EvalType, CollectionCount, ChangeCount ,CollectionID, CollectionName, DateTime, StartTime, EndTime, Thread
+    $matches = $null
+    $null = $logLine -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*).*(?<thread>thread=\d*)"
+
+    $logLineObject.DateTime = ($Matches.datetime)
+    $logLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
+    $matches = $null
+
 
     switch -Regex ($logLine) 
     {
-        "(Start to process graph with).*(?<CollectionCount> \d* ).*(?<action>(Primary|Auxiliary|Express|Single)).*(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*).*(?<thread>thread=\d*)"
+        #EXAMPLE: Start to process graph with 7 collections in [Primary Evaluator] thread
+        "(Start to process graph with).*(?<CollectionCount> \d* ).*(?<action>(Primary|Auxiliary|Express|Single))"
         {
-            # we need to start with the first starting entry of the log (Start to process graph with) and not with any other
-            # we could simply group by thread ID, but thread IDs are re-used and not unique in the log, so we need to parse each line
-            $firstStartFound = $true
-
-            $step1Thread = ($Matches.thread) -replace "(thread=)", ""
-            $tmpObj.Thread = $step1Thread
-            $tmpObj.CollectionCount = ($Matches.collectioncount).Trim()
+            $logLineObject.step  = 1
+            $logLineObject.CollectionCount = ($Matches.collectioncount).Trim()
+            $logLineObject.StartTime = get-date($logLineObject.datetime) -Format 'yyyy-MM-dd hh:mm:ss'
             
-            $startDateTime = ($Matches.datetime)
-
             switch (($Matches.action).Trim())
             {
                 'Primary' 
                 {
-                    $tmpObj.EvalType = "Scheduled"
+                    $logLineObject.EvalType = "Scheduled"
                 }
                 'Auxiliary'
                 {
-                    $tmpObj.EvalType = "ManualTree"            
+                    $logLineObject.EvalType = "ManualTree"            
                 }
                 'Express'
                 {
-                    $tmpObj.EvalType = "Incremental"
+                    $logLineObject.EvalType = "Incremental"
                 }
                 'Single'
                 {
-                    $tmpObj.EvalType = "ManualSingle"
+                    $logLineObject.EvalType = "ManualSingle"
                 }
                 Default
                 {
-                    $tmpObj.EvalType = "Unknown"
+                    $logLineObject.EvalType = "Unknown"
                 }
             }
-            
-            # calculate time difference in minutes between last evaluation cycle and now
-            if ($lastEndTime)
+            $matches = $null
+        }
+        #EXAMPLE: Process graph with these collections [SMS00001, SMS0003,SMS0004]
+        "(Process graph with these collections )(?<collection>\[.{8}(,|\]))"
+        {
+            $logLineObject.step  = 2
+            $logLineObject.CollectionID = ($Matches.collection) -Replace "(\[|\]|,)", ""
+
+            if ($listOfCollections)
             {
-                $differenceTime = New-TimeSpan -Start (get-date($lastEndTime)) -End (get-date($startDateTime))
-                $tmpObj.DifferenceToLastRun = [System.Math]::Round($differenceTime.TotalMinutes)
+                $collectionObject = $listOfCollections.Where({$_.CollectionID -eq ($logLineObject.CollectionID)})
+                if ($collectionObject)
+                {
+                    $logLineObject.CollectionName = $collectionObject.Name
+                }
+                else
+                {
+                    $logLineObject.CollectionName = 'NOT FOUND'
+                }
             }
-
-
+            else
+            {
+                $logLineObject.CollectionName = 'NOT FOUND'
+            }
             $Matches = $null
         }
-        "(Process graph with these collections )(?<collection>\[.{8}(,|\])).*(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*).*(?<thread>thread=\d*)"
-        {
-            if ($firstStartFound)
-            {
-                #$matches
-                $step2Thread = ($Matches.thread) -replace "(thread=)", ""
-                #$step2Thread
-                $tmpObj.RootCollection = ($Matches.collection) -Replace "(\[|\]|,)", ""
-                $Matches = $null
-            }
-        }
+        #EXAMPLE: Results refreshed for collection P11002BB, 0 entries changed
         "(Results refreshed for collection).*, (?<ChangeCount>\d*)"
         {
-            if ($firstStartFound)
-            { 
-                $changeCount = $changeCount + $matches.ChangeCount
-                $matches = $null
-            }  
+            $logLineObject.step  = 3
+            $logLineObject.ChangeCount = $matches.ChangeCount
+            $matches = $null
         }
-        "(EvaluateCollectionThread thread ends).*(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*).*(?<thread>thread=\d*)"
+        #EXAMPLE: EvaluateCollectionThread thread ends
+        "(EvaluateCollectionThread thread ends)"
         {
-            if ($firstStartFound)
-            {
-                $step3Thread = ($Matches.thread) -replace "(thread=)", ""
-                $tmpObj.EndTime = ($Matches.datetime)
-
-                $runTime = New-TimeSpan -Start (get-date($startDateTime)) -End (get-date(($Matches.datetime)))
-                $tmpObj.RunTimeInSeconds = $runTime.TotalSeconds
-
-                $lastLine = $true
-                $Matches = $null
-            }
+            $logLineObject.step  = 4
+            $logLineObject.EndTime = get-date($logLineObject.datetime) -Format 'yyyy-MM-dd hh:mm:ss'
+            $Matches = $null
         }
-        Default {}
+        #EXAMPLE: Waiting for async query to complete, have waited 1234 seconds already.
+        "Waiting for async query"
+        {
+            Write-Warning "CollEval in bad state. Long running collection found. Filter colleval logs for thread ID: `"$($logLineObject.Thread)`""
+        }
     }
+
     
+    if($logLineObject.step -eq 3 -and $logLineObject.ChangeCount -eq 0)
+    {
+        # skip step 3 if nothing has changed to limit the amount of lines we need to work with 
+    }
+    else
+    {
+        [void]$objLoglineByThread.Add($logLineObject)
+    }
+}
+
+# Bringing all threads in order by thread ID, datetime and step. That way we can easily combine entries to one entry 
+$objLoglineByThreadSorted = $objLoglineByThread | Sort-Object -Property Thread, Datetime, Step  #| ogv
+
+$outObj = New-Object System.Collections.ArrayList
+$tmpObj = New-Object psobject | Select-Object EvalType, CollectionCount, RunTimeInSeconds, ChangeCount ,CollectionID, CollectionName, StartTime, EndTime ,Thread, Notes
+$changeCount = 0
+foreach ($logLineWithThreadID in $objLoglineByThreadSorted)
+{
+    $lastLine = $false
+
+    switch ($logLineWithThreadID.step) 
+    {
+        1 # Start
+        {
+            $tmpObj.EvalType = $logLineWithThreadID.EvalType
+            $tmpObj.CollectionCount = $logLineWithThreadID.CollectionCount
+            # always setting thread in case we don't have all steps
+            $tmpObj.Thread = $logLineWithThreadID.Thread
+            $tmpObj.StartTime = $logLineWithThreadID.StartTime
+            # save starttime to calculate runtime
+            $startDateTime = $logLineWithThreadID.DateTime
+        }
+        
+        2 # Graph info
+        {
+            $tmpObj.CollectionID = $logLineWithThreadID.CollectionID
+            $tmpObj.CollectionName = $logLineWithThreadID.CollectionName
+            # always setting thread in case we don't have all steps
+            $tmpObj.Thread = $logLineWithThreadID.Thread
+        }
+
+        3 # Refreshed Collections
+        {
+            $changeCount = $changeCount + $logLineWithThreadID.ChangeCount
+            # always setting thread in case we don't have all steps
+            $tmpObj.Thread = $logLineWithThreadID.Thread
+        }
+
+        4 # End
+        {
+            $lastLine = $true
+            $tmpObj.EndTime = $logLineWithThreadID.Endtime
+            # calculate total eval cycle runtime inf start and end exists 
+            if($startDateTime)
+            {
+                $runTime = New-TimeSpan -Start (get-date($startDateTime)) -End (get-date($logLineWithThreadID.DateTime))
+                $tmpObj.RunTimeInSeconds = $runTime.TotalSeconds
+            }
+            # always setting thread in case we don't have all steps
+            $tmpObj.Thread = $logLineWithThreadID.Thread
+        }
+    }
+
     if ($lastLine)
     {
-        [void]$outObj.Add($tmpObj)
-
-        $lastEndTime = $tmpObj.EndTime
+        $startDateTime = $null
         $tmpObj.ChangeCount = $changeCount
+
+        if (-NOT ($tmpObj.EvalType -and $tmpObj.CollectionID -and $tmpObj.EndTime))
+        {
+            $tmpObj.Notes = "Missing info. Logfile might be truncated"    
+        }
+        [void]$outObj.Add($tmpObj)
 
         # re-create tmpobject and changecount since we reached the end of the eval cycle and we need another object for the next one
         $changeCount = 0
-        $tmpObj = New-Object psobject | Select-Object EvalType, CollectionCount, RunTimeInSeconds, ChangeCount ,RootCollection, EndTime, DifferenceToLastRun ,Thread
+        $tmpObj = New-Object psobject | Select-Object EvalType, CollectionCount, RunTimeInSeconds, ChangeCount ,CollectionID, CollectionName, StartTime, EndTime ,Thread, Notes
     }
-    $i++ # just for testing
-   
- }   
- $outObj | Out-GridView -Title 'Collection Eval Times'
+
+}
+
+# creating statistics
+$runtimeLast24h = 0
+$outObj | Where-Object {$_.EndTime -ge (get-date).AddHours(-24)} | ForEach-Object {
+
+    $runtimeLast24h = $runtimeLast24h + $_.RunTimeInSeconds
+} 
+$runtimeLast24h = $runtimeLast24h / 60 # convert to minutes
+
+$longestSingleRuntime = $outObj | Sort-Object -Property RunTimeInSeconds -Descending | Select-Object -First 1
+$longestSingleRuntimeMinutes = [System.Math]::Round($longestSingleRuntime.RunTimeInSeconds / 60)
+
+# output data
+$ogvTitle = "Collection Eval Times     -- Total runtime in last 24h: $([System.Math]::Round($runtimeLast24h)) minutes, longest single runtime: $($longestSingleRuntimeMinutes) minutes (thread: $($longestSingleRuntime.Thread)) --"
+$outObj | Sort-Object -Property EndTime -Descending | Out-GridView -Title $ogvTitle
+
