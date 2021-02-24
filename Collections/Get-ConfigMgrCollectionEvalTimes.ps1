@@ -63,9 +63,7 @@ param
     [Parameter(Mandatory=$false)]
     [string]$CollEvalLogPath = "$env:SMS_LOG_PATH",
     [Parameter(Mandatory=$false)]
-    [string]$ProviderMachineName = $env:COMPUTERNAME,
-    [Parameter(Mandatory=$true)]
-    [string]$SiteCode
+    [string]$ProviderMachineName = $env:COMPUTERNAME
 )
 
 $collEvalSearchString = "(Start to process graph with (\d*) collections in \[(Primary|Auxiliary|Express|Single) Evaluator\])|Process graph with these collections \[.{8}(,|\])|Results refreshed for collection .*\d* entries changed|(Waiting for async query)|(EvaluateCollectionThread thread ends)"
@@ -76,7 +74,16 @@ $fullEvalList = Get-ChildItem -Path "$CollEvalLogPath\colleval*" | Sort-Object -
 
 # getting collection list
 $cimSession = New-CimSession -ComputerName $ProviderMachineName
-$listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$SiteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
+try
+{
+    $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query 'Select * From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode 
+}
+catch 
+{
+    Write-Warning 'Could not query Sitecode informations. Please enter SiteCode manually:'
+    $siteCode = Read-Host -Prompt 'Please enter SiteCode'
+}
+$listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
 $cimSession | Remove-CimSession
 if(-NOT ($listOfCollections))
 {
