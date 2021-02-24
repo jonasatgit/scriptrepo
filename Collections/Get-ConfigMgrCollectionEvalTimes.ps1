@@ -55,8 +55,6 @@
     Path to one or multiple colleval.log files. Will use SMS_LOG_PATH if nothing has been set.
 .PARAMETER ProviderMachineName
     Name of the SMS Provider. Will use local system if nothing has been set.
-.PARAMETER SiteCode
-    SiteCode of Site
 #>
 param
 (
