@@ -19,6 +19,8 @@
     Script to visualize the last ConfigMgr collection evaluations in a GridView
 
 .DESCRIPTION
+    Version: 20210225
+
     Script to visualize the last ConfigMgr collection evaluations in a GridView by parsing the colleval.log and colleval.lo_ files.
     Run the script on a ConfigMgr Primary Site Server or provide a valid path to the mentioned files via parameter -CollEvalLogPath
 
@@ -81,6 +83,7 @@ catch
     Write-Warning 'Could not query Sitecode informations. Please enter SiteCode manually:'
     $siteCode = Read-Host -Prompt 'Please enter SiteCode'
 }
+
 $listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
 $cimSession | Remove-CimSession
 if(-NOT ($listOfCollections))
@@ -88,10 +91,9 @@ if(-NOT ($listOfCollections))
     Write-Warning 'Could not get collection info from WMI, will proceed without collection names.'
 }
 
-$firstStartFound = $false
-$lastEndTime = $null
+
+$timeZoneOffset = $null
 $changeCount = 0
-$i = 0
 
 $objLoglineByThread = new-object System.Collections.ArrayList
 # group by thread ID to get the right entries together
@@ -100,12 +102,20 @@ foreach ($logLine in $fullEvalList.Line)
     # using property-bag for temp object
     $logLineObject = New-Object psobject | Select-Object Step, EvalType, CollectionCount, ChangeCount ,CollectionID, CollectionName, DateTime, StartTime, EndTime, Thread
     $matches = $null
-    $null = $logLine -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*).*(?<thread>thread=\d*)"
-
-    $logLineObject.DateTime = ($Matches.datetime)
+    
+    $null = $logLine -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<thread>thread=\d*)"
     $logLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
+    
+    # removing timezone offset plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
+    $datetimeSplit = ($Matches.datetime) -split '(\+|\-)\d*$'
+    $logLineObject.DateTime = [Datetime]::ParseExact($datetimeSplit[0], 'MM-dd-yyyy HH:mm:ss.fff', $null)
+    
+    if (-NOT($timeZoneOffset))
+    {
+        $null = $matches.datetime -match '(\+|\-)\d*$'
+        $timeZoneOffset = $matches[0]
+    }
     $matches = $null
-
 
     switch -Regex ($logLine) 
     {
@@ -114,7 +124,7 @@ foreach ($logLine in $fullEvalList.Line)
         {
             $logLineObject.step  = 1
             $logLineObject.CollectionCount = ($Matches.collectioncount).Trim()
-            $logLineObject.StartTime = get-date($logLineObject.datetime) -Format 'yyyy-MM-dd hh:mm:ss'
+            $logLineObject.StartTime = ($logLineObject.DateTime).ToString('yyyy-MM-dd HH:mm:ss') 
             
             switch (($Matches.action).Trim())
             {
@@ -176,7 +186,7 @@ foreach ($logLine in $fullEvalList.Line)
         "(EvaluateCollectionThread thread ends)"
         {
             $logLineObject.step  = 4
-            $logLineObject.EndTime = get-date($logLineObject.datetime) -Format 'yyyy-MM-dd hh:mm:ss'
+            $logLineObject.EndTime = ($logLineObject.DateTime).ToString('yyyy-MM-dd HH:mm:ss') 
             $Matches = $null
         }
         #EXAMPLE: Waiting for async query to complete, have waited 1234 seconds already.
@@ -280,6 +290,6 @@ $longestSingleRuntime = $outObj | Sort-Object -Property RunTimeInSeconds -Descen
 $longestSingleRuntimeMinutes = [System.Math]::Round($longestSingleRuntime.RunTimeInSeconds / 60)
 
 # output data
-$ogvTitle = "Collection Eval Times     -- Total runtime in last 24h: $([System.Math]::Round($runtimeLast24h)) minutes, longest single runtime: $($longestSingleRuntimeMinutes) minutes (thread: $($longestSingleRuntime.Thread)) --"
+$ogvTitle = "Collection Eval Times     -- Total runtime in last 24h: $([System.Math]::Round($runtimeLast24h)) minutes, longest single runtime: $($longestSingleRuntimeMinutes) minutes (thread: $($longestSingleRuntime.Thread)) TimezoneOffset: $($timezoneOffset) minutes --"
 $outObj | Sort-Object -Property EndTime -Descending | Out-GridView -Title $ogvTitle
 
