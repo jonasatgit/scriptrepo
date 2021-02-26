@@ -14,7 +14,7 @@ $scriptVersion = '20200212'
 #INFO: Always also use powershell 2.0 commands, in case powershell 2.0 is still in use
 #INFO: The script can be used whtin a baseline with a recurring schedule or as a script in ConfigMgr directly
 #INFO: Main purpose is to ensure 100% patch compliance
-# Source: https://github.com/jonasatgit/scriptrepo/tree/master/General
+# Source: https://github.com/jonasatgit/scriptrepo
 
 [int]$minutesToRestartBeforeMaintenanceEndTime = 10 # should be at least 4 minutes, otherwise the randomization might not work as expected
 [string]$scheduledTaskName = 'SCCM_Custom_Reboot' # name of the scheduled task

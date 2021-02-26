@@ -1,0 +1,252 @@
+{"ADRSchedules": {
+  "_DOCUMENTATION":
+  [
+    {
+      "REQUIRED SCRIPT VERSION": "20210215",
+      "UseOffsetDays": "Is a script parameter and can be used to force the script to run on a specific day after Patch Tuesday. Use Get-Help Create-PatchDeployments.ps1 for more info",
+      "DeleteOldUpdateGroups": "true or false without quotes -> true will delete old update groups with the same name and will honor the MaxUpdateGroupsToKeep value ",
+      "MaxUpdateGroupsToKeep": "1-n Number of update groups wich should not be deleted and kept",
+      "CollectionName": "Name of Collection to deploy Software Updates to", 
+      "UpdateGroups": ["Name of Update Group 1","Name of Update Group 2","Name of Update Group 3"],
+      "RemoveUpdateDeploymentsFirst": "true or false without quotes -> true will delete existing update deployments to the collection before deploying new ones. If set to false groups already deployed to the collection will be ignored",
+      "StartMonth": "Integer in quotes. 0 means the deployments will be created for the current month. 1 the next month, 2 the month after that and so on.",
+      "StartDayInMonth": "Either an integer in quotes like 1,2,3 and so on or the word Last for the last day of the month. This is the day to which the StartDays and DeadlineDays will be added to deploy to the exact day in a month. If set to more days a month has, the last day will be used!",
+      "StartWeekInMonth": "Integer in quotes. If set, StartDayInMonth will be ignored and StartWeekdayInMonth must be set. The week of the day configured in StartWeekdayInMonth",
+      "StartWeekdayInMonth": "Either Monday, Tuesday, Wednesday, Thirsday, Friday, Saturday or Sunday",
+      "StartDays": "7 -> Integer of days to set deployment start day starting from the second tuesday of each month", 
+      "StartTime": "22:00 -> String in the form of hh:mm to set start time for deployment", 
+      "DeadlineDays": "365 -> Integer of days to set deployment deadline starting from the second tuesday of each month", 
+      "DeadlineTime": "22:00 -> String in the form of hh:mm to set deadline time for deployment",
+      "The following settings are for parameters of the SCCM Cmdlet New-CMSoftwareUpdateDeployment": "try -> help New-CMSoftwareUpdateDeployment -> for parameter values ",
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required/Available will install updates as required or just available. BUT THE SCRIPT CURRENTLY ONLY SUPPORTS REQUIRED",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": "true or false without quotes to send WoL packages to clients",
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime or Utc",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplayAll, HideAll, DisplaySoftwareCenterOnly -> to show or not to show notifications in software center",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : "true or false without quotes -> true to allow update installation outside of maintenance windows",
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : "true or false without quotes -> true to allow restarts outside of maintenance windows",
+      "NewCMSoftwareUpdateDeploymentRestartServer" : "true or false without quotes -> true to supress restarts for servers",
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : "true or false without quotes -> true to supress restarts for workstations",
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : "true or false without quotes -> true to enable software update scan after reboot",
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint -> to configure distribution point download fallback behavior for neighbor boundary groups",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint -> to configure distribution point download fallback behavior for default site boundary group",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : "true or false without quotes -> true to enbale use of branch cache for clients",
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : "true or false without quotes -> true will download updates from the Internet if no DP has been found",
+      "SetCMSoftwareUpdateDeploymentEnable" : "true means deployment is enabled, false means, deployment is disabled."
+    }
+  ],
+  "DeleteUpdateGroups": 
+  [
+   {
+      "DeleteUpdateGroups": true,
+      "MinUpdateGroupsToKeep": 3,
+      "MaxUpdateGroupCreationDays": 45,
+      "DeleteUpdateGroupList": [
+                                 ]
+   }
+  ],
+  "ArchiveUpdateGroups": 
+  [
+   {
+      "ArchiveUpdateGroups": true,
+      "MinUpdateGroupsToKeep": 1,
+      "MaxUpdateGroupCreationDays": 45,
+      "ArchiveUpdateGroupList": [
+                                  "ADR - Server 2016 Security",
+                                  "ADR - Server 2019 Security",
+                                  "ADR - Office 2016 - Updates",
+                                  "ADR - Office 2019 - Updates"
+                                 ]
+   }
+  ],   
+  "ADRs": 
+  [
+   {
+      "CollectionName": "All Systems | Maintenance Window 05-08", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": true,
+      "StartMonth": "0",
+      "StartDayInMonth": "",
+      "StartWeekInMonth": "2",
+      "StartWeekdayInMonth": "Tuesday",
+      "StartDays": "0",
+      "StartTime": "22:00", 
+      "DeadlineDays": "1", 
+      "DeadlineTime": "22:00",
+      "SetCMSoftwareUpdateDeploymentEnable" : true,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     },
+     {
+      "CollectionName": "All Systems | Maintenance Window 06-09", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": false,
+      "StartMonth": "1",
+      "StartDayInMonth": "4",
+      "StartWeekInMonth": "",
+      "StartWeekdayInMonth": "",
+      "StartDays": "0", 
+      "StartTime": "02:00", 
+      "DeadlineDays": "1", 
+      "DeadlineTime": "23:50",
+      "SetCMSoftwareUpdateDeploymentEnable" : true,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Available",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     },
+     {
+      "CollectionName": "All Systems | Maintenance Window 10-13", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": false,
+      "StartMonth": "1",
+      "StartDayInMonth": "1",
+      "StartWeekInMonth": "",
+      "StartWeekdayInMonth": "",
+      "StartDays": "0", 
+      "StartTime": "00:00", 
+      "DeadlineDays": "0", 
+      "DeadlineTime": "00:00",
+      "SetCMSoftwareUpdateDeploymentEnable" : true,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Available",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     },
+     {
+      "CollectionName": "All Systems | Maintenance Window 13-14", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": false,
+      "StartMonth": "0",
+      "StartDayInMonth": "Last",
+      "StartWeekInMonth": "",
+      "StartWeekdayInMonth": "",
+      "StartDays": "0", 
+      "StartTime": "22:00", 
+      "DeadlineDays": "1", 
+      "DeadlineTime": "22:00",
+      "SetCMSoftwareUpdateDeploymentEnable" : true,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Available",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     },
+     {
+      "CollectionName": "All Systems | Maintenance Window Week1", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": true,
+      "StartMonth": "1",
+      "StartDayInMonth": "1",
+      "StartWeekInMonth": "",
+      "StartWeekdayInMonth": "",
+      "StartDays": "0", 
+      "StartTime": "00:00", 
+      "DeadlineDays": "0", 
+      "DeadlineTime": "00:00",
+      "SetCMSoftwareUpdateDeploymentEnable" : true,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Available",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     },
+     {
+      "CollectionName": "All Systems | Maintenance Window Week3", 
+      "UpdateGroups": [
+                        "ADR - Server 2016 Security",
+                        "ADR - Server 2019 Security"
+                      ],
+      "RemoveUpdateDeploymentsFirst": true,
+      "StartMonth": "1",
+      "StartDayInMonth": "1",
+      "StartWeekInMonth": "",
+      "StartWeekdayInMonth": "",
+      "StartDays": "14", 
+      "StartTime": "00:00", 
+      "DeadlineDays": "14", 
+      "DeadlineTime": "00:00",
+      "SetCMSoftwareUpdateDeploymentEnable" : false,
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required",
+      "NewCMSoftwareUpdateDeploymentSendWakeupPacket": false,
+      "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
+      "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime",
+      "NewCMSoftwareUpdateDeploymentUserNotification" : "DisplaySoftwareCenterOnly",
+      "NewCMSoftwareUpdateDeploymentSoftwareInstallation" : false,
+      "NewCMSoftwareUpdateDeploymentAllowRestart" : false,
+      "NewCMSoftwareUpdateDeploymentRestartServer" : false,
+      "NewCMSoftwareUpdateDeploymentRestartWorkstation" : false,
+      "NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan" : true,
+      "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint",
+      "NewCMSoftwareUpdateDeploymentUseBranchCache" : true,
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : false
+     }
+  ]
+}
+}
