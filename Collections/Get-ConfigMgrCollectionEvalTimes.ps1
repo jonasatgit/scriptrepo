@@ -57,13 +57,18 @@
     Path to one or multiple colleval.log files. Will use SMS_LOG_PATH if nothing has been set.
 .PARAMETER ProviderMachineName
     Name of the SMS Provider. Will use local system if nothing has been set.
+.PARAMETER IgnoreCollectionInfo
+    Switch to prevent the script from connecting to the SMS Provider and to ignore the Collection names. The output will only contain the CollectionID. 
+    Helpful if the logs are copied to a machine without connection to the SMS Provider.
 #>
 param
 (
     [Parameter(Mandatory=$false)]
     [string]$CollEvalLogPath = "$env:SMS_LOG_PATH",
     [Parameter(Mandatory=$false)]
-    [string]$ProviderMachineName = $env:COMPUTERNAME
+    [string]$ProviderMachineName = $env:COMPUTERNAME,
+    [Parameter(Mandatory=$false)]
+    [switch]$IgnoreCollectionInfo
 )
 
 $collEvalSearchString = "(Start to process graph with (\d*) collections in \[(Primary|Auxiliary|Express|Single) Evaluator\])|Process graph with these collections \[.{8}(,|\])|Results refreshed for collection .*\d* entries changed|(Waiting for async query)|(EvaluateCollectionThread thread ends)"
@@ -71,6 +76,8 @@ $collEvalSearchString = "(Start to process graph with (\d*) collections in \[(Pr
 # parsing log file/s
 $fullEvalList = Get-ChildItem -Path "$CollEvalLogPath\colleval*" | Sort-Object -Property LastWriteTime | Select-String -Pattern $collEvalSearchString
 
+# removing duplicates in case colleval logs have been copied multiple times
+$fullEvalListUniqueLines = $fullEvalList.Line | Select-Object -Unique
 
 # getting collection list
 $cimSession = New-CimSession -ComputerName $ProviderMachineName
@@ -84,20 +91,34 @@ catch
     $siteCode = Read-Host -Prompt 'Please enter SiteCode'
 }
 
-$listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
-$cimSession | Remove-CimSession
-if(-NOT ($listOfCollections))
+if (-NOT ($IgnoreCollectionInfo))
 {
-    Write-Warning 'Could not get collection info from WMI, will proceed without collection names.'
-}
+    # getting collection list
+    $cimSession = New-CimSession -ComputerName $ProviderMachineName
+    try
+    {
+        $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode 
+    }
+    catch 
+    {
+        Write-Warning 'Could not query Sitecode informations. Please enter SiteCode manually:'
+        $siteCode = Read-Host -Prompt 'Please enter SiteCode'
+    }
 
+    $listOfCollections = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "select CollectionID, Name, Membercount from sms_collection"
+    $cimSession | Remove-CimSession
+    if(-NOT ($listOfCollections))
+    {
+        Write-Warning 'Could not get collection info from WMI, will proceed without collection names.'
+    }
+}
 
 $timeZoneOffset = $null
 $changeCount = 0
 
 $objLoglineByThread = new-object System.Collections.ArrayList
 # group by thread ID to get the right entries together
-foreach ($logLine in $fullEvalList.Line)
+foreach ($logLine in $fullEvalListUniqueLines)
 {
     # using property-bag for temp object
     $logLineObject = New-Object psobject | Select-Object Step, EvalType, CollectionCount, ChangeCount ,CollectionID, CollectionName, DateTime, StartTime, EndTime, Thread
