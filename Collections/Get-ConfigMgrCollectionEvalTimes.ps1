@@ -79,25 +79,13 @@ $fullEvalList = Get-ChildItem -Path "$CollEvalLogPath\colleval*" | Sort-Object -
 # removing duplicates in case colleval logs have been copied multiple times
 $fullEvalListUniqueLines = $fullEvalList.Line | Select-Object -Unique
 
-# getting collection list
-$cimSession = New-CimSession -ComputerName $ProviderMachineName
-try
-{
-    $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query "Select * From SMS_ProviderLocation Where ProviderForLocalSite=1" -ErrorAction Stop | Select-Object -ExpandProperty SiteCode -First 1
-}
-catch 
-{
-    Write-Warning 'Could not query Sitecode informations. Please enter SiteCode manually:'
-    $siteCode = Read-Host -Prompt 'Please enter SiteCode'
-}
-
 if (-NOT ($IgnoreCollectionInfo))
 {
     # getting collection list
     $cimSession = New-CimSession -ComputerName $ProviderMachineName
     try
     {
-        $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode 
+        $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode -First 1
     }
     catch 
     {
