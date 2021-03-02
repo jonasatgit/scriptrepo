@@ -19,7 +19,7 @@
     Script to visualize the last ConfigMgr collection evaluations in a GridView
 
 .DESCRIPTION
-    Version: 20210225
+    Version: 20210302
 
     Script to visualize the last ConfigMgr collection evaluations in a GridView by parsing the colleval.log and colleval.lo_ files.
     Run the script on a ConfigMgr Primary Site Server or provide a valid path to the mentioned files via parameter -CollEvalLogPath
@@ -76,7 +76,7 @@ $fullEvalList = Get-ChildItem -Path "$CollEvalLogPath\colleval*" | Sort-Object -
 $cimSession = New-CimSession -ComputerName $ProviderMachineName
 try
 {
-    $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query 'Select * From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode 
+    $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms  -Query "Select * From SMS_ProviderLocation Where ProviderForLocalSite=1" -ErrorAction Stop | Select-Object -ExpandProperty SiteCode -First 1
 }
 catch 
 {
