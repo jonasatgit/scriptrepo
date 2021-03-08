@@ -202,7 +202,11 @@ if($ServiceWindows)
 try
 {
 	Get-ScheduledTask -TaskName $ScheduledTaskName -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
-}Catch{}
+}
+Catch
+{
+    Log-Line "$_" # Display Error
+}
 
 # if we have an endtime, register the task
 if ($EndTime)

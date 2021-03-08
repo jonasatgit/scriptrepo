@@ -472,7 +472,7 @@ function New-SCCMSoftwareUpdateDeployment
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [object]$Schedules,
+        [object]$Schedule,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [string]$SiteCode,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
@@ -488,33 +488,32 @@ function New-SCCMSoftwareUpdateDeployment
     Process
     {
  
-        foreach ($Schedule in $Schedules)
-        {
-            $i++
-            Write-ScriptLog -Message "------------------------------" -Component $comp
-            Write-ScriptLog -Message "COLLECTION $i of $($schedulesWithDate.CollectionName.count):" -Component $comp
-            Write-ScriptLog -Message "    `"$(($Schedule.CollectionName).ToUpper())`" -> of deployment process for collection..." -Component $comp
-            Write-ScriptLog -Message "    " -Component $comp
-            Write-ScriptLog -Message "    DEPLOYMENT SETTINGS:" -Component $comp
-            Write-ScriptLog -Message "    Deployment enabled ------------------------------>> $($Schedule.SetCMSoftwareUpdateDeploymentEnable)" -Component $comp
-            Write-ScriptLog -Message "    RemoveUpdateDeploymentsFirst--------------------->> $($Schedule.RemoveUpdateDeploymentsFirst)" -Component $comp
-            Write-ScriptLog -Message "    StartDateTime ----------------------------------->> $($Schedule.StartDatetime)" -Component $comp
-            Write-ScriptLog -Message "    DeadlineDateTime: ------------------------------->> $($Schedule.DeadlineDateTime)" -Component $comp
-            Write-ScriptLog -Message "    DeploymentType: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)" -Component $comp
-            Write-ScriptLog -Message "    Use WoL: ---------------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)" -Component $comp
-            Write-ScriptLog -Message "    VerbosityLevel: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)" -Component $comp
-            Write-ScriptLog -Message "    TimeBasedOn: ------------------------------------>> $($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)" -Component $comp
-            Write-ScriptLog -Message "    UserNotification: ------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)" -Component $comp
-            Write-ScriptLog -Message "    SoftwareInstallation outside of Maintenance: ---->> $($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)" -Component $comp
-            Write-ScriptLog -Message "    AllowRestart  outside of Maintenance: ----------->> $($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)" -Component $comp
-            Write-ScriptLog -Message "    Supress RestartServer: -------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)" -Component $comp
-            Write-ScriptLog -Message "    Supress RestartWorkstation: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)" -Component $comp
-            Write-ScriptLog -Message "    PostRebootFullScan if Update needs restart: ----->> $($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)" -Component $comp
-            Write-ScriptLog -Message "    DP Download ProtectedType: ---------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)" -Component $comp
-            Write-ScriptLog -Message "    DP Download UnprotectedType: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)" -Component $comp
-            Write-ScriptLog -Message "    UseBranchCache if possible: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)" -Component $comp
-			Write-ScriptLog -Message "    DownloadFromMicrosoftUpdate: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)" -Component $comp
-            Write-ScriptLog -Message "    " -Component $comp
+  
+       $i++
+       Write-ScriptLog -Message "------------------------------" -Component $comp
+       Write-ScriptLog -Message "COLLECTION $i of $($schedulesWithDate.CollectionName.count):" -Component $comp
+       Write-ScriptLog -Message "    `"$(($Schedule.CollectionName).ToUpper())`" -> of deployment process for collection..." -Component $comp
+       Write-ScriptLog -Message "    " -Component $comp
+       Write-ScriptLog -Message "    DEPLOYMENT SETTINGS:" -Component $comp
+       Write-ScriptLog -Message "    Deployment enabled ------------------------------>> $($Schedule.SetCMSoftwareUpdateDeploymentEnable)" -Component $comp
+       Write-ScriptLog -Message "    RemoveUpdateDeploymentsFirst--------------------->> $($Schedule.RemoveUpdateDeploymentsFirst)" -Component $comp
+       Write-ScriptLog -Message "    StartDateTime ----------------------------------->> $($Schedule.StartDatetime)" -Component $comp
+       Write-ScriptLog -Message "    DeadlineDateTime: ------------------------------->> $($Schedule.DeadlineDateTime)" -Component $comp
+       Write-ScriptLog -Message "    DeploymentType: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)" -Component $comp
+       Write-ScriptLog -Message "    Use WoL: ---------------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)" -Component $comp
+       Write-ScriptLog -Message "    VerbosityLevel: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)" -Component $comp
+       Write-ScriptLog -Message "    TimeBasedOn: ------------------------------------>> $($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)" -Component $comp
+       Write-ScriptLog -Message "    UserNotification: ------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)" -Component $comp
+       Write-ScriptLog -Message "    SoftwareInstallation outside of Maintenance: ---->> $($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)" -Component $comp
+       Write-ScriptLog -Message "    AllowRestart  outside of Maintenance: ----------->> $($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)" -Component $comp
+       Write-ScriptLog -Message "    Supress RestartServer: -------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)" -Component $comp
+       Write-ScriptLog -Message "    Supress RestartWorkstation: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)" -Component $comp
+       Write-ScriptLog -Message "    PostRebootFullScan if Update needs restart: ----->> $($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)" -Component $comp
+       Write-ScriptLog -Message "    DP Download ProtectedType: ---------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)" -Component $comp
+       Write-ScriptLog -Message "    DP Download UnprotectedType: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)" -Component $comp
+       Write-ScriptLog -Message "    UseBranchCache if possible: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)" -Component $comp
+	   Write-ScriptLog -Message "    DownloadFromMicrosoftUpdate: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)" -Component $comp
+       Write-ScriptLog -Message "    " -Component $comp
 
             <#
                 There are two main processes here:
@@ -783,7 +782,6 @@ function New-SCCMSoftwareUpdateDeployment
                 $global:ErrorOutput = $true
             } # end -> if($checkCollection)
 
-        } #end -> foreach ($Schedule in $Schedules)
 
     } # end -> function process
 
@@ -1277,7 +1275,7 @@ else
 # this section will convert the intiger values to actual datetimes based in the startdate. So 7 days from the 2nd Tuesday are differnt than 7 days from the first day of the month
 try
 { 
-    $schedulesWithDate = ""
+    $schedulesWithDate = [string]::Empty
     if (-NOT ($Deploy))
     {
         # output schedules if they should not be deployed automatically
