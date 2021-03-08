@@ -54,6 +54,9 @@ Use offset days to restrict the day the script can run to a certain day after pa
 When run within a scheduled task: 
 "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass –NoProfile -Noninteractive –Command "& {"D:\CUSTOM\Create-PatchDeployments.ps1" -ScheduleDefinitionFile "D:\CUSTOM\ScheduleServerDeployments.json -Deploy"; exit $LASTEXITCODE}"
 
+.LINK
+https://github.com/jonasatgit/scriptrepo
+
 #>
 [CmdletBinding(DefaultParametersetName='None')]
 param
@@ -73,7 +76,7 @@ param
 
 
 #region PARAMETERS 
-[string]$ScriptVersion = "20210215"
+[string]$ScriptVersion = "20210308"
 [string]$global:Component = $MyInvocation.MyCommand
 [string]$global:LogFile = "$($PSScriptRoot)\$($global:Component).Log"
 [bool]$global:ErrorOutput = $false
@@ -162,13 +165,13 @@ Function Write-ScriptLog
     $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
 
     #Create the line to be logged
-    $LogLine =  "<![LOG[$Message]LOG]!>" +`
-                "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
-                "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
-                "component=`"$Component`" " +` 
-                "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
-                "type=`"$cmSeverity`" " +`
-                "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " +`
+    $LogLine =  "<![LOG[$Message]LOG]!>" +
+                "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +
+                "date=`"$(Get-Date -Format M-d-yyyy)`" " +
+                "component=`"$Component`" " +
+                "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +
+                "type=`"$cmSeverity`" " +
+                "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " +
                 "file=`"`">"
 
     #Write the line to the passed log file
@@ -197,7 +200,7 @@ Param(
       $Logfile,
       
       #max Size in KB
-      [parameter(Mandatory=$True)]
+      [parameter(Mandatory=$false)]
       [int]$MaxFileSizeKB = 1024
     )
 
@@ -240,8 +243,8 @@ function Get-SCCMSiteInfo
     {
         # registry: need to be admin to read
         #$SiteCode = (Get-ItemProperty -Path "Registry::HKLM\SOFTWARE\Microsoft\SMS\Identification" -Name "Site Code" -ErrorAction Stop).'Site Code'
-        # wmi: don't need to be admin to read (Assuming just one single site is installed)
-        $ProviderInfo = (Get-WmiObject -Namespace root\sms -query "select SiteCode, Machine from SMS_ProviderLocation where ProviderForLocalSite = True") | Select-Object SiteCode, Machine
+        # wmi: don't need to be admin to read
+        $ProviderInfo = (Get-WmiObject -Namespace root\sms -query "select SiteCode, Machine from SMS_ProviderLocation where ProviderForLocalSite = True") | Select-Object SiteCode, Machine -First 1
     }
     catch
     {
@@ -388,64 +391,61 @@ function Get-ADRScheduleTimes
     Param
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [object]$Schedules
+        [object]$Schedule
     )
  
     Begin
     {
         $arrayList = New-Object System.Collections.ArrayList
+        $comp = ($MyInvocation.MyCommand)
     }
     Process
     {
-        
-        foreach ($Schedule in $Schedules)
+        $DateFormat = "yyyy-MM-dd"
+        # calculate base-startdate first, to make sure we pick the right date in the right month
+        # determine if we need to calculate the day or the week and the day of the month
+        # this will define the base date from wich we will deploy based on what is set in "$Schedule.StartDays" and "$Schedule.DeadlineDays"
+        if ($Schedule.StartWeekInMonth -and $Schedule.StartWeekdayInMonth)
         {
-            $DateFormat = "yyyy-MM-dd"
-            # calculate base-startdate first, to make sure we pick the right date in the right month
-            # determine if we need to calculate the day or the week and the day of the month
-            # this will define the base date from wich we will deploy based on what is set in "$Schedule.StartDays" and "$Schedule.DeadlineDays"
-            if ($Schedule.StartWeekInMonth -and $Schedule.StartWeekdayInMonth)
+            # we need to find the day and the week of the month. Like the 2nd Tuesday for example.  
+            $baseStartDate = Find-DayOfWeek -Weekday ($Schedule.StartWeekdayInMonth) -Week ($Schedule.StartWeekInMonth) -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
+        }
+        else
+        {
+            if(-NOT($Schedule.StartDayInMonth))
             {
-                # we need to find the day and the week of the month. Like the 2nd Tuesday for example.  
-                $baseStartDate = Find-DayOfWeek -Weekday ($Schedule.StartWeekdayInMonth) -Week ($Schedule.StartWeekInMonth) -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
+                # day in month is missing, using last day of month
+                Write-ScriptLog -Message "Day in month is missing, using last day of month for: `"$($Schedule.CollectionName)`"" -Component $comp -Severity Warning
+                $baseStartDate = Find-DayOfMonth -LastDayOfMonth -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
             }
             else
             {
-                if(-NOT($Schedule.StartDayInMonth))
+                # we need to find the day of a month
+                if ($Schedule.StartDayInMonth -ieq 'Last')
                 {
-                    # day in month is missing, using last day of month
-                    # WARNING!!!
                     $baseStartDate = Find-DayOfMonth -LastDayOfMonth -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
                 }
                 else
                 {
-                    # we need to find the day of a month
-                    if ($Schedule.StartDayInMonth -ieq 'Last')
-                    {
-                        $baseStartDate = Find-DayOfMonth -LastDayOfMonth -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
-                    }
-                    else
-                    {
-                        $baseStartDate = Find-DayOfMonth -DayOfMonth $Schedule.StartDayInMonth -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
-                    }
+                    $baseStartDate = Find-DayOfMonth -DayOfMonth $Schedule.StartDayInMonth -Time ($Schedule.StartTime) -StartDate ((Get-Date).AddMonths($Schedule.StartMonth))
                 }
             }
-
-            # add start and deadline days to baseStartdate and add time
-            $startDateTime = (Get-Date($baseStartDate)).AddDays(($Schedule.StartDays))
-            $startDateTime = Get-Date($startDateTime) -format "$DateFormat $($Schedule.StartTime)"
-
-            $deadlineDateTime = (Get-Date($baseStartDate)).AddDays(($Schedule.DeadlineDays))
-            $deadlineDateTime = Get-Date($deadlineDateTime) -format "$DateFormat $($Schedule.DeadlineTime)"
-
-            # copy object to add new properties and to not change the existing object
-            $obScheduleOut = $Schedule.psobject.copy()
-            # add schedule times to object
-            $obScheduleOut | Add-Member -MemberType NoteProperty -Name StartDateTime -Value ($startDateTime)
-            $obScheduleOut | Add-Member -MemberType NoteProperty -Name DeadlineDatetime -Value ($deadlineDateTime)
-
-            [void]$arrayList.Add($obScheduleOut)
         }
+
+        # add start and deadline days to baseStartdate and add time
+        $startDateTime = (Get-Date($baseStartDate)).AddDays(($Schedule.StartDays))
+        $startDateTime = Get-Date($startDateTime) -format "$DateFormat $($Schedule.StartTime)"
+
+        $deadlineDateTime = (Get-Date($baseStartDate)).AddDays(($Schedule.DeadlineDays))
+        $deadlineDateTime = Get-Date($deadlineDateTime) -format "$DateFormat $($Schedule.DeadlineTime)"
+
+        # copy object to add new properties and to not change the existing object
+        $obScheduleOut = $Schedule.psobject.copy()
+        # add schedule times to object
+        $obScheduleOut | Add-Member -MemberType NoteProperty -Name StartDateTime -Value ($startDateTime)
+        $obScheduleOut | Add-Member -MemberType NoteProperty -Name DeadlineDatetime -Value ($deadlineDateTime)
+
+        [void]$arrayList.Add($obScheduleOut)
     }
     End
     {
@@ -473,76 +473,229 @@ function New-SCCMSoftwareUpdateDeployment
     (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$Schedule,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [int]$CollectionCount,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [string]$SiteCode,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [string]$ProviderMachineName														 
-
+        [string]$ProviderMachineName
     )
  
     Begin
     {
-            $i=0
-            $comp = ($MyInvocation.MyCommand)
+        $i=0
+        $comp = ($MyInvocation.MyCommand)
     }
     Process
     {
- 
-  
-       $i++
-       Write-ScriptLog -Message "------------------------------" -Component $comp
-       Write-ScriptLog -Message "COLLECTION $i of $($schedulesWithDate.CollectionName.count):" -Component $comp
-       Write-ScriptLog -Message "    `"$(($Schedule.CollectionName).ToUpper())`" -> of deployment process for collection..." -Component $comp
-       Write-ScriptLog -Message "    " -Component $comp
-       Write-ScriptLog -Message "    DEPLOYMENT SETTINGS:" -Component $comp
-       Write-ScriptLog -Message "    Deployment enabled ------------------------------>> $($Schedule.SetCMSoftwareUpdateDeploymentEnable)" -Component $comp
-       Write-ScriptLog -Message "    RemoveUpdateDeploymentsFirst--------------------->> $($Schedule.RemoveUpdateDeploymentsFirst)" -Component $comp
-       Write-ScriptLog -Message "    StartDateTime ----------------------------------->> $($Schedule.StartDatetime)" -Component $comp
-       Write-ScriptLog -Message "    DeadlineDateTime: ------------------------------->> $($Schedule.DeadlineDateTime)" -Component $comp
-       Write-ScriptLog -Message "    DeploymentType: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)" -Component $comp
-       Write-ScriptLog -Message "    Use WoL: ---------------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)" -Component $comp
-       Write-ScriptLog -Message "    VerbosityLevel: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)" -Component $comp
-       Write-ScriptLog -Message "    TimeBasedOn: ------------------------------------>> $($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)" -Component $comp
-       Write-ScriptLog -Message "    UserNotification: ------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)" -Component $comp
-       Write-ScriptLog -Message "    SoftwareInstallation outside of Maintenance: ---->> $($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)" -Component $comp
-       Write-ScriptLog -Message "    AllowRestart  outside of Maintenance: ----------->> $($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)" -Component $comp
-       Write-ScriptLog -Message "    Supress RestartServer: -------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)" -Component $comp
-       Write-ScriptLog -Message "    Supress RestartWorkstation: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)" -Component $comp
-       Write-ScriptLog -Message "    PostRebootFullScan if Update needs restart: ----->> $($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)" -Component $comp
-       Write-ScriptLog -Message "    DP Download ProtectedType: ---------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)" -Component $comp
-       Write-ScriptLog -Message "    DP Download UnprotectedType: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)" -Component $comp
-       Write-ScriptLog -Message "    UseBranchCache if possible: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)" -Component $comp
-	   Write-ScriptLog -Message "    DownloadFromMicrosoftUpdate: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)" -Component $comp
-       Write-ScriptLog -Message "    " -Component $comp
+        $i++
+        Write-ScriptLog -Message "------------------------------" -Component $comp
+        Write-ScriptLog -Message "COLLECTION $i of $($CollectionCount):" -Component $comp
+        Write-ScriptLog -Message "    `"$(($Schedule.CollectionName).ToUpper())`" -> of deployment process for collection..." -Component $comp
+        Write-ScriptLog -Message "    " -Component $comp
+        Write-ScriptLog -Message "    DEPLOYMENT SETTINGS:" -Component $comp
+        Write-ScriptLog -Message "    Deployment enabled ------------------------------>> $($Schedule.SetCMSoftwareUpdateDeploymentEnable)" -Component $comp
+        Write-ScriptLog -Message "    RemoveUpdateDeploymentsFirst--------------------->> $($Schedule.RemoveUpdateDeploymentsFirst)" -Component $comp
+        Write-ScriptLog -Message "    StartDateTime ----------------------------------->> $($Schedule.StartDatetime)" -Component $comp
+        Write-ScriptLog -Message "    DeadlineDateTime: ------------------------------->> $($Schedule.DeadlineDateTime)" -Component $comp
+        Write-ScriptLog -Message "    DeploymentType: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)" -Component $comp
+        Write-ScriptLog -Message "    Use WoL: ---------------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)" -Component $comp
+        Write-ScriptLog -Message "    VerbosityLevel: --------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)" -Component $comp
+        Write-ScriptLog -Message "    TimeBasedOn: ------------------------------------>> $($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)" -Component $comp
+        Write-ScriptLog -Message "    UserNotification: ------------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)" -Component $comp
+        Write-ScriptLog -Message "    SoftwareInstallation outside of Maintenance: ---->> $($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)" -Component $comp
+        Write-ScriptLog -Message "    AllowRestart  outside of Maintenance: ----------->> $($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)" -Component $comp
+        Write-ScriptLog -Message "    Supress RestartServer: -------------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)" -Component $comp
+        Write-ScriptLog -Message "    Supress RestartWorkstation: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)" -Component $comp
+        Write-ScriptLog -Message "    PostRebootFullScan if Update needs restart: ----->> $($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)" -Component $comp
+        Write-ScriptLog -Message "    DP Download ProtectedType: ---------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)" -Component $comp
+        Write-ScriptLog -Message "    DP Download UnprotectedType: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)" -Component $comp
+        Write-ScriptLog -Message "    UseBranchCache if possible: --------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)" -Component $comp
+        Write-ScriptLog -Message "    DownloadFromMicrosoftUpdate: -------------------->> $($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)" -Component $comp
+        Write-ScriptLog -Message "    " -Component $comp
 
-            <#
-                There are two main processes here:
-                #1 Clean all update deployments from the collection and deploy new update groups.
-                #2 Leave the deployments as they are and just deploy new update groups, which are not yet deployed
+        <#
+            There are two main processes here:
+            #1 Clean all update deployments from the collection and deploy new update groups.
+            #2 Leave the deployments as they are and just deploy new update groups, which are not yet deployed
 
-                In both cases older groups could be deleted if set so in the JSON file
-            #>
+            In both cases older groups could be deleted or archived if set so in the JSON file
+        #>
 
-            # checking existence of collection first
+        # checking existence of collection first
+        try
+        {
+            $checkCollection = Get-CMCollection -Name "$($Schedule.CollectionName)" -ErrorAction Stop
+        }
+        catch
+        {
+            Write-ScriptLog -Message "Could not get collection: `"$($Schedule.CollectionName)`"" -Severity Error -Component $comp
+            Write-ScriptLog -Message "$($Error[0].Exception)" -Severity Error -Component $comp   
+            $global:ErrorOutput = $true 
+            break             
+        }
+
+        if ($checkCollection)
+        {
+                
+            #check if we need to remove the deployments first
+            if ($Schedule.RemoveUpdateDeploymentsFirst -eq $true)
+            {
+                # remove existing deployments first
+                # if error occurs, retry for 3 times
+                # 0x80004005 might happen in some SQL deadlock situations with update deployments 
+                [bool]$noError = $true
+                [int]$maxRetries = 3
+                [int]$retryCounter = 0
+                [int]$retyTimoutInSeconds = 180
+                do
+                {
+                    try
+                    {
+                        Write-ScriptLog -Message "    DEPLOYMENT REMOVAL:" -Component $comp
+                        $noError = $true
+                        [array]$softwareUpdateDeployments = Get-CMSoftwareUpdateDeployment -CollectionName "$($Schedule.CollectionName)" -ErrorAction Stop
+                        Write-ScriptLog -Message "        Found $($softwareUpdateDeployments.Count) update deployments." -Component $comp
+                        if ($softwareUpdateDeployments.Count -ge 1)
+                        {
+                            $softwareUpdateDeployments | Remove-CMSoftwareUpdateDeployment -Force -ErrorAction Stop
+                        }
+
+                    }
+                    catch
+                    {
+                        Write-ScriptLog -Message "        Could not remove deployment!" -Severity Error -Component $comp 
+                        Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
+                        Write-ScriptLog -Message "        will retry for $maxRetries times" -Component $comp
+                        Write-ScriptLog -Message "        will also wait for $retyTimoutInSeconds seconds" -Component $comp
+                        $noError = $false
+                        $retryCounter++
+                        Start-Sleep -Seconds $retyTimoutInSeconds
+                    }
+                }
+                until ($noError -or $retryCounter -ge  $maxRetries)
+
+                if(($noError -eq $false) -or ($retryCounter -ge  $maxRetries))
+                {
+                    Write-ScriptLog -Message "    Too many errors trying to delete deployments. Stopping Script!" -Severity Error -Component $comp    
+                    Stop-ScriptExec -exitCode 1
+                }
+
+                if ($softwareUpdateDeployments.Count -ge 1)
+                {
+                    Write-ScriptLog -Message "        Update deployments successfully removed!" -Component $comp
+                    Write-ScriptLog -Message "        Will wait 10 seconds for process to finish..." -Component $comp
+                    # wait for 10 seconds so that delete command can finish
+                    Start-Sleep -Seconds 10
+                }
+            } # end update deployment removal
+
+            # getting assigments IDs and group IDs to check if the group we choose is deployed already
             try
             {
-                $checkCollection = Get-CMCollection -Name "$($Schedule.CollectionName)" -ErrorAction Stop
+                [array]$updateGroupAssignmentPerCollection = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "select AssignmentID, AssignedUpdateGroup, TargetCollectionID from SMS_UpdateGroupAssignment where TargetCollectionID ='$($checkCollection.CollectionID)'" -ErrorAction Stop
             }
-            catch
-            {																																															   
-                Write-ScriptLog -Message "Could not get collection: `"$($Schedule.CollectionName)`"" -Severity Error -Component $comp
-                Write-ScriptLog -Message "$($Error[0].Exception)" -Severity Error -Component $comp   
-                $global:ErrorOutput = $true 
-                break             
-            }
-
-            if ($checkCollection)
+            Catch
             {
+                Write-ScriptLog -Message "        Could not get updategroup assignements from SMS_UpdateGroupAssignment for TargetCollectionID $($checkCollection.CollectionID)" -Severity Error -Component $comp 
+                Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
+                $global:ErrorOutput = $true
+                break
+            }    
                 
-                #check if we need to remove the deployments first
-                if ($Schedule.RemoveUpdateDeploymentsFirst -eq $true)
+            # checking update groups and starting deployment process
+            # creating list of groups for deployment process
+            $groupsForDeploymentProcess = New-Object System.Collections.ArrayList
+            Write-ScriptLog -Message "    GROUP SELECTION:" -Component $comp
+            # pick latest update group, check if already deployed and delete group if set so via script parameter
+            foreach ($UpdateGroup in $Schedule.UpdateGroups)
+            {
+                Write-ScriptLog -Message "        Working on group: `"$UpdateGroup`"" -Component $comp
+
+                # get groups per name and sort by creation date to be able to delete the older ones
+                # used get-wmiobject to speed up the process, because Get-CMSoftwareUpdateGroup will also load lazy properties
+                try
                 {
-                    # remove existing deployments first
+                    [array]$UpdateGroupObjects = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "Select CI_ID, LocalizedDisplayName, DateCreated from SMS_AuthorizationList where LocalizedDisplayName like '$($UpdateGroup)%'" -ErrorAction Stop
+                }
+                Catch
+                {
+                    Write-ScriptLog -Message "        Could not get updategroups with name like $UpdateGroup%" -Severity Error -Component $comp 
+                    Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
+                    $global:ErrorOutput = $true  
+                }                    
+
+                if ($UpdateGroupObjects)
+                {
+                    [array]$UpdateGroupObjectsSorted = $UpdateGroupObjects | Sort-Object DateCreated -Descending 
+                    Write-ScriptLog -Message "            Found $($UpdateGroupObjects.Count) with same name." -Component $comp
+                    Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" is latest group (based on DateCreated) and will be used for deployment" -Component $comp
+
+                    # check if latest group is already deployed if the deployments schould not be removed
+                    if ($UpdateGroupObjectsSorted[0].CI_ID -in $updateGroupAssignmentPerCollection.AssignedUpdateGroup)
+                    {
+                        Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" already deployed. Will skip group!" -Severity Warning -Component $comp 
+                    }
+                    else
+                    {
+                        $tmpUpdGroupObj = New-Object psobject | Select-Object UpdateGroupCIID, LocalizedDisplayName, DeploymentName, DeploymentDescription
+                        # deploy using the first group in the list
+                            
+                        $tmpUpdGroupObj.UpdateGroupCIID = $UpdateGroupObjectsSorted[0].CI_ID
+                        $tmpUpdGroupObj.LocalizedDisplayName = $UpdateGroupObjectsSorted[0].LocalizedDisplayName
+                        # like 20181212-0346
+                        $DeploymenNameSuffix = Get-date -format "yyyyMMdd-hhmmss"
+                        $tmpUpdGroupObj.DeploymentName = "$UpdateGroup $DeploymenNameSuffix"
+                        $tmpUpdGroupObj.DeploymentDescription = "$UpdateGroup $DeploymenNameSuffix"
+
+                        [void]$groupsForDeploymentProcess.Add($tmpUpdGroupObj)
+                    }
+                } 
+                else 
+                {
+                    Write-ScriptLog -Message "            No group like `"$UpdateGroup`" found!" -Severity Error -Component $comp
+                    $global:ErrorOutput = $true
+                } #END  if ($UpdateGroupObjects.Count -gt 0)
+            } #END foreach group
+                
+            if ($groupsForDeploymentProcess)
+            {
+                Write-ScriptLog -Message "    UPDATE DEPLOYMENTS:" -Severity Information -Component $comp
+                Write-ScriptLog -Message "            Selected $($groupsForDeploymentProcess.Count) group/s for Deployment" -Severity Information -Component $comp
+
+                foreach($updateGroupForDeployment in $groupsForDeploymentProcess)
+                {
+                    $paramSplatting = [ordered]@{
+                                SoftwareUpdateGroupId = $updateGroupForDeployment.UpdateGroupCIID
+                                CollectionName = $($Schedule.CollectionName)
+                                DeploymentName = $updateGroupForDeployment.DeploymentName
+                                Description = $updateGroupForDeployment.DeploymentDescription
+                                DeploymentType = ($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)
+                                SendWakeupPacket = ($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)
+                                VerbosityLevel = ($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)
+                                TimeBasedOn = ($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)
+                                AvailableDateTime = ($Schedule.StartDatetime)
+                                UserNotification = ($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)
+                                SoftwareInstallation = ($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)
+                                AllowRestart = ($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)
+                                RestartServer = ($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)
+                                RestartWorkstation = ($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)
+                                PersistOnWriteFilterDevice = $false
+                                GenerateSuccessAlert = $false
+                                ProtectedType = ($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)
+                                UnprotectedType = ($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)
+                                UseBranchCache = ($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)
+                                RequirePostRebootFullScan = ($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)
+                                DownloadFromMicrosoftUpdate = ($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)
+                    } # end paramsplatting
+                            
+                    # add deadline datetime if deploymenttype is required
+                    if($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType -ieq "Required")
+                    {
+                        $paramSplatting.add("DeadlineDateTime", "$($Schedule.DeadlineDateTime)")
+                    }
+
+
                     # if error occurs, retry for 3 times
                     # 0x80004005 might happen in some SQL deadlock situations with update deployments 
                     [bool]$noError = $true
@@ -551,24 +704,19 @@ function New-SCCMSoftwareUpdateDeployment
                     [int]$retyTimoutInSeconds = 180
                     do
                     {
-                        try
+                        $noError = $true
+                        try 
                         {
-                            Write-ScriptLog -Message "    DEPLOYMENT REMOVAL:" -Component $comp
-                            $noError = $true
-                            [array]$softwareUpdateDeployments = Get-CMSoftwareUpdateDeployment -CollectionName "$($Schedule.CollectionName)" -ErrorAction Stop
-                            Write-ScriptLog -Message "        Found $($softwareUpdateDeployments.Count) update deployments." -Component $comp
-                            if ($softwareUpdateDeployments.Count -ge 1)
-                            {
-                                $softwareUpdateDeployments | Remove-CMSoftwareUpdateDeployment -Force -ErrorAction Stop
-                            }
-
+                            Write-ScriptLog -Message "            Deploy: `"$($updateGroupForDeployment.LocalizedDisplayName)`"..." -Component $comp
+                            # deploy update group
+                            $retval = New-CMSoftwareUpdateDeployment @paramSplatting -AcceptEula -ErrorAction Stop
                         }
                         catch
                         {
-                            Write-ScriptLog -Message "        Could not remove deployment!" -Severity Error -Component $comp 
-                            Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
-                            Write-ScriptLog -Message "        will retry for $maxRetries times" -Component $comp
-                            Write-ScriptLog -Message "        will also wait for $retyTimoutInSeconds seconds" -Component $comp
+                            Write-ScriptLog -Message "            Could not create deployment!" -Severity Error -Component $comp 
+                            Write-ScriptLog -Message "            $($Error[0].Exception)" -Severity Error -Component $comp 
+                            Write-ScriptLog -Message "            will retry for $maxRetries times" -Component $comp
+                            Write-ScriptLog -Message "            will also wait for $retyTimoutInSeconds seconds" -Component $comp
                             $noError = $false
                             $retryCounter++
                             Start-Sleep -Seconds $retyTimoutInSeconds
@@ -578,213 +726,62 @@ function New-SCCMSoftwareUpdateDeployment
 
                     if(($noError -eq $false) -or ($retryCounter -ge  $maxRetries))
                     {
-                        Write-ScriptLog -Message "    Too many errors trying to delete deployments. Stopping Script!" -Severity Error -Component $comp    
+                        Write-ScriptLog -Message "            Too many errors trying to create deployments. Stopping Script!" -Severity Error -Component $comp    
                         Stop-ScriptExec -exitCode 1
                     }
-
-                    if ($softwareUpdateDeployments.Count -ge 1)
-                    {
-                        Write-ScriptLog -Message "        Update deployments successfully removed!" -Component $comp
-                        Write-ScriptLog -Message "        Will wait 10 seconds for process to finish..." -Component $comp
-                        # wait for 10 seconds so that delete command can finish
-                        Start-Sleep -Seconds 10
-                    }
-                } # end update deployment removal
-
-                # getting assigments IDs and group IDs to check if the group we choose is deployed already
-                try
-                {
-                    [array]$updateGroupAssignmentPerCollection = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "select AssignmentID, AssignedUpdateGroup, TargetCollectionID from SMS_UpdateGroupAssignment where TargetCollectionID ='$($checkCollection.CollectionID)'" -ErrorAction Stop
-                }
-                Catch
-                {
-                    Write-ScriptLog -Message "        Could not get updategroup assignements from SMS_UpdateGroupAssignment for TargetCollectionID $($checkCollection.CollectionID)" -Severity Error -Component $comp 
-                    Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
-                    $global:ErrorOutput = $true
-                    break
-                }    
-                
-                # checking update groups and starting deployment process
-                # creating list of groups for deployment process
-                $groupsForDeploymentProcess = New-Object System.Collections.ArrayList
-                Write-ScriptLog -Message "    GROUP SELECTION:" -Component $comp
-                # pick latest update group, check if already deployed and delete group if set so via script parameter
-                foreach ($UpdateGroup in $Schedule.UpdateGroups)
-                {
-                    Write-ScriptLog -Message "        Working on group: `"$UpdateGroup`"" -Component $comp
-
-                    # get groups per name and sort by creation date to be able to delete the older ones
-                    # used get-wmiobject to speed up the process, because Get-CMSoftwareUpdateGroup will also load lazy properties
-                    try
-                    {
-                        [array]$UpdateGroupObjects = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "Select CI_ID, LocalizedDisplayName, DateCreated from SMS_AuthorizationList where LocalizedDisplayName like '$($UpdateGroup)%'" -ErrorAction Stop
-                    }
-                    Catch
-                    {
-                        Write-ScriptLog -Message "        Could not get updategroups with name like $UpdateGroup%" -Severity Error -Component $comp 
-                        Write-ScriptLog -Message "        $($Error[0].Exception)" -Severity Error -Component $comp 
-                        $global:ErrorOutput = $true  
-                    }                    
-
-                    if ($UpdateGroupObjects)
-                    {
-                        [array]$UpdateGroupObjectsSorted = $UpdateGroupObjects | Sort-Object DateCreated -Descending 
-                        Write-ScriptLog -Message "            Found $($UpdateGroupObjects.Count) with same name." -Component $comp
-                        Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" is latest group (based on DateCreated) and will be used for deployment" -Component $comp
-
-                        # check if latest group is already deployed if the deployments schould not be removed
-                        if ($UpdateGroupObjectsSorted[0].CI_ID -in $updateGroupAssignmentPerCollection.AssignedUpdateGroup)
-                        {
-                            Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" already deployed. Will skip group!" -Severity Warning -Component $comp 
-                        }
-                        else
-                        {
-                            $tmpUpdGroupObj = New-Object psobject | Select-Object UpdateGroupCIID, LocalizedDisplayName, DeploymentName, DeploymentDescription
-                            # deploy using the first group in the list
-                            
-                            $tmpUpdGroupObj.UpdateGroupCIID = $UpdateGroupObjectsSorted[0].CI_ID
-                            $tmpUpdGroupObj.LocalizedDisplayName = $UpdateGroupObjectsSorted[0].LocalizedDisplayName
-                            # like 20181212-0346
-                            $DeploymenNameSuffix = Get-date -format "yyyyMMdd-hhmmss"
-                            $tmpUpdGroupObj.DeploymentName = "$UpdateGroup $DeploymenNameSuffix"
-                            $tmpUpdGroupObj.DeploymentDescription = "$UpdateGroup $DeploymenNameSuffix"
-
-                            [void]$groupsForDeploymentProcess.Add($tmpUpdGroupObj)
-                        }
-                    } 
-                    else 
-                    {
-                        Write-ScriptLog -Message "            No group like `"$UpdateGroup`" found!" -Severity Error -Component $comp
-                        $global:ErrorOutput = $true
-                    } #END  if ($UpdateGroupObjects.Count -gt 0)
-                } #END foreach group
-                
-                if ($groupsForDeploymentProcess)
-                {
-                    Write-ScriptLog -Message "    UPDATE DEPLOYMENTS:" -Severity Information -Component $comp
-                    Write-ScriptLog -Message "            Selected $($groupsForDeploymentProcess.Count) group/s for Deployment" -Severity Information -Component $comp
-
-                    foreach($updateGroupForDeployment in $groupsForDeploymentProcess)
-                    {
-                        $paramSplatting = [ordered]@{
-                                    SoftwareUpdateGroupId = $updateGroupForDeployment.UpdateGroupCIID
-                                    CollectionName = $($Schedule.CollectionName)
-                                    DeploymentName = $updateGroupForDeployment.DeploymentName
-                                    Description = $updateGroupForDeployment.DeploymentDescription
-                                    DeploymentType = ($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType)
-                                    SendWakeupPacket = ($Schedule.NewCMSoftwareUpdateDeploymentSendWakeupPacket)
-                                    VerbosityLevel = ($Schedule.NewCMSoftwareUpdateDeploymentVerbosityLevel)
-                                    TimeBasedOn = ($Schedule.NewCMSoftwareUpdateDeploymentTimeBasedOn)
-                                    AvailableDateTime = ($Schedule.StartDatetime)
-                                    UserNotification = ($Schedule.NewCMSoftwareUpdateDeploymentUserNotification)
-                                    SoftwareInstallation = ($Schedule.NewCMSoftwareUpdateDeploymentSoftwareInstallation)
-                                    AllowRestart = ($Schedule.NewCMSoftwareUpdateDeploymentAllowRestart)
-                                    RestartServer = ($Schedule.NewCMSoftwareUpdateDeploymentRestartServer)
-                                    RestartWorkstation = ($Schedule.NewCMSoftwareUpdateDeploymentRestartWorkstation)
-                                    PersistOnWriteFilterDevice = $false
-                                    GenerateSuccessAlert = $false
-                                    ProtectedType = ($Schedule.NewCMSoftwareUpdateDeploymentProtectedType)
-                                    UnprotectedType = ($Schedule.NewCMSoftwareUpdateDeploymentUnprotectedType)
-                                    UseBranchCache = ($Schedule.NewCMSoftwareUpdateDeploymentUseBranchCache)
-                                    RequirePostRebootFullScan = ($Schedule.NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan)
-                                    DownloadFromMicrosoftUpdate = ($Schedule.NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate)
-                        }
-                            
-                        # add deadline datetime if deploymenttype is required
-                        if($Schedule.NewCMSoftwareUpdateDeploymentDeploymentType -ieq "Required")
-                        {
-                            $paramSplatting.add("DeadlineDateTime", "$($Schedule.DeadlineDateTime)")
-                        }
-
-
-                        # if error occurs, retry for 3 times
-                        # 0x80004005 might happen in some SQL deadlock situations with update deployments 
-                        [bool]$noError = $true
-                        [int]$maxRetries = 3
-                        [int]$retryCounter = 0
-                        [int]$retyTimoutInSeconds = 10
-                        do
-                        {
-                            $noError = $true
-                            try 
-                            {
-                                Write-ScriptLog -Message "            Deploy: `"$($updateGroupForDeployment.LocalizedDisplayName)`"..." -Component $comp
-                                # deploy update group
-                                $retval = New-CMSoftwareUpdateDeploymentssssss @paramSplatting -AcceptEula -ErrorAction Stop
-                            }
-                            catch
-                            {
-                                Write-ScriptLog -Message "            Could not create deployment!" -Severity Error -Component $comp 
-                                Write-ScriptLog -Message "            $($Error[0].Exception)" -Severity Error -Component $comp 
-                                Write-ScriptLog -Message "            will retry for $maxRetries times" -Component $comp
-                                Write-ScriptLog -Message "            will also wait for $retyTimoutInSeconds seconds" -Component $comp
-                                $noError = $false
-                                $retryCounter++
-                                Start-Sleep -Seconds $retyTimoutInSeconds
-                            }
-                        }
-                        until ($noError -or $retryCounter -ge  $maxRetries)
-
-                        if(($noError -eq $false) -or ($retryCounter -ge  $maxRetries))
-                        {
-                            Write-ScriptLog -Message "            Too many errors trying to create deployments. Stopping Script!" -Severity Error -Component $comp    
-                            Stop-ScriptExec -exitCode 1
-                        }
                     
-                        # if error occurs, retry for 3 times
-                        # 0x80004005 might happen in some SQL deadlock situations with update deployments 
-                        [bool]$noError = $true
-                        [int]$maxRetries = 3
-                        [int]$retryCounter = 0
-                        [int]$retyTimoutInSeconds = 180
-                        do
-                        {
-                            $noError = $true
-                            try
-                            {                               
-                                # additional step to set description because of bug in New-CMSoftwareUpdateDeployment and to disable if set so
-                                if (($Schedule.SetCMSoftwareUpdateDeploymentEnable) -eq $false)
-                                {
-                                    Write-ScriptLog -Message "            Setting deployment to DISABLED!" -Severity Warning -Component $comp 
-                                    $retval | Set-CMSoftwareUpdateDeployment -Enable $false -Description ($updateGroupForDeployment.DeploymentDescription) -ErrorAction Stop
-                                }
-                                else
-                                {
-                                    $retval | Set-CMSoftwareUpdateDeployment -Description ($updateGroupForDeployment.DeploymentDescription) -ErrorAction Stop
-                                }
-                            }
-                            catch
+                    # if error occurs, retry for 3 times
+                    # 0x80004005 might happen in some SQL deadlock situations with update deployments 
+                    [bool]$noError = $true
+                    [int]$maxRetries = 3
+                    [int]$retryCounter = 0
+                    [int]$retyTimoutInSeconds = 180
+                    do
+                    {
+                        $noError = $true
+                        try
+                        {                               
+                            # additional step to set description because of bug in New-CMSoftwareUpdateDeployment and to disable deployment if set so
+                            if (($Schedule.SetCMSoftwareUpdateDeploymentEnable) -eq $false)
                             {
-                                Write-ScriptLog -Message "            Could not set deployment!" -Severity Error -Component $comp 
-                                Write-ScriptLog -Message "            $($Error[0].Exception)" -Severity Error -Component $comp 
-                                Write-ScriptLog -Message "            will retry for $maxRetries times" -Component $comp
-                                Write-ScriptLog -Message "            will also wait for $retyTimoutInSeconds seconds" -Component $comp
-                                $noError = $false
-                                $retryCounter++
-                                Start-Sleep -Seconds $retyTimoutInSeconds
+                                Write-ScriptLog -Message "            Setting deployment to DISABLED!" -Severity Warning -Component $comp 
+                                $retval | Set-CMSoftwareUpdateDeployment -Enable $false -Description ($updateGroupForDeployment.DeploymentDescription) -ErrorAction Stop
                             }
-
+                            else
+                            {
+                                $retval | Set-CMSoftwareUpdateDeployment -Description ($updateGroupForDeployment.DeploymentDescription) -ErrorAction Stop
+                            }
                         }
-                        until ($noError -or $retryCounter -ge  $maxRetries)
-
-                        if(($noError -eq $false) -or ($retryCounter -ge  $maxRetries))
+                        catch
                         {
-                            Write-ScriptLog -Message "            Too many errors trying to set deployments. Stopping Script!" -Severity Error -Component $comp    
-                            Stop-ScriptExec -exitCode 1
+                            Write-ScriptLog -Message "            Could not set deployment!" -Severity Error -Component $comp 
+                            Write-ScriptLog -Message "            $($Error[0].Exception)" -Severity Error -Component $comp 
+                            Write-ScriptLog -Message "            will retry for $maxRetries times" -Component $comp
+                            Write-ScriptLog -Message "            will also wait for $retyTimoutInSeconds seconds" -Component $comp
+                            $noError = $false
+                            $retryCounter++
+                            Start-Sleep -Seconds $retyTimoutInSeconds
                         }
+
+                    }
+                    until ($noError -or $retryCounter -ge  $maxRetries)
+
+                    if(($noError -eq $false) -or ($retryCounter -ge  $maxRetries))
+                    {
+                        Write-ScriptLog -Message "            Too many errors trying to set deployments. Stopping Script!" -Severity Error -Component $comp    
+                        Stop-ScriptExec -exitCode 1
                     }
                 }
             }
-            else
-            {
-                #Write-ScriptLog -Message "Collection not found: $($Schedule.CollectionName)" -Severity Error 
-                Write-ScriptLog -Message "COLLECTION: `"$(($Schedule.CollectionName).ToUpper())`" not found!" -Severity Error -Component $comp 
-                $global:ErrorOutput = $true
-            } # end -> if($checkCollection)
-
+        }
+        else
+        {
+            #Write-ScriptLog -Message "Collection not found: $($Schedule.CollectionName)" -Severity Error 
+            Write-ScriptLog -Message "COLLECTION: `"$(($Schedule.CollectionName).ToUpper())`" not found!" -Severity Error -Component $comp 
+            $global:ErrorOutput = $true
+        } # end -> if($checkCollection)
 
     } # end -> function process
-
 }
 #endregion
 
@@ -1106,7 +1103,7 @@ if ($UseOffsetDays)
         Stop-ScriptExec -exitCode 0
     }
 }
-#endregion																		  
+#endregion
 
 $StartDate = Find-DayOfWeek -Weekday Tuesday -week 2 -Time "22:00" # time is irrelevant in that case, but a requirement for the function
 Write-ScriptLog -Message "Calculated the second tuesday of the month: $(Get-Date($StartDate) -format u)"
@@ -1125,9 +1122,9 @@ if (-NOT ($ScheduleDefinitionFile))
     {
         # let the user running the script decide which file to use
         Write-ScriptLog -Message "No definition file specified with parameter -ScheduleDefinitionFile"
-        Write-ScriptLog -Message "Let user choose a file..." 
-        $ScheduleDefinitionFile = Get-ChildItem (Split-Path -path $PSCommandPath) -Filter '*.json' | Select-Object Name, Length, LastWriteTime, FullName | Out-GridView -Title 'Choose a JSON configfile' -OutputMode Single
-        if (-NOT ($ScheduleDefinitionFile))
+        Write-ScriptLog -Message "Let user choose a file via Out-GridView..." 
+        $ScheduleDefinitionFileObject = Get-ChildItem (Split-Path -path $PSCommandPath) -Filter '*.json' | Select-Object Name, Length, LastWriteTime, FullName | Out-GridView -Title 'Choose a JSON configfile' -OutputMode Single
+        if (-NOT ($ScheduleDefinitionFileObject))
         {
             Write-ScriptLog -Message "No definition file selected" -Severity Warning
             Stop-ScriptExec -exitCode 0         
@@ -1135,10 +1132,10 @@ if (-NOT ($ScheduleDefinitionFile))
     }
 }
 
-Write-ScriptLog -Message "DefinitionFile to load: $ScheduleDefinitionFile"
+Write-ScriptLog -Message "DefinitionFile to load: $($ScheduleDefinitionFileObject.Name)"
 try
 { 
-    $schedules = (Get-Content -Path ($ScheduleDefinitionFile.FullName) -ErrorAction Stop) -join "`n" | ConvertFrom-Json -ErrorAction Stop
+    $schedules = (Get-Content -Path ($ScheduleDefinitionFileObject.FullName) -ErrorAction Stop) -join "`n" | ConvertFrom-Json -ErrorAction Stop
 }
 Catch
 {
@@ -1169,7 +1166,7 @@ else
 try
 {
     # Import the ConfigurationManager.psd1 module 
-    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" -ErrorAction Stop  
+    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" -ErrorAction Stop  
     # Connect to the site drive if it is not already present
     if (-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) 
     {
@@ -1192,16 +1189,12 @@ Write-ScriptLog -Message "    ConfigMgr CmdLets loaded!"
 
 
 #region read update group settings
-try
-{
-    $deleteUpdateGroupSettings = $schedules.ADRSchedules.DeleteUpdateGroups
-    $archiveUpdateGroupSettings = $schedules.ADRSchedules.ArchiveUpdateGroups
+$deleteUpdateGroupSettings = $schedules.ADRSchedules.DeleteUpdateGroups
+$archiveUpdateGroupSettings = $schedules.ADRSchedules.ArchiveUpdateGroups
 
-}
-Catch
+if (-NOT($deleteUpdateGroupSettings -and $archiveUpdateGroupSettings))
 {
     Write-ScriptLog -Message "Could not get Delete- or ArchiveUpgradeGroups section from definitionfile!" -Severity Error 
-    Write-ScriptLog -Message "$($Error[0].Exception)" -Severity Error 
     Stop-ScriptExec -exitCode 1 
 }
 
@@ -1219,8 +1212,6 @@ Write-ScriptLog -Message "    Count of groups: $($archiveUpdateGroupSettings.Arc
 #endregion
 
 
-
-
 #region validate delete and archive groups
 Write-ScriptLog -Message "VALIDATE UpdateGroup lists..."
 [bool]$duplicateGroupFound = $false
@@ -1234,7 +1225,7 @@ $deleteUpdateGroupSettings.DeleteUpdateGroupList | ForEach-Object {
 }
 if ($duplicateGroupFound)
 {
-    Write-ScriptLog -Message "    VALIDATE failed. Will skip group delete/archive actions" -Severity Warning
+    Write-ScriptLog -Message "    VALIDAT failed. Will skip group delete/archive actions" -Severity Warning
     $global:ErrorOutput = $true
 }
 else
@@ -1281,33 +1272,37 @@ try
         # output schedules if they should not be deployed automatically
         Write-ScriptLog -Message "GET SCHEDULETIMES:"
         Write-ScriptLog -Message "    Converting configuration entries into actual datetime values..."
-        $schedulesWithDate = $schedules.ADRSchedules.ADRs | Get-ADRScheduleTimes | Select-Object CollectionName,`
-                                                                                    UpdateGroups,`
-                                                                                    SetCMSoftwareUpdateDeploymentEnable,`
-                                                                                    StartDateTime,`
-                                                                                    DeadlineDatetime,`
-                                                                                    StartMonth,`
-                                                                                    StartDayInMonth,`
-                                                                                    StartWeekInMonth,`
-                                                                                    StartWeekdayInMonth,`
-                                                                                    StartDays,`
-                                                                                    DeadlineDays,`
-                                                                                    StartTime,`DeadlineTime,`
-                                                                                    RemoveUpdateDeploymentsFirst,`
-                                                                                    NewCMSoftwareUpdateDeploymentAllowRestart,`
-                                                                                    NewCMSoftwareUpdateDeploymentDeploymentType,`
-                                                                                    NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate,`
-                                                                                    NewCMSoftwareUpdateDeploymentProtectedType,`
-                                                                                    NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan,`
-                                                                                    NewCMSoftwareUpdateDeploymentRestartServer,`
-                                                                                    NewCMSoftwareUpdateDeploymentRestartWorkstation,`
-                                                                                    NewCMSoftwareUpdateDeploymentSendWakeupPacket,`
-                                                                                    NewCMSoftwareUpdateDeploymentSoftwareInstallation,`
-                                                                                    NewCMSoftwareUpdateDeploymentTimeBasedOn,`
-                                                                                    NewCMSoftwareUpdateDeploymentUnprotectedType,`
-                                                                                    NewCMSoftwareUpdateDeploymentUseBranchCache,`
-                                                                                    NewCMSoftwareUpdateDeploymentUserNotification,`
-                                                                                    NewCMSoftwareUpdateDeploymentVerbosityLevel | Out-GridView -Title "Schedule Settings" -PassThru
+        [array]$propertyList  = $null
+        $propertyList += 'CollectionName'
+        $propertyList += 'UpdateGroups'
+        $propertyList += 'SetCMSoftwareUpdateDeploymentEnable'
+        $propertyList += 'StartDateTime'
+        $propertyList += 'DeadlineDatetime'
+        $propertyList += 'StartMonth'
+        $propertyList += 'StartDayInMonth'
+        $propertyList += 'StartWeekInMonth'
+        $propertyList += 'StartWeekdayInMonth'
+        $propertyList += 'StartDays'
+        $propertyList += 'DeadlineDays'
+        $propertyList += 'StartTime'
+        $propertyList += 'DeadlineTime'
+        $propertyList += 'RemoveUpdateDeploymentsFirst'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentAllowRestart'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentDeploymentType'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentProtectedType'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentRequirePostRebootFullScan'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentRestartServer'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentRestartWorkstation'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentSendWakeupPacket'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentSoftwareInstallation'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentTimeBasedOn'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentUnprotectedType'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentUseBranchCache'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentUserNotification'
+        $propertyList += 'NewCMSoftwareUpdateDeploymentVerbosityLevel'
+
+        $schedulesWithDate = $schedules.ADRSchedules.ADRs | Get-ADRScheduleTimes | Select-Object -Property $propertyList | Out-GridView -Title "Schedule Settings" -PassThru
 
         if (-NOT $schedulesWithDate) # nothing selected, nothing to do
         {
@@ -1337,7 +1332,7 @@ catch
 #region create deployments
 if ($schedulesWithDate)
 {
-    $schedulesWithDate | New-SCCMSoftwareUpdateDeployment -SiteCode $SiteCode -ProviderMachineName $ProviderMachineName
+    $schedulesWithDate | New-SCCMSoftwareUpdateDeployment -CollectionCount ($schedulesWithDate.CollectionName.count) -SiteCode $SiteCode -ProviderMachineName $ProviderMachineName
 }
 else 
 {
@@ -1357,4 +1352,6 @@ else
     Stop-ScriptExec -exitCode 0
 }
 #-------------------------------------------------------------------------------------------
-#endregion 
+#endregion
+
+

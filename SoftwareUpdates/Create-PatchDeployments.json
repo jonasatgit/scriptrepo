@@ -2,7 +2,6 @@
   "_DOCUMENTATION":
   [
     {
-      "REQUIRED SCRIPT VERSION": "20210215",
       "UseOffsetDays": "Is a script parameter and can be used to force the script to run on a specific day after Patch Tuesday. Use Get-Help Create-PatchDeployments.ps1 for more info",
       "DeleteOldUpdateGroups": "true or false without quotes -> true will delete old update groups with the same name and will honor the MaxUpdateGroupsToKeep value ",
       "MaxUpdateGroupsToKeep": "1-n Number of update groups wich should not be deleted and kept",
@@ -18,7 +17,7 @@
       "DeadlineDays": "365 -> Integer of days to set deployment deadline starting from the second tuesday of each month", 
       "DeadlineTime": "22:00 -> String in the form of hh:mm to set deadline time for deployment",
       "The following settings are for parameters of the SCCM Cmdlet New-CMSoftwareUpdateDeployment": "try -> help New-CMSoftwareUpdateDeployment -> for parameter values ",
-      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required/Available will install updates as required or just available. BUT THE SCRIPT CURRENTLY ONLY SUPPORTS REQUIRED",
+      "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required/Available will install updates as required or just available.",
       "NewCMSoftwareUpdateDeploymentSendWakeupPacket": "true or false without quotes to send WoL packages to clients",
       "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
       "NewCMSoftwareUpdateDeploymentTimeBasedOn" : "LocalTime or Utc",
@@ -42,7 +41,8 @@
       "MinUpdateGroupsToKeep": 3,
       "MaxUpdateGroupCreationDays": 45,
       "DeleteUpdateGroupList": [
-                                 ]
+                                  "ADR - Office 2016 - Updates"                                
+                                ]
    }
   ],
   "ArchiveUpdateGroups": 
@@ -54,7 +54,6 @@
       "ArchiveUpdateGroupList": [
                                   "ADR - Server 2016 Security",
                                   "ADR - Server 2019 Security",
-                                  "ADR - Office 2016 - Updates",
                                   "ADR - Office 2019 - Updates"
                                  ]
    }
