@@ -36,6 +36,9 @@ Number of days when the script should be run after Patch Tuesday. Must be set wh
 .PARAMETER Deploy
 Switch parameter to deploy without validation. Needs to be used when the script has to run as a scheduled task.
 
+.PARAMETER DeleteOrArchiveGroups
+Switch parameter to delete Or ArchiveGroups. If NOT used the settings of DeleteUpdateGroups and ArchiveUpdateGroups of the JSON file will be ignored. 
+
 .INPUTS
 Just the JSON file. You cannot pipe objects to the script.
 
