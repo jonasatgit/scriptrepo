@@ -1,4 +1,4 @@
-#************************************************************************************************************
+﻿#************************************************************************************************************
 # Disclaimer
 # This sample script is not supported under any Microsoft standard support program or service. This sample
 # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
