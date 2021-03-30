@@ -352,7 +352,7 @@ Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($fullEvalList.Count) UNI
 
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Extracting coll eval information from log entries" -ForegroundColor Green
 $objLoglineByThread = new-object System.Collections.ArrayList
-#$timeZoneOffset = $null
+$matchGroupCounter = 0 # used to detect a problem with select-string and named captures as used with $collEvalSearchString, where the names are missing
 foreach ($collEvalItem in $fullEvalList)
 {
 
@@ -374,6 +374,7 @@ foreach ($collEvalItem in $fullEvalList)
 
     foreach ($groupItem in $collEvalItem.Matches.Groups.where{($_.Length -ne 0 -and $_.Name -ne 0)})
     {
+        $matchGroupCounter++
         switch ($groupItem.Name)
         {
             'Action'
@@ -449,6 +450,12 @@ foreach ($collEvalItem in $fullEvalList)
         
     }
     [void]$objLoglineByThread.Add($logLineObject)
+}
+
+if ($matchGroupCounter -eq 0)
+{
+    Write-Host "The Select-String cmdlet is not proper handling named matches. You might need to update .Net to fix that." -ForegroundColor Red
+    break
 }
 #endregion
 
