@@ -11,8 +11,10 @@
 # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
 # if Microsoft has been advised of the possibility of such damages.
 #
+# Source: https://github.com/jonasatgit/scriptrepo/tree/master/Security
 #************************************************************************************************************
 # Changelog:
+# 20210412: Minor changes
 # 20201126: Updated Get-SQLServerConnectionString 
 # 20201126: Changed Test-SiteRole
 # 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
@@ -109,7 +111,6 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
     return 
 }
 #endregion
-
 
 
 #region Test-SQLClientVersion
@@ -557,15 +558,15 @@ function Test-CMGSettings
     Write-Verbose "$commandName`: "
     [bool]$expectedValuesSet = $true
     # getting sitecode first
-    $query = "SELECT * FROM SMS_ProviderLocation WHERE Machine like '$($env:computername)%' AND ProviderForLocalSite = 'True'"
+    $query = 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1'
     Write-Verbose "$commandName`: Running: `"$query`""
     try
     {
-        $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query -ErrorAction Stop | Select-Object -ExpandProperty SiteCode
+        $SiteCode = Get-WmiObject -Namespace "root\sms" -Query $query -ErrorAction Stop | Select-Object -ExpandProperty SiteCode 
     }
     catch 
     {
-        Write-Warning "$_"
+        Write-Warning "$commandName Not able to get sitecode: $_"
         return 
     }
     Write-Verbose "$commandName`: SiteCode: $SiteCode"
@@ -1306,7 +1307,8 @@ function Get-SQLServerConnectionString
                     foreach ($reportServerVersion in $reportServerVersionList.Name) 
                     {
                         $query = "SELECT * FROM MSReportServer_ConfigurationSetting"
-                        $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query  -ErrorAction Stop 
+                        # continue on error in case PowerBI Report server has been installed and an old SSRS entry causes any problems
+                        $reportServerConfiguration = Get-WmiObject -Namespace "ROOT\Microsoft\SqlServer\ReportServer\$reportServerName\$reportServerVersion\Admin" -Query $query  -ErrorAction SilentlyContinue
                         if ($reportServerConfiguration) 
                         {
                             Write-Verbose "$commandName`: SSRS SQL is: `"$($reportServerConfiguration.DatabaseServerName)`""
@@ -1317,7 +1319,7 @@ function Get-SQLServerConnectionString
             }
             catch
             {
-                    Write-Warning "$_"
+                    Write-Warning "$commandName Not able to read SSRS config: $_"
             } 
         } 
     }
@@ -1325,29 +1327,33 @@ function Get-SQLServerConnectionString
 #endregion
 
 #region MAIN SCRIPT
-$statusObj = New-Object -TypeName psobject | Select-Object -Property OverallTestStatus,
-                                                    OSName, 
-                                                    OSVersion,
-                                                    OSType,
-                                                    IsSiteServer, 
-                                                    IsSiteRole, 
-                                                    IsReportingServicePoint, 
-                                                    IsSUPAndWSUS, 
-                                                    IsSecondarySite,
-                                                    TestCMGSettings,
-                                                    TestSQLServerVersionOfSite,
-                                                    TestSQLServerVersionOfWSUS,
-                                                    TestSQLServerVersionOfSSRS,
-                                                    TestSQLServerVersionOfSecSite,
-                                                    TestSQLClientVersion,
-                                                    TestWSUSVersion,
-                                                    TestSCHANNELSettings,
-                                                    TestSCHANNELKeyExchangeAlgorithms,
-                                                    TestSCHANNELHashes,
-                                                    TestSCHANNELCiphers,
-                                                    TestCipherSuites,
-                                                    TestNetFrameworkVersion,
-                                                    TestNetFrameworkSettings
+$propertiesList = @(
+    'OverallTestStatus',
+    'OSName', 
+    'OSVersion',
+    'OSType',
+    'IsSiteServer',
+    'IsSiteRole',
+    'IsReportingServicePoint',
+    'IsSUPAndWSUS',
+    'IsSecondarySite',
+    'TestCMGSettings',
+    'TestSQLServerVersionOfSite',
+    'TestSQLServerVersionOfWSUS',
+    'TestSQLServerVersionOfSSRS',
+    'TestSQLServerVersionOfSecSite',
+    'TestSQLClientVersion',
+    'TestWSUSVersion',
+    'TestSCHANNELSettings',
+    'TestSCHANNELKeyExchangeAlgorithms',
+    'TestSCHANNELHashes',
+    'TestSCHANNELCiphers',
+    'TestCipherSuites',
+    'TestNetFrameworkVersion',
+    'TestNetFrameworkSettings' 
+    )
+
+$statusObj = New-Object -TypeName psobject | Select-Object -Property $propertiesList
 
 
 $osInfo = Get-OSTypeInfo
@@ -1467,7 +1473,8 @@ if ($resultTestSQLServerVersionOfSite `
     -and $resultTestSCHANNELKeyExchangeAlgorithms `
     -and $resultTestSCHANNELHashes `
     -and $resultTestSCHANNELCiphers `
-    -and $resultTestCipherSuites)
+    -and $resultTestCipherSuites
+    )
 {
     $statusObj.OverallTestStatus = "Passed"
 }
