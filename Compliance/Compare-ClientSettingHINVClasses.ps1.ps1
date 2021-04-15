@@ -101,8 +101,8 @@ param
 
 
 #region Initializing
-$scriptPathAndName = ($MyInvocation.MyCommand.Source)
-$scriptName = ($MyInvocation.MyCommand.Name)
+$scriptPathAndName = ($MyInvocation.InvocationName)
+$scriptName = $scriptPathAndName | Split-Path -Leaf
 
 # removing invalid filename characters and spaces from client setting name to be able to use the name as a filename
 [System.IO.Path]::GetInvalidFileNameChars() | ForEach-Object {
