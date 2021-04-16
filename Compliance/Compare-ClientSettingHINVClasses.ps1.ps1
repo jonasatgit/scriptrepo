@@ -105,11 +105,11 @@ $scriptPathAndName = ($MyInvocation.InvocationName)
 $scriptName = $scriptPathAndName | Split-Path -Leaf
 
 # removing invalid filename characters and spaces from client setting name to be able to use the name as a filename
-[System.IO.Path]::GetInvalidFileNameChars() | ForEach-Object {
-
-    $ClientSettingsNameClean = $ClientSettingsName -replace "\$_",''
-}
-$ClientSettingsNameClean = $ClientSettingsNameClean -replace " ","-"
+$invalidChars = [System.IO.Path]::GetInvalidFileNameChars() -join ''
+$invalidCharsRegEx = "[{0}]" -f [RegEx]::Escape($invalidChars)
+$ClientSettingsNameClean = $ClientSettingsName -replace $invalidCharsRegEx, ''
+$ClientSettingsNameClean = $ClientSettingsNameClean -replace " ", "-"
+$ClientSettingsNameClean = $ClientSettingsNameClean -replace "(\[)|(\])|(\()|(\))", '' # out-file does not like brackets
 #endregion
 
 
@@ -929,41 +929,40 @@ Write-Verbose "$($siteCode) detected sitecode"
 
 
 #region Get client settings with hardware inventory data
-# getting client settings with HINV data and extracting InventoryReportID
-[array]$SMSClientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT * FROM SMS_ClientSettings where Type = 1 and Name = '$($ClientSettingsName)'"
-
-Write-Verbose "$($SMSClientSettings.count) client setting/s found"
-$SMSClientSettingsWithHINVData = @{}
-# Adding default entries to the list
-$SMSClientSettingsWithHINVData.Add('{00000000-0000-0000-0000-000000000001}', 'Default Client Setting')
-$SMSClientSettingsWithHINVData.Add('{00000000-0000-0000-0000-000000000003}', 'Heartbeat')
-
-foreach ($clientSetting in $SMSClientSettings)
+if ($ClientSettingsName -eq 'Default Client Setting')
 {
-    # loading lazy properties to get HINV data
-    $clientSetting = $clientSetting | Get-CimInstance 
-    $HINVInventoryData = $clientSetting.AgentConfigurations | Where-Object {$_.AgentID -eq 15}
-    if ($HINVInventoryData)
-    {
-        $SMSClientSettingsWithHINVData.Add($HINVInventoryData.InventoryReportID,$clientSetting.Name)
-    }
+    $clientsettingInventoryReportID = '{00000000-0000-0000-0000-000000000001}'
 }
-Write-Verbose "$($SMSClientSettingsWithHINVData.count) client settings with hardware inventory settings found"
-
-
-# select client setting inventory report ID
-foreach($clientSettingKey in $SMSClientSettingsWithHINVData.keys)
+elseif  ($ClientSettingsName -eq 'Heartbeat')
 {
-    if ($SMSClientSettingsWithHINVData[$clientSettingKey] -eq $ClientSettingsName)
-    {
-        $clientsettingInventoryReportID = $clientSettingKey
-    }
+    $clientsettingInventoryReportID = '{00000000-0000-0000-0000-000000000003}'
 }
-
-if (-NOT($clientsettingInventoryReportID))
+else
 {
-    Write-Output "No client setting with hardware inventory data found with name: `"$ClientSettingsName`""
-    exit
+    # getting client settings with HINV data and extracting InventoryReportID
+    [array]$SMSClientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT * FROM SMS_ClientSettings where Type = 1 and Name = '$($ClientSettingsName)'"
+
+    if ($SMSClientSettings)
+    {
+        Write-Verbose "$($SMSClientSettings.count) client setting/s found"
+        $clientSetting = $SMSClientSettings | Get-CimInstance
+        
+        $HINVInventoryData = $clientSetting.AgentConfigurations | Where-Object {$_.AgentID -eq 15}
+        if ($HINVInventoryData)
+        {
+            $clientsettingInventoryReportID = $HINVInventoryData.InventoryReportID
+        }
+        else
+        {
+            Write-Output "Client setting: `"$ClientSettingsName`" does not contain hardware inventory settings"
+            exit
+        }
+    }
+    else
+    {
+        Write-Output "No client setting found with name: `"$ClientSettingsName`""
+        exit
+    }
 }
 Write-Verbose "$($clientsettingInventoryReportID) selected report ID"
 #endregion
@@ -1003,7 +1002,6 @@ foreach ($InventoryClass in $SMSInventoryClasses)
         [void]$SMSInventoryClassesArrayList.Add($tmpObj2)
     }
 }
-
 Write-Verbose "$($SMSInventoryClassesArrayList.count) total HINV classes found"
 
 # for faster searches
@@ -1029,7 +1027,6 @@ foreach ($inventoryReport in $SMSInventoryReports)
         {
             
             $inventoryReportID = $inventoryReport.InventoryReportID
-            $clientSettingsName = $SMSClientSettingsWithHINVData[$inventoryReportID]
 
             $tmpObj3 = New-Object pscustomobject | Select-Object -Property $propertiesList   
             $tmpObj3.clientSettingsName = $clientSettingsName
@@ -1053,7 +1050,6 @@ foreach ($inventoryReport in $SMSInventoryReports)
             else
             {
                 $tmpObj3.ClassType = $classInfo.ClassType
-                
                 [void]$SMSInventoryReportsArrayList.Add($tmpObj3)   
             }
 
@@ -1106,7 +1102,8 @@ if ($OutputMode -eq "CreateScript")
     foreach ($scriptLine in (Get-Content -Path $scriptPathAndName))
     {
         # replacing parameter value to be able to use the script in a ConfigMgr config item
-        if ($scriptLine -match '\[string\]\$ClientSettingsName \=')
+        # should only happen in the first 300 lines, to avoid the following lines to be replaced
+        if ($scriptLine -match '\[string\]\$ClientSettingsName \=' -and $i -le 300) 
         {
             $parameterString = "{0}{1}{2}" -f '    [string]$ClientSettingsName = "', $ClientSettingsName, '",'
             $parameterString | Out-File -FilePath ($newFile.FullName) -Append -Encoding utf8
@@ -1142,6 +1139,7 @@ if ($OutputMode -eq "CreateScript")
         }
    
     } 
+    Write-Output "New script created: `"$($newFile.FullName)`""
 
 }
 #endregion
@@ -1180,7 +1178,6 @@ if ($OutputMode -eq "CompareData")
             $tmpObj.PropertyName = $tmpArray[1]
             $tmpObj.Action = 'Removed'
             [void]$compareResultArrayList.Add($tmpObj)
-
         }
     }
     
