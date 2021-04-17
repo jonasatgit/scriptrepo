@@ -15,6 +15,7 @@
 <#
 .Synopsis
     Script to validate the activated WSUS update categories and products of a ConfigMgr environment.
+    
 .DESCRIPTION
     The script is intended to compare a given set of WSUS update categories and products with the current state. 
     It is designed to either run within a ConfigMgr configuration item and a baseline or as a standalone script. 
@@ -65,6 +66,7 @@
 .EXAMPLE
     Will create a new script containing the current WSUS update category and product state.
     .\Compare-WSUSSubscriptions.ps1 -OutputMode CreateScript
+
 .EXAMPLE
     .\Compare-WSUSSubscriptions.ps1 -OutputMode ShowData -ForceWSMANConnection
 

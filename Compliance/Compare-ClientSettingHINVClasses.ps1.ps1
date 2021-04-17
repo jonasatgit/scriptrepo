@@ -15,6 +15,7 @@
 <#
 .Synopsis
     Script to validate the hardware inventory classes of a ConfigMgr client setting.
+    
 .DESCRIPTION
     The script is intended to compare a given set of hardware inventory classes with what has been activated in any given ConfigMgr client setting.
     When used without any parameters the script will compare a known list of classes against the "Default Client Setting".
@@ -72,8 +73,8 @@
     .\Compare-ClientSettingHINVClasses.ps1 -OutputMode ExportAsCSV
 
 .EXAMPLE
-
     .\Compare-ClientSettingHINVClasses.ps1 -OutputMode CreateScript -ClientSettingsName 'Contoso Custom Client Setting'
+
 .EXAMPLE
     .\Compare-ClientSettingHINVClasses.ps1 -OutputMode ShowData -ForceWSMANConnection
 
