@@ -1117,8 +1117,8 @@ if ($OutputMode -eq "CreateScript")
                 # replacing data for comparison
                 $exportObj | Sort-Object | ForEach-Object {
                     # output will look like this: 
-                    # $referenceData.add("Processor;NumberOfLogicalProcessors","1")
-                    $outputString = "{0}(`"{1};{2}`",`"1`")" -f '$referenceData.add', ($_.SMSGroupName), ($_.PropertyName)
+                    # $referenceData.add('Processor;NumberOfLogicalProcessors','1')
+                    $outputString = "{0}(`'{1};{2}`',`'1`')" -f '$referenceData.add', ($_.SMSGroupName), ($_.PropertyName)
                     $outputString | Out-File -FilePath ($newFile.FullName) -Append -Encoding utf8
                 }              
             }
