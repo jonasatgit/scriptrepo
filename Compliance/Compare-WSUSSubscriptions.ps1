@@ -222,8 +222,12 @@ Write-Verbose "$($siteCode) detected sitecode"
 
 
 #region get wsus update categories
-[array]$SMSCategoryInstance = Get-CimInstance -CimSession $cimSession -Namespace ROOT\SMS\site_P01 -Query "select * from SMS_UpdateCategoryInstance"
+[array]$SMSCategoryInstance = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "select * from SMS_UpdateCategoryInstance"
 write-verbose "$($SMSCategoryInstance.count) wsus categories found"
+if (-NOT($SMSCategoryInstance))
+{
+    exit 1
+}
 
 $WSUSCategoryHash = @{}
 foreach ($WSUScategoryItem in $SMSCategoryInstance) 
