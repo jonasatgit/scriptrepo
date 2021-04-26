@@ -3,6 +3,13 @@
   [
     {
       "UseOffsetDays": "Is a script parameter and can be used to force the script to run on a specific day after Patch Tuesday. Use Get-Help Create-PatchDeployments.ps1 for more info",
+      "DeleteUpdateGroups": "Section to define settings for a list of update groups to be deleted after a specific period of time",
+      "MinUpdateGroupsToKeep": "Number of groups to be left over to not accidently delete all groups",
+      "MaxUpdateGroupCreationDays": "Maximum number of days since an updage groups was created until it can be deleted. Depends on MinUpdateGroupsToKeep to not accidently delete all groups with a given name prefix.",
+      "DeleteUpdateGroupList": "List of update group names to which the settings should apply. The script will use a whildcard at the end of the name to search for groups. Like: GroupName%",
+      "ArchiveUpdateGroups": "Section to define settings for a list of update groups to be archived after a specific period of time. Archived means each older group will be deleted and older updates will be copied into an archive group.",
+      "MinUpdateGroupsToKeep": "Same as for DeleteUpdateGroups. See above.",
+      "MaxUpdateGroupCreationDays": "Same as for DeleteUpdateGroups. See above.",
       "DeleteOldUpdateGroups": "true or false without quotes -> true will delete old update groups with the same name and will honor the MaxUpdateGroupsToKeep value ",
       "MaxUpdateGroupsToKeep": "1-n Number of update groups wich should not be deleted and kept",
       "CollectionName": "Name of Collection to deploy Software Updates to", 
@@ -17,6 +24,7 @@
       "DeadlineDays": "365 -> Integer of days to set deployment deadline starting from the second tuesday of each month", 
       "DeadlineTime": "22:00 -> String in the form of hh:mm to set deadline time for deployment",
       "The following settings are for parameters of the SCCM Cmdlet New-CMSoftwareUpdateDeployment": "try -> help New-CMSoftwareUpdateDeployment -> for parameter values ",
+      "SetCMSoftwareUpdateDeploymentEnable": "true or false without quotes -> true means deployment is active. False means deployment is not active. Used for Set-CMSoftwareUpdateDeployment", 
       "NewCMSoftwareUpdateDeploymentDeploymentType" : "Required/Available will install updates as required or just available.",
       "NewCMSoftwareUpdateDeploymentSendWakeupPacket": "true or false without quotes to send WoL packages to clients",
       "NewCMSoftwareUpdateDeploymentVerbosityLevel": "OnlyErrorMessages",
@@ -31,7 +39,6 @@
       "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint -> to configure distribution point download fallback behavior for default site boundary group",
       "NewCMSoftwareUpdateDeploymentUseBranchCache" : "true or false without quotes -> true to enbale use of branch cache for clients",
       "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : "true or false without quotes -> true will download updates from the Internet if no DP has been found",
-      "SetCMSoftwareUpdateDeploymentEnable" : "true means deployment is enabled, false means, deployment is disabled."
     }
   ],
   "DeleteUpdateGroups": 
