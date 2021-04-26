@@ -1067,9 +1067,14 @@ Function Stop-ScriptExec
     {
         $stopwatch.Stop()
     }
+
+    if ($global:lastLocation)
+    {
+        Set-Location -Path $global:lastLocation -ErrorAction SilentlyContinue
+    }
+
     Write-ScriptLog -Message "Script runtime: $($stopwatch.Elapsed.TotalMinutes) total minutes"
     Write-ScriptLog -Message "Script end!"
-    Set-Location -Path $lastLocation -ErrorAction SilentlyContinue
     Write-ScriptLog -Message "Will stop script with exitcode: $exitCode"
     exit $exitCode 
 
@@ -1144,7 +1149,7 @@ Catch
 {
     Write-ScriptLog -Message "Could not load JSON definition file!" -Severity Error 
     Write-ScriptLog -Message "$($Error[0].Exception)" -Severity Error 
-    Stop-ScriptExec -exitCode 1
+    Stop-ScriptExec -exitCode 1 
 }
 #endregion
 
