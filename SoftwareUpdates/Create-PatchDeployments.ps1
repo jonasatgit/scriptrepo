@@ -79,7 +79,7 @@ param
 
 
 #region PARAMETERS 
-[string]$ScriptVersion = "20210308"
+[string]$ScriptVersion = "20210512"
 [string]$global:Component = $MyInvocation.MyCommand
 [string]$global:LogFile = "$($PSScriptRoot)\$($global:Component).Log"
 [bool]$global:ErrorOutput = $false
@@ -834,7 +834,7 @@ function Delete-ObsoleteUpdateGroups
             [array]$UpdateGroupObjectsSorted = $UpdateGroupObjects | Sort-Object DateCreated -Descending 
             Write-ScriptLog -Message "            Found $($UpdateGroupObjects.Count) with same name." -Component $comp
             # making sure always one group remains with "$UpdateGroupObjects.count -gt 1"
-            if($UpdateGroupObjects.count -ge $MinUpdateGroupsToKeep -and $UpdateGroupObjects.count -gt 1)
+            if($UpdateGroupObjects.count -gt $MinUpdateGroupsToKeep -and $UpdateGroupObjects.count -gt 1)
             {
                 #start with min groups to keep until the end of the array
                 $UpdateGroupObjectsSorted[$MinUpdateGroupsToKeep..$UpdateGroupObjectsSorted.GetUpperBound(0)] | ForEach-Object {
@@ -939,7 +939,7 @@ function Archive-ObsoleteUpdateGroups
             [array]$UpdateGroupObjectsSorted = $UpdateGroupObjects | Sort-Object DateCreated -Descending 
             Write-ScriptLog -Message "            Found $($UpdateGroupObjects.Count) with same name." -Component $comp
             # making sure always one group remains with "$UpdateGroupObjects.count -gt 1"
-            if($UpdateGroupObjects.count -ge $MinUpdateGroupsToKeep -and $UpdateGroupObjects.count -gt 1)
+            if($UpdateGroupObjects.count -gt $MinUpdateGroupsToKeep -and $UpdateGroupObjects.count -gt 1)
             {
                 #start with min groups to keep until the end of the array
                 $UpdateGroupObjectsSorted[$MinUpdateGroupsToKeep..$UpdateGroupObjectsSorted.GetUpperBound(0)] | ForEach-Object {
@@ -1019,7 +1019,7 @@ function Archive-ObsoleteUpdateGroups
                                 Write-ScriptLog -Message "        Removing old group..." -Component $comp
                                 try
                                 {
-                                    #Remove-CMSoftwareUpdateGroup -Name $($_.LocalizedDisplayName) -Force -ErrorAction Stop   
+                                    Remove-CMSoftwareUpdateGroup -Name $($_.LocalizedDisplayName) -Force -ErrorAction Stop   
                                 }
                                 catch
                                 {
@@ -1139,6 +1139,20 @@ if (-NOT ($ScheduleDefinitionFile))
         }
     }
 }
+else
+{
+    try
+    {
+        $ScheduleDefinitionFileObject = Get-Item -Path $ScheduleDefinitionFile -ErrorAction Stop
+    }
+    Catch
+    {
+        Write-ScriptLog -Message "Could not load JSON definition file!" -Severity Error 
+        Write-ScriptLog -Message "$($Error[0].Exception)" -Severity Error 
+        Stop-ScriptExec -exitCode 1     
+    }
+} 
+
 
 Write-ScriptLog -Message "DefinitionFile to load: $($ScheduleDefinitionFileObject.Name)"
 try
