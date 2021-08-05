@@ -102,7 +102,7 @@ if($selectedRoles.Count -gt 0)
         }
     }
     Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Show data" -ForegroundColor Green
-    $outObj | Select-Object RoleName, CopiedFrom, ObjectTypeIsPartOfRole, ObjectTypeName, OperationName, Allow | Sort-Object RoleName, ObjectTypeName, OperationName | Out-GridView -Title 'List of MECM security roles and permissions'
+    $outObj | Select-Object RoleName, CopiedFrom, ObjectTypeIsPartOfRole, ObjectTypeName, OperationName, Allow | Sort-Object RoleName, ObjectTypeName, OperationName | Out-GridView -Title 'List of MECM security roles and permissions' 
 }
 else 
 {
