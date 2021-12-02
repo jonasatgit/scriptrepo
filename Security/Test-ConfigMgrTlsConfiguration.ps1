@@ -14,12 +14,13 @@
 # Source: https://github.com/jonasatgit/scriptrepo/tree/master/Security
 #************************************************************************************************************
 # Changelog:
+# 20211130: Added client .Net checks and changed general check logic.
 # 20210412: Minor changes
 # 20201126: Updated Get-SQLServerConnectionString 
 # 20201126: Changed Test-SiteRole
 # 20201125: Added "$statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."" for non ConfigMgr systems.
 
-																																
+                                                                                                                                                                                                                     
 <#
 .Synopsis
     Script to validate the neccesary prerequisites to enforce TLS 1.2 in a ConfigMgr environment
@@ -35,7 +36,7 @@
      - - If you're using .NET Framework 4.5.1 or 4.5.2 on Windows 8.1 or Windows Server 2012, the relevant updates and details are also available from the Download Center.
     - Verify strong cryptography settings (Registry settings)
 
-    Site database server	
+    Site database server   
     - Update SQL Server and its client components. Version: "11.*.7001.0"
     - Microsoft SQL Server 2016 and later support TLS 1.1 and TLS 1.2. Earlier versions and dependent libraries might require updates. For more information, see KB 3135244: TLS 1.2 support for Microsoft SQL Server.
 
@@ -65,7 +66,7 @@
     Cloud management gateway
     - Enforce TLS 1.2 (check console setting)
 
-    Configuration Manager console	
+    Configuration Manager console 
     - Update .NET Framework
     - Verify strong cryptography settings
 
@@ -127,7 +128,7 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 .EXAMPLE
    Test-SQLClientVersion -MinSQLClientVersion '11.4.7462.6'
 .EXAMPLE
-   Test-SQLClientVersion -Verbose
+  Test-SQLClientVersion -Verbose
 #>
 function Test-SQLClientVersion
 {
@@ -315,7 +316,7 @@ function Test-NetFrameworkSettings
     - Microsoft SQL Server 2016 and later support TLS 1.1 and TLS 1.2. Earlier versions and dependent libraries might require updates. 
       For more information, see KB 3135244: TLS 1.2 support for Microsoft SQL Server.
     - SQL Server 2014 SP3 is the only supported SP at the moment. Version: 12.0.6024.0
-    - SQL Server 2012 SP4 is the only supported SP at the moment. Version: 11.0.7001.0
+   - SQL Server 2012 SP4 is the only supported SP at the moment. Version: 11.0.7001.0
     - SQL Server 2016 and above is okay: 13.0.1601.5
     - Secondary site servers need to use at least SQL Server 2016 Express with Service Pack 2 (13.2.5026.0) or later.
 
@@ -847,7 +848,7 @@ function Test-SCHANNELCiphers
         {
             $expectedValuesSet = $false
             Write-Verbose "$commandName`: No values found"
-        }     
+       }     
     }
     return $expectedValuesSet
 }
@@ -867,7 +868,7 @@ function Test-SCHANNELCiphers
     Example cipher suite string:
     TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384_P384
     ECDHE       = Key Exchnage
-    ECDSA       = Signature
+   ECDSA       = Signature
     AES_256_GCM = Bulk Encryption (Cypther)
     SHA384      = Message Authentication
     P384        = Elliptic Curve (only attached to the string in older OS versions)
@@ -894,6 +895,11 @@ function Test-CipherSuites
     $desiredCipherSuiteStates = [ordered]@{}
     switch ($OSVersion.Build)
     {
+        '7601' # Window 7 and Windows Server 2008 R2
+        {
+
+
+        }
         '9200' # Window 8 and Windows Server 2012
         {
 
@@ -1326,6 +1332,53 @@ function Get-SQLServerConnectionString
 }
 #endregion
 
+#region Test-LegacyOSWinhttpVersion
+function Test-LegacyOSWinhttpVersion
+{
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [version]$OSVersion
+    )
+
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-Verbose "$commandName`: "
+    Write-Verbose "$commandName`: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/security/enable-tls-1-2-client#bkmk_winhttp"
+
+    $winhttpFile = Get-Item -Path C:\Windows\System32\winhttp.dll
+
+    switch ($OSVersion.Build)
+        {
+            '7601' # Window 7 and Windows Server 2008 R2
+            {
+                # needs to be at least: 6.1.7601.23375
+                if ($winhttpFile.VersionInfo.ProductPrivatePart -ge 23375)
+                {
+                    return $true
+                }
+
+            }
+            '9200' # Window 8 and Windows Server 2012
+            {
+                # needs to be at least: 6.2.9200.21797
+                if ($winhttpFile.VersionInfo.ProductPrivatePart -ge 21797)
+                {
+                    return $true
+                }
+
+            }
+            Default
+            {
+                return $false
+            }
+        }
+
+}
+
+#endregion
+
 #region MAIN SCRIPT
 $propertiesList = @(
     'OverallTestStatus',
@@ -1346,11 +1399,12 @@ $propertiesList = @(
     'TestWSUSVersion',
     'TestSCHANNELSettings',
     'TestSCHANNELKeyExchangeAlgorithms',
-    'TestSCHANNELHashes',
+   'TestSCHANNELHashes',
     'TestSCHANNELCiphers',
     'TestCipherSuites',
     'TestNetFrameworkVersion',
-    'TestNetFrameworkSettings' 
+    'TestNetFrameworkSettings',
+    'TestLegacyOSWinHTTP'
     )
 
 $statusObj = New-Object -TypeName psobject | Select-Object -Property $propertiesList
@@ -1417,34 +1471,37 @@ if ($statusObj.isReportingServicePoint)
     $statusObj.TestSQLServerVersionOfSSRS = Test-SQLServerVersion -SQLServerName $SQLServerConnectionString
 }
 
+
 # validate tests for all types
-if ($statusObj.isSiteServer -or $statusObj.isSiteRole -or $statusObj.isSUPAndWSUS -or $statusObj.isReportingServicePoint -or $statusObj.isSecondarySite -or $statusObj.isServerOS)
+$statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
+$statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
+$statusObj.TestNetFrameworkSettings = Test-NetFrameworkSettings
+if ($CipherChecks)
 {
-    $configMgrSystemDetected = $true
-    $statusObj.TestSCHANNELSettings = Test-SCHANNELSettings
-    $statusObj.TestNetFrameworkVersion = Test-NetFrameworkVersion
-    $statusObj.TestNetFrameworkSettings = Test-NetFrameworkSettings
-    if ($CipherChecks)
+    if(([version]$osInfo.Version).Build -eq 14393)
     {
-        if(([version]$osInfo.Version).Build -eq 14393)
-        {
-            $statusObj.TestSCHANNELKeyExchangeAlgorithms = Test-SCHANNELKeyExchangeAlgorithms
-            $statusObj.TestSCHANNELHashes = Test-SCHANNELHashes
-            $statusObj.TestSCHANNELCiphers = Test-SCHANNELCiphers
-            $statusObj.TestCipherSuites = Test-CipherSuites -OSVersion $statusObj.OSVersion
-        }
-        else
-        {
-            if ($InfoMode){Write-Warning "$commandName`: Currently -CipherChecks is only working on Windows 10 1607 and Windows Server 2016!"}
-        }
+        $statusObj.TestSCHANNELKeyExchangeAlgorithms = Test-SCHANNELKeyExchangeAlgorithms
+        $statusObj.TestSCHANNELHashes = Test-SCHANNELHashes
+        $statusObj.TestSCHANNELCiphers = Test-SCHANNELCiphers
+        $statusObj.TestCipherSuites = Test-CipherSuites -OSVersion $statusObj.OSVersion
+    }
+    else
+    {
+        if ($InfoMode){Write-Warning "$commandName`: Currently -CipherChecks is only working on Windows 10 1607 and Windows Server 2016!"}
     }
 }
+
+if(([version]$osInfo.Version).Build -in ('7601','9200'))
+{
+    $statusObj.TestLegacyOSWinHTTP = Test-LegacyOSWinhttpVersion -OSVersion $statusObj.OSVersion
+}
+
+
 
 if ($osInfo.ProductType -eq 1)
 {
     # workstation detected
-    Write-Verbose "$commandName`: Client detected"
-    #Test-WinHTTPSettings
+    Write-Verbose "$commandName`: DETECTED: Workstation"
 }
 
 # set tests not needed to "true" for the overall check to be passed
@@ -1460,6 +1517,7 @@ $resultTestWSUSVersion = if([string]::IsNullOrEmpty($statusObj.TestWSUSVersion.T
 $resultTestNetFrameworkVersion = if([string]::IsNullOrEmpty($statusObj.TestNetFrameworkVersion.TestResult)){$true}else{$statusObj.TestNetFrameworkVersion.TestResult}
 $resultTestNetFrameworkSettings = if([string]::IsNullOrEmpty($statusObj.TestNetFrameworkSettings)){$true}else{$statusObj.TestNetFrameworkSettings}
 $resultTestSCHANNELSettings = if([string]::IsNullOrEmpty($statusObj.TestSCHANNELSettings)){$true}else{$statusObj.TestSCHANNELSettings}
+$resultTestLegacyOSWinHTTP = if([string]::IsNullOrEmpty($statusObj.TestLegacyOSWinHTTP)){$true}else{$statusObj.TestLegacyOSWinHTTP}
 
 # checking overall test state
 if ($resultTestSQLServerVersionOfSite `
@@ -1473,7 +1531,8 @@ if ($resultTestSQLServerVersionOfSite `
     -and $resultTestSCHANNELKeyExchangeAlgorithms `
     -and $resultTestSCHANNELHashes `
     -and $resultTestSCHANNELCiphers `
-    -and $resultTestCipherSuites
+    -and $resultTestCipherSuites `
+    -and $resultTestLegacyOSWinHTTP
     )
 {
     $statusObj.OverallTestStatus = "Passed"
@@ -1483,11 +1542,13 @@ else
     $statusObj.OverallTestStatus = "Failed"
 }
 
+<#
 # override status in case no configMgr system was detected
 if (-NOT ($configMgrSystemDetected))
 {
     $statusObj.OverallTestStatus = "No ConfigMgr system detected. No tests performed."
 }
+#>
 
 # show additional information more readable
 if ($InfoMode)
@@ -1501,7 +1562,7 @@ if ($InfoMode)
     Write-Host "For more information use the -Verbose switch: `"$commandName -InfoMode -Verbose`""
     Write-Host "Or just: `"$commandName -Verbose`""
     Write-Host "Verbose will also output links to each each test to help remediate any wrong configurations"
-    Write-Host "For additional Cipher checks use the `"-CipherChecks`" switchS"
+    Write-Host "For additional Cipher checks use the `"-CipherChecks`" switch"
     Write-Host " "
     Write-Host "----- OS Type Info -----"
     $statusObj | Select-Object -Property OSName, OSType, OSVersion | Format-List
@@ -1526,7 +1587,8 @@ if ($InfoMode)
                                 TestSCHANNELCiphers,
                                 TestCipherSuites,
                                 TestNetFrameworkVersion,
-                                TestNetFrameworkSettings
+                                TestNetFrameworkSettings,
+                                TestLegacyOSWinHTTP
     
 }
 else
@@ -1554,6 +1616,7 @@ else
                                 TestSCHANNELCiphers,
                                 TestCipherSuites,
                                 @{Name = "TestNetFrameworkVersion";Expression = {$_.TestNetFrameworkVersion.TestResult}},
-                                TestNetFrameworkSettings
+                                TestNetFrameworkSettings,
+                                TestLegacyOSWinHTTP
 }
-#endregion
+#endregion 
