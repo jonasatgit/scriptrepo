@@ -78,7 +78,8 @@
     - Verify strong cryptography settings
 
     Windows 7 clients
-    - Before you enable TLS 1.2 on any server components, update Windows to support TLS 1.2 for client-server communications by using WinHTTP. If you enable TLS 1.2 on server components first, you can orphan earlier versions of clients.
+    - Before you force TLS 1.2 on any server component, update Windows to support TLS 1.2 for client-server communications by using WinHTTP. 
+    - If you force TLS 1.2 on server components first, you will loose connection to earlier versions of clients.
 .EXAMPLE
     Test-ConfigMgrTlsConfiguration.ps1
 .EXAMPLE
