@@ -137,7 +137,7 @@ function Test-SQLClientVersion
     [OutputType([object])]
     param
     (
-        [version]$MinSQLClientVersion = "11.4.7004.0"
+        [version]$MinSQLClientVersion = "11.4.7001.0"
     )
 
     $commandName = $MyInvocation.MyCommand.Name
