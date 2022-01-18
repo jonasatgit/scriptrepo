@@ -26,13 +26,21 @@
    Test-BCAndDedupConfiguration.ps1 -Remediate $true
 .PARAMETER Remediate
    Can either be set to $false to only validate the settings or to $true to set the required settings. 
+.PARAMETER ExcludeConnectedCacheFolderFromDeDup
+  The script will look for a folder called "DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294" on the DeDup Volume and will esclude the fodler from DeDup if set to yes (yes is the deafult)
+.PARAMETER ConnectedCacheFolderName
+  Name of the Microsoft Connected Cache data folder
 #>
 
 param
 (
     [Parameter(Mandatory=$false)]
-    [bool]$Remediate = $false
-    # Set to $true in case the script should remediate all required settings
+    [bool]$Remediate = $true,     # Set to $true in case the script should remediate all required settings
+    [Parameter(Mandatory=$false)]
+    [bool]$ExcludeConnectedCacheFolderFromDeDup = $true,
+    [Parameter(Mandatory=$false)]
+    [string]$ConnectedCacheFolderName = 'DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294'
+
 )
 
 # Just making sure we always have the correct output
@@ -302,42 +310,52 @@ if (-NOT ($ContenLibDedupStatus.Enabled))
     if ($Remediate) 
     {
         $null = Enable-DedupVolume $ContentLibVolume -ErrorAction Stop
-        $ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
     }
     else 
     {
         $outPutString = "{0},{1}" -f $outPutString, "DeDupNotEnabled"        
     }
 }     
-        
-# Check if BranchCache folder is excluded from DeDuplication
-$DedupExcludeFolers = @()
-$DedupExcludeFolers = $ContenLibDedupStatus.ExcludeFolder
-$Excluded = $false
-foreach ($Folder in $DedupExcludeFolers) 
+     
+# Check if folders are excluded from DeDuplication
+$ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
+$RemediateExcludes = $false
+$DedupExcludeFolders = @()
+$DedupExcludeFolders = $ContenLibDedupStatus.ExcludeFolder
+if (-NOT $DedupExcludeFolders)
 {
-    if ($Folder -eq "\BranchCache") 
+    $DedupExcludeFolders = @()
+}
+
+# check BranchCache folder
+if (-NOT ("\BranchCache" -in $DedupExcludeFolders))
+{
+    $DedupExcludeFolders += "\BranchCache"
+    $outPutString = "{0},{1}" -f $outPutString, "BCFolderNotExcludedFromDeDup"
+    $RemediateExcludes = $true
+}
+
+
+if ($ExcludeConnectedCacheFolderFromDeDup)
+{
+    if (Test-Path "$ContentLibVolume\$ConnectedCacheFolderName")
     {
-        $Excluded = $true
+        if (-NOT ("\$ConnectedCacheFolderName" -in $DedupExcludeFolders))
+        {
+            $DedupExcludeFolders += "\$ConnectedCacheFolderName"
+            $outPutString = "{0},{1}" -f $outPutString, "ConnectedCacheFolderNotExcludedFromDeDup"
+            $RemediateExcludes = $true
+        }
     }
 }
 
-if (-NOT ($Excluded))
+if ($Remediate -and $RemediateExcludes) 
 {
-    if ($Remediate) 
-    {
-        $Exclusions = @()
-        $Exclusions = (Get-DedupVolume -Volume $ContentLibVolume -ErrorAction Stop).ExcludeFolder
-        $Exclusions += "\BranchCache"
-        $null = Set-DedupVolume $ContentLibVolume -ExcludeFolder $Exclusions -ErrorAction Stop
-        # We could also start optimization. If not manually started, the job will start a few hours later and will then run every hour. 
-        #$null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
-    }
-    else 
-    {
-        $outPutString = "{0},{1}" -f $outPutString, "BCFolderNotExcludedFromDeDup"          
-    }
+    $null = Set-DedupVolume $ContentLibVolume -ExcludeFolder $DedupExcludeFolders -ErrorAction Stop
+    # We could also start dedup optimization. If not manually started, the job will start a few hours later and will then run every hour. 
+    #$null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
 }
+
 #endregion
 
 #region Final output
@@ -360,4 +378,3 @@ if (-NOT ($Remediate))
     }
 }
 #endregion
-
