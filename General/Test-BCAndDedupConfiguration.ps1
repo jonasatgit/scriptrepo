@@ -27,7 +27,7 @@
 .PARAMETER Remediate
    Can either be set to $false to only validate the settings or to $true to set the required settings. 
 .PARAMETER ExcludeConnectedCacheFolderFromDeDup
-  The script will look for a folder called "DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294" on the DeDup Volume and will esclude the fodler from DeDup if set to yes (yes is the deafult)
+  The script will look for a folder called "DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294" on the DeDup Volume and will exclude the folder from DeDup if set to yes (yes is the deafult)
 .PARAMETER ConnectedCacheFolderName
   Name of the Microsoft Connected Cache data folder
 #>
