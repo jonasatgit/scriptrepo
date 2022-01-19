@@ -1,0 +1,41 @@
+<SMS_Roles>
+  <SMS_Role CopiedFromID="SMS0002R" RoleName="MEM_App_Developer_CL" RoleDescription="">
+    <Operations>
+      <Operation GrantedOperations="806393921" ObjectTypeID="1" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="2" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="4" />
+      <Operation GrantedOperations="269484033" ObjectTypeID="6" />
+      <Operation GrantedOperations="1" ObjectTypeID="7" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="11" />
+      <Operation GrantedOperations="1" ObjectTypeID="15" />
+      <Operation GrantedOperations="1" ObjectTypeID="27" />
+      <Operation GrantedOperations="1" ObjectTypeID="29" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="30" />
+      <Operation GrantedOperations="268575751" ObjectTypeID="31" />
+      <Operation GrantedOperations="1031" ObjectTypeID="32" />
+      <Operation GrantedOperations="1" ObjectTypeID="38" />
+      <Operation GrantedOperations="9" ObjectTypeID="42" />
+      <Operation GrantedOperations="9" ObjectTypeID="43" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="44" />
+      <Operation GrantedOperations="1" ObjectTypeID="45" />
+      <Operation GrantedOperations="1" ObjectTypeID="46" />
+      <Operation GrantedOperations="268697601" ObjectTypeID="47" />
+      <Operation GrantedOperations="1" ObjectTypeID="48" />
+      <Operation GrantedOperations="1025" ObjectTypeID="50" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="64" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="67" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="69" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="86" />
+      <Operation GrantedOperations="1" ObjectTypeID="209" />
+      <Operation GrantedOperations="1" ObjectTypeID="210" />
+      <Operation GrantedOperations="1" ObjectTypeID="213" />
+      <Operation GrantedOperations="1" ObjectTypeID="216" />
+      <Operation GrantedOperations="1031" ObjectTypeID="219" />
+      <Operation GrantedOperations="1" ObjectTypeID="221" />
+      <Operation GrantedOperations="140295" ObjectTypeID="224" />
+      <Operation GrantedOperations="1" ObjectTypeID="226" />
+      <Operation GrantedOperations="1" ObjectTypeID="227" />
+      <Operation GrantedOperations="1" ObjectTypeID="229" />
+    </Operations>
+  </SMS_Role>
+</SMS_Roles>

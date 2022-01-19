@@ -1,4 +1,4 @@
-﻿#************************************************************************************************************
+#************************************************************************************************************
 # Disclaimer
 #
 # This sample script is not supported under any Microsoft standard support program or service. This sample
@@ -33,8 +33,8 @@ param
 (
     [Parameter(Mandatory=$false)]
     [string]$ProviderMachineName = $env:COMPUTERNAME,
-    [Parameter(Mandatory=$false)]
-    [string]$SiteCode = "P01",
+    [Parameter(Mandatory=$true)]
+    [string]$SiteCode,
     [Parameter(Mandatory=$false)]   
     [switch]$ForceDCOMConnection
 )

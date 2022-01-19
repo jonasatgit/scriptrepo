@@ -1,0 +1,19 @@
+<SMS_Roles>
+  <SMS_Role CopiedFromID="SMS0002R" RoleName="MEM_ServiceDesk_CL" RoleDescription="">
+    <Operations>
+      <Operation GrantedOperations="805310689" ObjectTypeID="1" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="4" />
+      <Operation GrantedOperations="269484033" ObjectTypeID="6" />
+      <Operation GrantedOperations="1" ObjectTypeID="38" />
+      <Operation GrantedOperations="1" ObjectTypeID="42" />
+      <Operation GrantedOperations="1" ObjectTypeID="43" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="44" />
+      <Operation GrantedOperations="1" ObjectTypeID="45" />
+      <Operation GrantedOperations="1" ObjectTypeID="46" />
+      <Operation GrantedOperations="268435457" ObjectTypeID="67" />
+      <Operation GrantedOperations="1" ObjectTypeID="213" />
+      <Operation GrantedOperations="1" ObjectTypeID="221" />
+      <Operation GrantedOperations="1" ObjectTypeID="226" />
+    </Operations>
+  </SMS_Role>
+</SMS_Roles>

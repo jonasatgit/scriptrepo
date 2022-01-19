@@ -1,0 +1,77 @@
+﻿{"ConfigMgrRoleDefinition":{
+  "_DOCUMENTATION":
+    [
+      {
+      }
+    ],
+  "AdministrativeUserList":
+    [
+      {
+	    "AdministrativeUser": "MEM_ADMIN",
+        "DescriptiveName": "MEM Admin", 
+        "CollectionList": [
+                            "All Systems",
+                            "All Users and User Groups"
+                          ],
+        "RoleList":       [
+                            "Full Administrator"
+                          ],
+        "ScopeList":      [
+                            "All"
+                          ]
+      },
+
+
+      {
+	    "AdministrativeUser": "MEM_APP_DEV_CL", 
+        "DescriptiveName": "MEM APP Developer Clients", 
+        "CollectionList": [
+                            "All Clients | SW Clients Test"
+                          ],
+        "RoleList":       [
+                            "MEM_App_Developer_CL"
+                          ],
+        "ScopeList":      [
+                            "MEM_Dev_CL"
+                          ]
+      },
+
+
+      {
+	    "AdministrativeUser": "MEM_OSD_MANAGER_CL", 
+        "DescriptiveName": "MEM OSD Manager Client", 
+        "CollectionList": [
+                            "OSD Windows 10 2004",
+                            "OSD Windows 10 20H2",
+                            "OSD Windows 10 21H1"
+
+                          ],
+        "RoleList":       [
+                            "MEM_OSD_MANAGER_CL"
+                          ],
+        "ScopeList":      [
+                            "MEM_Dev_CL",
+                            "MEM_Prod_CL"
+                          ]
+      },
+
+      {
+	    "AdministrativeUser": "MEM_SERVICEDESK_CL", 
+        "DescriptiveName": "MEM ServiceDesk Client", 
+        "CollectionList": [
+                            "All Clients"
+
+                          ],
+        "RoleList":       [
+                            "MEM_ServiceDesk_CL"
+                          ],
+        "ScopeList":      [
+                            "MEM_ServiceDesk_CL"
+                          ]
+      }
+
+
+    ]
+  }
+}
+
