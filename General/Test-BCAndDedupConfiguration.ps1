@@ -35,7 +35,7 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [bool]$Remediate = $true,     # Set to $true in case the script should remediate all required settings
+    [bool]$Remediate = $false,     # Set to $true in case the script should remediate all required settings
     [Parameter(Mandatory=$false)]
     [bool]$ExcludeConnectedCacheFolderFromDeDup = $true,
     [Parameter(Mandatory=$false)]
@@ -304,7 +304,10 @@ if (-NOT ($DedupFeature.Installed))
 $ContentLibDrive = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\SMS\DP" -Name ContentLibraryPath -ErrorAction Stop).ContentLibraryPath
 $ContentLibVolume = ($ContentLibDrive).SubString(0, 2)
 # Check Dedup enabled, enable if disabled and write status to variable for future processing
-$ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue 
+$ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
+#Load DeDuplication Module
+Import-Module Deduplication
+
 if (-NOT ($ContenLibDedupStatus.Enabled))
 {
     if ($Remediate) 
@@ -315,7 +318,20 @@ if (-NOT ($ContenLibDedupStatus.Enabled))
     {
         $outPutString = "{0},{1}" -f $outPutString, "DeDupNotEnabled"        
     }
-}     
+}
+
+#Check file age for DeDuplication is set to 0 for best savings
+if (-NOT ($ContenLibDedupStatus.MinimumFileAgeDays -eq 0))
+{
+    if ($Remediate) 
+    {
+        $null = Set-DedupVolume -Volume $ContentLibVolume -MinimumFileAgeDays 0 -ErrorAction Stop
+    }
+    else 
+    {
+        $outPutString = "{0},{1}" -f $outPutString, "DeDupWrongFileAge"        
+    }
+} 
      
 # Check if folders are excluded from DeDuplication
 $ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
