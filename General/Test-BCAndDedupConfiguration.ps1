@@ -1,4 +1,4 @@
-﻿#************************************************************************************************************
+#************************************************************************************************************
 # Disclaimer
 #
 # This sample script is not supported under any Microsoft standard support program or service. This sample
@@ -19,29 +19,17 @@
 .DESCRIPTION
    The script is designed to run as a ConfigMgr configuration item within a configuration baseline.
    It will either validate all required BranchCache and Data Deduplication settings for Distribution Points or set them. 
-   The behaviour can be set via parameter $remediate.
+   The behaviour can be set via variable $remediate.
 .EXAMPLE
    Test-BCAndDedupConfiguration.ps1
-.EXAMPLE
-   Test-BCAndDedupConfiguration.ps1 -Remediate $true
-.PARAMETER Remediate
-   Can either be set to $false to only validate the settings or to $true to set the required settings. 
-.PARAMETER ExcludeConnectedCacheFolderFromDeDup
-  The script will look for a folder called "DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294" on the DeDup Volume and will exclude the folder from DeDup if set to yes (yes is the deafult)
-.PARAMETER ConnectedCacheFolderName
-  Name of the Microsoft Connected Cache data folder
 #>
 
-param
-(
-    [Parameter(Mandatory=$false)]
-    [bool]$Remediate = $false,     # Set to $true in case the script should remediate all required settings
-    [Parameter(Mandatory=$false)]
-    [bool]$ExcludeConnectedCacheFolderFromDeDup = $true,
-    [Parameter(Mandatory=$false)]
-    [string]$ConnectedCacheFolderName = 'DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294'
-
-)
+#Set to $true in case the script should remediate all required settings
+[bool]$Remediate = $false
+#If $true, the ConnectedCache Folder will be excluded from Dedup
+[bool]$ExcludeConnectedCacheFolderFromDeDup = $true
+#Name of the Microsoft Connected Cache data folder. Should be the same on all Connected Cache Servers
+[string]$ConnectedCacheFolderName = 'DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294'
 
 # Just making sure we always have the correct output
 [string]$outPutString = $null
