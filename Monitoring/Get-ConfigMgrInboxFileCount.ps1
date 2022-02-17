@@ -29,6 +29,9 @@
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
 
+.EXAMPLE
+    Get-ConfigMgrInboxFileCount.ps1 -GridViewOutput
+
 .INPUTS
    None
 

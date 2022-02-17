@@ -22,8 +22,14 @@
     You can exclude components like this: $excludedComponents = ('SMS_WSUS_SYNC_MANAGER','SMS_WSUS_CONFIGURATION_MANAGER')
     Source: https://github.com/jonasatgit/scriptrepo
 
+.PARAMETER GridViewOutput
+    Switch parameter to be able to output the results in a GridView instead of compressed JSON
+
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -GridViewOutput
 
 .INPUTS
    None
@@ -33,6 +39,10 @@
     
 #>
 [CmdletBinding()]
+param
+(
+    [Switch]$GridViewOutput
+)
 
 # exclude specific components if needed
 $excludedComponents = ('')
@@ -110,7 +120,6 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
     {
         # temp results object
         $resultsObject = New-Object System.Collections.ArrayList
-
         $componentList = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\SMS\Operations Management\Components' 
 
         #$listOfMonitoredComponents = New-Object System.Collections.ArrayList
@@ -136,7 +145,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                         # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
                         $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
                         $tmpResultObject.Name = $systemName
-                        $tmpResultObject.Epoch = 0
+                        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                         $tmpResultObject.Status = 2
                         $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
                         $tmpResultObject.Debug = ''
@@ -158,7 +167,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         {
             $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
             $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0
+            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 0
             $tmpResultObject.ShortDescription = ''
             $tmpResultObject.Debug = ''
@@ -174,7 +183,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         
         $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
         $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0
+        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
         $tmpResultObject.Status = 0
         $tmpResultObject.ShortDescription = ''
         $tmpResultObject.Debug = ''
@@ -191,7 +200,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         
         $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
         $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0
+        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
         $tmpResultObject.Status = 1
         $tmpResultObject.ShortDescription = 'Error: No ConfigMgr Site System found'
         $tmpResultObject.Debug = ''
@@ -200,4 +209,11 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
     }
 }
 
-$outObject | ConvertTo-Json -Compress  
+if ($GridViewOutput)
+{
+    $outObject.Results | Out-GridView
+}
+else
+{
+    $outObject | ConvertTo-Json -Compress
+} 
