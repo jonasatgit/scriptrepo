@@ -14,13 +14,17 @@
 
 <#
 .Synopsis
-    Script to monitor ConfigMgr/MECM performance counters
+    Script to monitor ConfigMgr/MECM performance counter
     
 .DESCRIPTION
-    The script reads from an in script hashtable called "$referenceData" to validate a specific performance counter
-    Each counter takes about one second to read. Take this into account when validating a large number of perf counters
-    Exclude Counters by simply uncomment them in the list of "$referenceData"
+    The script reads from an in script hashtable called "$referenceData" to validate a list of specific performance counter
+    The inbox perf counter refresh intervall is 15 minutes. It therefore makes no sense to validate a counter more often. 
+    Get the full list of available inbox perf counter via the following command:
+    Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
     Source: https://github.com/jonasatgit/scriptrepo
+
+.PARAMETER GridViewOutput
+    Switch parameter to be able to output the results in a GridView instead of compressed JSON
 
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
@@ -33,45 +37,53 @@
     
 #>
 [CmdletBinding()]
+param
+(
+    [Switch]$GridViewOutput
+)
+
+# Get the full list of available inbox perf counter via the following command:
+# Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
+
 # String "MaxValue=" just for readability. Will be removed later.
-$referenceData = @{}
-$referenceData.add('\SMS Inbox(aikbmgr.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(AIKbMgr.box>RETRY)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>BAD)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>disc.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>mtn.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>om.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>prov.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(amtproxymgr.box>wol.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>dataldr.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>ddm.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>ddm.box>regreq)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>ddm.box>userddrsonly)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>sinv.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>statesys.box>incoming)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>statesys.box>incoming>high)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(auth>statesys.box>incoming>low)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(bgb.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(bgb.box>bad)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(COLLEVAL.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(COLLEVAL.box>RETRY)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(dataldr.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(ddm.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(despoolr.box>receive)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(distmgr.box>incoming)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(hman.box>ForwardingMsg)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(notictrl.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(offermgr.box>INCOMING)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(OGprocess.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(polreq.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(rcm.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(replmgr.box>incoming)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(schedule.box>outboxes>LAN)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(schedule.box>requests)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(sinv.box)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(statmgr.box>statmsgs)\File Current Count','MaxValue=500')
-$referenceData.add('\SMS Inbox(swmproc.box>usage)\File Current Count','MaxValue=500')
+$referenceData = @{}                                                                                                                                                                                                           
+$referenceData.add('hman.box>ForwardingMsg','MaxValue=500')                                                                                                                                                                                         
+#$referenceData.add('schedule.box>outboxes>LAN ','MaxValue=500')                                                                                                                                                                                      
+$referenceData.add('schedule.box>requests','MaxValue=500')                                                                                                                                                                                         
+$referenceData.add('dataldr.box','MaxValue=500')                                                                                                                                                                                                      
+$referenceData.add('sinv.box','MaxValue=500')                                                                                                                                                                                                         
+$referenceData.add('despoolr.box>receive','MaxValue=500')                                                                                                                                                                                             
+$referenceData.add('replmgr.box>incoming','MaxValue=500')                                                                                                                                                                                             
+$referenceData.add('ddm.box','MaxValue=500')                                                                                                                                                                                                          
+$referenceData.add('rcm.box','MaxValue=500')                                                                                                                                                                                                          
+$referenceData.add('bgb.box','MaxValue=500')                                                                                                                                                                                                          
+$referenceData.add('bgb.box>bad','MaxValue=500')                                                                                                                                                                                                      
+#$referenceData.add('notictrl.box','MaxValue=500')                                                                                                                                                                                                     
+#$referenceData.add('AIKbMgr.box>RETRY','MaxValue=500')                                                                                                                                                                                                
+$referenceData.add('COLLEVAL.box','MaxValue=500')                                                                                                                                                                                                     
+#$referenceData.add('amtproxymgr.box>disc.box','MaxValue=500')                                                                                                                                                                                         
+#$referenceData.add('amtproxymgr.box>om.box','MaxValue=500')                                                                                                                                                                                           
+#$referenceData.add('amtproxymgr.box>wol.box','MaxValue=500')                                                                                                                                                                                          
+#$referenceData.add('amtproxymgr.box>prov.box','MaxValue=500')                                                                                                                                                                                         
+$referenceData.add('COLLEVAL.box>RETRY','MaxValue=500')                                                                                                                                                                                               
+#$referenceData.add('amtproxymgr.box>BAD','MaxValue=500')
+#$referenceData.add('amtproxymgr.box>mtn.box','MaxValue=500')                                                                                                                                                                                         
+$referenceData.add('offermgr.box>INCOMING','MaxValue=500')                                                                                                                                                                                           
+#$referenceData.add('amtproxymgr.box','MaxValue=500')                                                                                                                                                                                                 
+#$referenceData.add('aikbmgr.box','MaxValue=500')                                                                                                                                                                                                     
+$referenceData.add('auth>ddm.box','MaxValue=500')                                                                                                                                                                                                    
+$referenceData.add('auth>ddm.box>userddrsonly','MaxValue=500')                                                                                                                                                                                       
+$referenceData.add('auth>ddm.box>regreq','MaxValue=500')                                                                                                                                                                                             
+$referenceData.add('auth>sinv.box','MaxValue=500')                                                                                                                                                                                                   
+$referenceData.add('auth>dataldr.box','MaxValue=500')                                                                                                                                                                                                
+$referenceData.add('statmgr.box>statmsgs','MaxValue=500')                                                                                                                                                                                            
+$referenceData.add('swmproc.box>usage','MaxValue=500')                                                                                                                                                                                               
+$referenceData.add('distmgr.box>incoming','MaxValue=500')                                                                                                                                                                                            
+$referenceData.add('auth>statesys.box>incoming','MaxValue=500')                                                                                                                                                                                      
+$referenceData.add('polreq.box','MaxValue=500')                                                                                                                                                                                                      
+$referenceData.add('auth>statesys.box>incoming>low','MaxValue=500')                                                                                                                                                                                  
+$referenceData.add('auth>statesys.box>incoming>high','MaxValue=500')                                                                                                                                                                                 
+#$referenceData.add('OGprocess.box','MaxValue=500')                                                                                                                                                                                                   
 
 
 # get system FQDN if possible
@@ -85,47 +97,53 @@ else
     $systemName = $env:COMPUTERNAME
 }
 
-
-# temp results object
-$resultsObject = New-Object System.Collections.ArrayList
-
-
-$referenceData.GetEnumerator() | ForEach-Object {
-
-    $maxValue = $_.value -split '='
-
-    $counterResult = Get-Counter -Counter $_.key -MaxSamples 1 -ErrorAction SilentlyContinue
-    if ($counterResult)
+$inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
+if ($inboxCounterList)
+{
+    # temp results object
+    $resultsObject = New-Object System.Collections.ArrayList
+    
+    foreach ($inboxCounter in $inboxCounterList)
     {
-        # Check if counter readings over the limit and output the counter if so
-        $readings = $counterResult.Readings -split ':'
-        if ($readings[1] -gt $maxValue[1])
+        $counterValue = $null
+        $counterValue = $referenceData[($inboxCounter.Name)]
+        if ($counterValue)
+        {
+            # split "MaxValue=500"
+            [array]$counterMaxValue = $counterValue -split '='
+
+            if ($inboxCounter.FileCurrentCount -gt $counterMaxValue[1])
+            {
+                # Temp object for results
+                # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $systemName
+                $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = 1
+                $tmpResultObject.ShortDescription = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $counterMaxValue[1]
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)        
+            }
+        }
+    }
+
+    # validate script reference data by looking for counter in actual local counter list
+    $referenceData.GetEnumerator() | ForEach-Object {
+        
+        if ($inboxCounterList.name -notcontains $_.Key)
         {
             # Temp object for results
             # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
             $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
             $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0
+            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 1
-            $tmpResultObject.ShortDescription = 'Counter: {0} Value: {1} Over limit: {2}' -f $_.key, $readings[1], $maxValue[1]
+            $tmpResultObject.ShortDescription = 'Counter: `"{0}`" not found on machine! ' -f $_.key
             $tmpResultObject.Debug = ''
-            [void]$resultsObject.Add($tmpResultObject)
+            [void]$resultsObject.Add($tmpResultObject) 
         }
     }
-    else
-    {
-        # Temp object for results
-        # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0
-        $tmpResultObject.Status = 1
-        $tmpResultObject.ShortDescription = 'Counter: {0} NOT found!' -f $_.key
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)        
-    }
-
-}
+} 
 
 
 # used as a temp object for JSON output
@@ -139,7 +157,7 @@ else
 {
     $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
     $tmpResultObject.Name = $systemName
-    $tmpResultObject.Epoch = 0
+    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
     $tmpResultObject.Status = 0
     $tmpResultObject.ShortDescription = ''
     $tmpResultObject.Debug = ''
@@ -147,5 +165,12 @@ else
     $outObject.Results = $tmpResultObject
 }
 
+if ($GridViewOutput)
+{
+    $outObject.Results | Out-GridView
+}
+else
+{
+    $outObject | ConvertTo-Json -Compress
+}
 
-$outObject | ConvertTo-Json -Compress 
