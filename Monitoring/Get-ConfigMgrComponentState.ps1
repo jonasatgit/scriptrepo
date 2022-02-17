@@ -37,6 +37,61 @@
 # exclude specific components if needed
 $excludedComponents = ('')
 
+<#
+.Synopsis
+   function Test-ConfigMgrActiveSiteSystemNode 
+
+.DESCRIPTION
+   Test if a given FQDN is the active ConfigMgr Site System node
+   Function to read from HKLM:\SOFTWARE\Microsoft\SMS\Identification' 'Site Servers' and determine the active site server node
+   Possible values could be: 
+        1;server1.contoso.local;
+        1;server1.contoso.local;0;server2.contoso.local;
+        0;server1.contoso.local;1;server2.contoso.local;
+
+.PARAMETER SiteSystemFQDN
+   FQDN of site system
+
+.EXAMPLE
+   Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN 'server1.contoso.local'
+#>
+function Test-ConfigMgrActiveSiteSystemNode
+{
+    param
+    (
+        [string]$SiteSystemFQDN
+    )
+
+    $siteServers = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Servers' -ErrorAction SilentlyContinue
+    if ($siteServers)
+    {
+        # Extract site system values from registry property 
+        $siteSystemHashTable = @{}
+        $siteSystems = [regex]::Matches(($siteServers.'Site Servers'),'(\d;[a-zA-Z0-9._-]+)')
+        if($siteSystems.Count -gt 1)
+        {
+            # HA site systems found
+            foreach ($SiteSystemNode in $siteSystems)
+            {
+                $tmpArray = $SiteSystemNode.value -split ';'
+                $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+            }
+        }
+        else
+        {
+            # single site system found
+            $tmpArray = $siteSystems.value -split ';'
+            $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+        }
+        
+        return $siteSystemHashTable[($SiteSystemFQDN).ToLower()]
+    }
+    else
+    {
+        return $null
+    }
+}
+
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
 if ($win32Computersystem)
@@ -48,63 +103,101 @@ else
     $systemName = $env:COMPUTERNAME
 }
 
-# temp results object
-$resultsObject = New-Object System.Collections.ArrayList
 
-$componentList = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\SMS\Operations Management\Components' 
-
-#$listOfMonitoredComponents = New-Object System.Collections.ArrayList
-foreach ($component in $componentList)
+switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
 {
-    $componentName = ($component.Name | Split-Path -Leaf)
+    1 ## ACTIVE NODE FOUND. Run checks
+    {
+        # temp results object
+        $resultsObject = New-Object System.Collections.ArrayList
 
-    if ($excludedComponents.Contains($componentName))
-    {
-        #skip component
-    }
-    else
-    {
-    
-        $componentMonitoringType = $component | Get-ItemProperty -Name 'Site Component Manager Monitoring Type' -ErrorAction SilentlyContinue
-        if($componentMonitoringType.'Site Component Manager Monitoring Type' -like 'Monitored*')
+        $componentList = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\SMS\Operations Management\Components' 
+
+        #$listOfMonitoredComponents = New-Object System.Collections.ArrayList
+        foreach ($component in $componentList)
         {
+            $componentName = ($component.Name | Split-Path -Leaf)
 
-            $componentAvailabilityState = $component | Get-ItemProperty -Name 'Availability State' -ErrorAction SilentlyContinue
-            if($componentAvailabilityState.'Availability State' -ne 0)
+            if ($excludedComponents.Contains($componentName))
             {
-                # Temp object for results
-                # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $systemName
-                $tmpResultObject.Epoch = 0
-                $tmpResultObject.Status = 2
-                $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
-                $tmpResultObject.Debug = ''
-                [void]$resultsObject.Add($tmpResultObject)
+                #skip component
+            }
+            else
+            {
+    
+                $componentMonitoringType = $component | Get-ItemProperty -Name 'Site Component Manager Monitoring Type' -ErrorAction SilentlyContinue
+                if($componentMonitoringType.'Site Component Manager Monitoring Type' -like 'Monitored*')
+               {
+
+                    $componentAvailabilityState = $component | Get-ItemProperty -Name 'Availability State' -ErrorAction SilentlyContinue
+                    if($componentAvailabilityState.'Availability State' -ne 0)
+                    {
+                        # Temp object for results
+                        # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                        $tmpResultObject.Name = $systemName
+                        $tmpResultObject.Epoch = 0
+                        $tmpResultObject.Status = 2
+                        $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
+                        $tmpResultObject.Debug = ''
+                        [void]$resultsObject.Add($tmpResultObject)
+                    }
+                }
             }
         }
+
+
+        # used as a temp object for JSON output
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1
+        if ($resultsObject)
+        {
+            $outObject.Results = $resultsObject
+        }
+        else
+        {
+            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+            $tmpResultObject.Name = $systemName
+            $tmpResultObject.Epoch = 0
+            $tmpResultObject.Status = 0
+            $tmpResultObject.ShortDescription = ''
+            $tmpResultObject.Debug = ''
+
+            $outObject.Results = $tmpResultObject
+        }
+    }
+
+    0 ## PASSIVE NODE FOUND. Nothing to do.
+    {
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1
+        
+        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject.Name = $systemName
+        $tmpResultObject.Epoch = 0
+        $tmpResultObject.Status = 0
+        $tmpResultObject.ShortDescription = ''
+        $tmpResultObject.Debug = ''
+
+        $outObject.Results = $tmpResultObject        
+
+    }
+
+    Default ## NO STATE FOUND
+    {
+        # No state found. Either no ConfigMgr Site System or script error
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1
+        
+        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject.Name = $systemName
+        $tmpResultObject.Epoch = 0
+        $tmpResultObject.Status = 1
+        $tmpResultObject.ShortDescription = 'Error: No ConfigMgr Site System found'
+        $tmpResultObject.Debug = ''
+
+        $outObject.Results = $tmpResultObject 
     }
 }
 
-
-# used as a temp object for JSON output
-$outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-$outObject.InterfaceVersion = 1
-if ($resultsObject)
-{
-    $outObject.Results = $resultsObject
-}
-else
-{
-    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-    $tmpResultObject.Name = $systemName
-    $tmpResultObject.Epoch = 0
-    $tmpResultObject.Status = 0
-    $tmpResultObject.ShortDescription = ''
-    $tmpResultObject.Debug = ''
-
-    $outObject.Results = $tmpResultObject
-}
-
-
-$outObject | ConvertTo-Json -Compress 
+$outObject | ConvertTo-Json -Compress  
