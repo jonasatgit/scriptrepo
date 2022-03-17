@@ -45,6 +45,9 @@ Lorem Ipsum
 .PARAMETER ValidRulesOnly
 Lorem Ipsum
 
+.PARAMETER MergeSimilarRules
+Lorem Ipsum
+
 .PARAMETER IPType
 Lorem Ipsum
 
@@ -103,6 +106,9 @@ param
     [switch]$ValidRulesOnly,
 
     [parameter(Mandatory=$false)]
+    [switch]$MergeSimilarRules,
+
+    [parameter(Mandatory=$false)]
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
 
@@ -139,6 +145,38 @@ param
     [string]$SiteCode
 )
 
+
+<#
+.SYNOPSIS
+    Simple function to compare two arrays
+#>
+function Compare-TwoArrays 
+{
+    param
+    (
+        [parameter(Mandatory=$true)]
+        [array]$ArrayReference,
+        [parameter(Mandatory=$true)]
+        [array]$ArrayDifference
+    )
+
+    $ipFound = $false
+    foreach ($item in $ArrayDifference)
+    {
+        if ($ArrayReference -contains $item)
+        {
+            $ipFound = $true
+        }
+    }
+
+    return $ipFound
+}
+
+
+<#
+.SYNOPSIS
+    Function to export MECM site server information into a JSON file
+#>
 Function Export-SystemRoleInformation
 {
     param
@@ -266,6 +304,18 @@ Function Export-SystemRoleInformation
             }
             'SMS Distribution Point' 
             {
+
+                $isPXE = $system.Props | Where-Object {$_.PropertyName -eq 'IsPXE'}
+                if ($isPXE.Value -eq 1)
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                    $tmpObj.Role = 'DistributionPointPXE'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    [void]$outObject.Add($tmpObj)                
+                }
+
                 $isPullDP = $system.Props | Where-Object {$_.PropertyName -eq 'IsPullDP'}
                 if ($isPullDP.Value -eq 1)
                 {
@@ -606,34 +656,27 @@ Write-Host "$(Get-date -Format u): Searching rules for: `"$DestinationSystemFQDN
 $destinationSystemObject = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.FullQualifiedDomainName -eq $DestinationSystemFQDN})
 if ($destinationSystemObject)
 {
-    # Making sure we have any IPAddress for the source system
-    # We also check the provided IPAddress with what DNS tells us
-    $IPAdressesOfSelectedSystem = @()
-    $IPAdressesOfSelectedSystem = Get-IPAddressFromName -SystemName ($destinationSystemObject.FullQualifiedDomainName) -Type $IPType
-
-    if ($IPAdressesOfSelectedSystem)
+    if ([string]::IsNullOrEmpty($destinationSystemObject.IPAddress))
     {
-        if(-NOT ([string]::IsNullOrEmpty($destinationSystemObject.IPAddress)))
-        {
-            [array]$destinationSystemObjectIPAddresses = $destinationSystemObject.IPAddress -split ','
-            if ($destinationSystemObjectIPAddresses -notin $IPAdressesOfSelectedSystem) 
-            {
-                Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($destinationSystemObject.IPAddress)`" DNS: `"$($IPAdressesOfSelectedSystem -join ',')`"" -ForegroundColor Yellow
-                Exit
-            }
-        }
-    }
-    else 
-    {
-        if(([string]::IsNullOrEmpty($destinationSystemObject.IPAddress)))
+        Write-Host "$(Get-date -Format u): WARNING: No IPAddress in config file found. Trying to resolve name..." -ForegroundColor Yellow
+        [array]$destinationSystemIPAddresses = Get-IPAddressFromName -SystemName ($destinationSystemObject.FullQualifiedDomainName) -Type $IPType
+        if (-NOT ($destinationSystemIPAddresses))
         {
             Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$DestinationSystemFQDN`" Neither in config file nor via DNS!" -ForegroundColor Yellow
-            exit
+            break           
         }
-        else 
+    }
+    else
+    {
+        [array]$destinationSystemIPAddresses = $destinationSystemObject.IPAddress -split ','
+        [array]$dnsLookupResult = Get-IPAddressFromName -SystemName ($destinationSystemObject.FullQualifiedDomainName) -Type $IPType
+        if ($dnsLookupResult)
         {
-            $IPAdressesOfSelectedSystem = $destinationSystemObject.IPAddress -split ','  
-        }  
+            if (-NOT (Compare-TwoArrays -ArrayReference $destinationSystemIPAddresses -ArrayDifference $dnsLookupResult))
+            {
+                Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($destinationSystemObject.IPAddress)`" DNS: `"$($dnsLookupResult -join ',')`"" -ForegroundColor Yellow
+            }
+        }
     }
 }
 else 
@@ -691,11 +734,11 @@ foreach ($role in $destinationSystemObject.RoleList)
             $searchString = $firewallRule.Destination
         }
 
+
         if ($searchString -notin ('Any','Internet'))
         {
-            Write-Host "$(Get-date -Format u): Getting all source systems for role: `"$($searchString)`"" -ForegroundColor Green
+            Write-Verbose "$(Get-date -Format u): Getting all source systems for role: `"$($searchString)`""
             $SourceSystems = $null
-
 
             # if CAS or secondary, do other stuff
 
@@ -712,7 +755,7 @@ foreach ($role in $destinationSystemObject.RoleList)
 
             if (-NOT $SourceSystems)
             {
-                Write-Host "$(Get-date -Format u): WARNING: No systems with role: `"$($searchString)`" found in configfile" -ForegroundColor Yellow
+                Write-Verbose "$(Get-date -Format u): WARNING: No systems with role: `"$($searchString)`" found in configfile"
                 $status = "NOT OK"
                 $statusDescription = 'No system with specified role found'
             }
@@ -720,51 +763,47 @@ foreach ($role in $destinationSystemObject.RoleList)
             {
                 foreach ($SourceSystem in $SourceSystems)
                 {
-                    # If  system is local system then skip system
-                    $ipAddressesOfSystem = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
-                    if ($ipAddressesOfSystem)
+                    
+                    if ([string]::IsNullOrEmpty($SourceSystem.IPAddress))
                     {
-                        if([string]::IsNullOrEmpty($SourceSystem.IPAddress))
+                        Write-Host "$(Get-date -Format u): WARNING: No IPAddress in config file found for `"$($SourceSystem.FullQualifiedDomainName)`". Trying to resolve name..." -ForegroundColor Yellow
+                        [array]$SourceSystemIPAddresses = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
+                        if (-NOT ($SourceSystemIPAddresses))
                         {
-                            $IPAddressList += $ipAddressesOfSystem
+                            Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$($SourceSystem.FullQualifiedDomainName)`" Neither in config file nor via DNS!" -ForegroundColor Yellow
+                            break           
                         }
-                        else 
+                        else
                         {
-                            $IPAddressList += $SourceSystem.IPAddress -split ','
-
-                            [array]$ipAddressesFromConfigFile = $SourceSystem.IPAddress -split ','
-                            if ($ipAddressesFromConfigFile -notin $ipAddressesOfSystem) 
-                            {
-                                Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($SourceSystem.IPAddress)`" DNS: `"$($ipAddressesOfSystem -join ',')`"" -ForegroundColor Yellow
-                            }
+                            $IPAddressList += $SourceSystemIPAddresses
                         }
                     }
-                    else 
+                    else
                     {
-                        if([string]::IsNullOrEmpty($SourceSystem.IPAddress))
+                        [array]$SourceSystemIPAddresses = $SourceSystem.IPAddress -split ','
+                        [array]$dnsLookupResult = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
+                        if ($dnsLookupResult)
                         {
-                            Write-Host "$(Get-date -Format u): WARNING: No IPAddress information found for `"$($SourceSystem.FullQualifiedDomainName)`"" -ForegroundColor Yellow
-                            $status = "NOT OK"  
-                            $statusDescription = 'No IP info found for system'  
-                            
+                            if (-NOT (Compare-TwoArrays -ArrayReference $SourceSystemIPAddresses -ArrayDifference $dnsLookupResult))
+                            {
+                                Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($SourceSystem.IPAddress)`" DNS: `"$($dnsLookupResult -join ',')`"" -ForegroundColor Yellow
+                            }
                         }
-                        else 
-                        {
-                            $IPAddressList += $SourceSystem.IPAddress -split ','
-                        }
-                    } 
+                        
+                        $IPAddressList += $SourceSystemIPAddresses
+                    }
                 }
             }
 
             if ($IPAddressList)
             {
                 # validate if destination system is the only system in a rule. If so, skip the rule.
-                $IPAddressList = $IPAddressList | Where-Object {$_ -notin $IPAdressesOfSelectedSystem}
+                $IPAddressList = $IPAddressList | Where-Object {$_ -notin $destinationSystemIPAddresses}
                 if (-NOT $IPAddressList) # if we don't have an IP at all, skip the rule
                 {
                     $status = "NOT OK"
                     $statusDescription = 'Source IP equals destination IP'
-                    Write-Host "$(Get-date -Format u): WARNING: Source system is equal to destination system. That's expected if the role is installed on the destination system!" -ForegroundColor Yellow
+                    Write-Verbose "$(Get-date -Format u): WARNING: Source system is equal to destination system. That's expected if the role is installed on the destination system!"
                 }
             } 
 
@@ -794,7 +833,7 @@ foreach ($role in $destinationSystemObject.RoleList)
                 $tmpObj.DisplayName = $firewallRule.RuleName
                 $tmpObj.Direction = $firewallRule.Direction
                 $tmpObj.LocalName = $DestinationSystemFQDN
-                $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$IPAdressesOfSelectedSystem}
+                $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
                 $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
                 $tmpObj.Protocol = $requiredService.Protocol
                 $tmpObj.LocalPort = $requiredService.Port
@@ -809,6 +848,8 @@ foreach ($role in $destinationSystemObject.RoleList)
     } # foreach firewallrule
 } # foreach role
 
+
+
 if ($ValidRulesOnly)
 {
     $selectedFirewallRules = $outParamObject | Where-Object {$_.Status -eq 'OK' } | Sort-Object -Property Status, Direction, DisplayName | Out-GridView -Title "STEP 2: Select firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple
@@ -817,6 +858,45 @@ else
 {
     $selectedFirewallRules = $outParamObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 2: Select firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
 }
+
+
+if ($MergeSimilarRules)
+{
+    $mergedOutObject = New-Object System.Collections.ArrayList
+    $mergedRules = $selectedFirewallRules | Where-Object {$_.Status -eq 'OK' } | Group-Object -Property Direction, LocalAddress, Protocol, LocalPort, Profile, Action, Program
+    foreach ($ruleGroup in $mergedRules)
+    {
+        $RemoteAddressList = @()
+        foreach ($groupItem in $ruleGroup.Group)
+        {
+            $RemoteAddressList += $groupItem.RemoteAddress
+        }       
+
+        [array]$RemoteAddressList = $RemoteAddressList | Select-Object -Unique
+
+        $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
+        $tmpObj.Status = $ruleGroup.Group[0].Status
+        $tmpObj.StatusDescription = $ruleGroup.Group[0].StatusDescription
+        $tmpObj.DisplayName = 'MECM {0} {1}' -f ($ruleGroup.Group[0].Direction), ($ruleGroup.Group[0].LocalPort)
+        $tmpObj.Direction = $ruleGroup.Group[0].Direction
+        $tmpObj.LocalName = $ruleGroup.Group[0].LocalName
+        $tmpObj.LocalAddress = $ruleGroup.Group[0].LocalAddress
+        $tmpObj.RemoteAddress = $RemoteAddressList
+        $tmpObj.Protocol = $ruleGroup.Group[0].Protocol
+        $tmpObj.LocalPort = $ruleGroup.Group[0].LocalPort
+        $tmpObj.Profile = $ruleGroup.Group[0].Profile
+        $tmpObj.Action = $ruleGroup.Group[0].Action
+        $tmpObj.Group = $ruleGroup.Group[0].Group
+        $tmpObj.Program = $ruleGroup.Group[0].Program
+        $tmpObj.Description = $ruleGroup.Group[0].Description
+        [void]$mergedOutObject.Add($tmpObj)       
+        
+    }
+
+    $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 3: Select merged firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
+}
+
+
 
 $commandOutput = New-Object System.Collections.ArrayList
 if ($ShowGPOCommands)
@@ -885,7 +965,7 @@ foreach($selectedRule in $selectedFirewallRules)
             Catch
             {
                 Write-Host "$(Get-date -Format u): ERROR: Not able to create rule" -ForegroundColor Red
-                Write-Host "$(Get-date -Format u): $($error[0].Exception)"
+                Write-Host "$(Get-date -Format u): $($error[0].Exception)" -ForegroundColor Red
             }
         }
         elseif ($ShowCommands -or $ShowGPOCommands)
@@ -922,7 +1002,7 @@ foreach($selectedRule in $selectedFirewallRules)
     }
     else 
     {
-        Write-Host "$(Get-date -Format u): WARNING: Selected rule was marked as not okay. Will be skipped. `"$($selectedRule.DisplayName)`"" -ForegroundColor Yellow  
+        Write-Verbose "$(Get-date -Format u): WARNING: Selected rule was marked as not okay. Will be skipped. `"$($selectedRule.DisplayName)`""
     }
 }
 
@@ -941,7 +1021,7 @@ if ($ShowCommands -or $ShowGPOCommands)
         $RuleString = 'Save-NetGPO -GPOSession $gpoSession'
         [void]$commandOutput.Add($RuleString)
     }   
-    $commandOutput | Out-GridView -Title "STEP 3: List of commands to add firewall rules to: `"$DestinationSystemFQDN`""
+    $commandOutput | Out-GridView -Title "List of commands to add firewall rules to: `"$DestinationSystemFQDN`""
 }
 #endregion
 

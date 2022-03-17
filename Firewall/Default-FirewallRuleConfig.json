@@ -748,7 +748,7 @@
         "Action": "Block",
         "Profile": "Any",
         "Group": "SecurityCustom",
-        "Description": "Rule will block cscript process outbound",
+        "Description": "Rule will block unsafe process outbound",
         "Services": [
                         "CScript32Bit",
                         "CScript64Bit",
@@ -762,13 +762,13 @@
     },
     {
         "RuleName": "Block unsafe Powershell connections outbound",
-        "Source": "Internet",
+        "Source": "Any",
         "Destination": "Any",
         "Direction": "Outbound",
         "Action": "Block",
         "Profile": "Any",
         "Group": "SecurityCustom",
-        "Description": "Rule will block cscript process outbound",
+        "Description": "Rule will block PowerShell process outbound",
         "Services": [
                         "PowershellISE32Bit",
                         "PowershellISE64Bit",
@@ -855,6 +855,13 @@
           "Port": "445",
           "Program": "",
           "Description": "WSUSCustom"    
+      },
+      {
+        "Name": "PXE",
+        "Protocol": "UDP",
+        "Port": "67,68,69,4011",
+        "Program": "",
+        "Description": "PXE boot"    
       },
       {
           "Name": "CScript32Bit",
