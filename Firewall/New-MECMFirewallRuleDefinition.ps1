@@ -89,26 +89,40 @@ https://github.com/jonasatgit/scriptrepo
 [CmdletBinding(DefaultParametersetName='Default')]
 param
 (
-
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowConfig',Mandatory=$false)]
     [string]$DefinitionFilePath,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [string]$DestinationSystemFQDN,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [string]$GroupSuffix,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$UseAnyAsLocalAddress,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$ValidRulesOnly,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$MergeSimilarRules,
 
-    [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
 
@@ -233,6 +247,39 @@ Function Export-SystemRoleInformation
             return $LocalSystemIPAddressList
         }
     }
+
+    # Get a list of all site servers and their sitecodes 
+    $siteCodeHashTable = @{}
+    $sqlRoleHashTable = @{}
+    $siteServerTypes = $siteSystems | Where-Object {$_.Type -in (1,2,4) -and $_.RoleName -eq 'SMS Site Server'}
+    $siteServerTypes | ForEach-Object {
+    
+        switch ($_.Type)
+        {
+            1 
+            {
+                $siteHashValue = 'SecondarySite'
+                $sqlHashValue = 'SECSQLServerRole'
+            }
+            
+            2 
+            {
+                $siteHashValue = 'PrimarySite'
+                $sqlHashValue = 'PRISQLServerRole'
+            }
+            
+            4 
+            {
+                $siteHashValue = 'CentralAdministrationSite'
+                $sqlHashValue = 'CASSQLServerRole'
+            }
+            #8 {'NotCoLocatedWithSiteServer'}
+        }
+
+        $siteCodeHashTable.Add($_.SiteCode, $siteHashValue)
+        $sqlRoleHashTable.Add($_.SiteCode, $sqlHashValue)
+    }
+    
     
     $outObject = New-Object System.Collections.ArrayList
     foreach ($system in $siteSystems)
@@ -242,6 +289,13 @@ Function Export-SystemRoleInformation
             'SMS SQL Server' 
             {
                 $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode]
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
                 $tmpObj.Role = 'SQLServerRole'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -250,15 +304,8 @@ Function Export-SystemRoleInformation
             }
             'SMS Site Server' 
             {
-                switch ($system.Type)
-                {
-                    1 {$roleName = 'SecondarySite'}
-                    2 {$roleName = 'PrimarySite'}
-                    4 {$roleName = 'CentralAdministrationSite'}
-                    #8 {$roleName = 'NotCoLocatedWithSiteServer'}
-                }
                 $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
-                $tmpObj.Role = $roleName
+                $tmpObj.Role = $siteCodeHashTable[$system.SiteCode]
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
@@ -275,6 +322,18 @@ Function Export-SystemRoleInformation
             }
             'SMS Software Update Point' 
             {
+
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'CentralAdministrationSite')
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                    $tmpObj.Role = 'CentralSoftwareUpdatePoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    [void]$outObject.Add($tmpObj)                
+                }
+
+
                 $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
                 if ($useParentWSUS.Value -eq 0)
                 {
@@ -465,8 +524,6 @@ Function Export-SystemRoleInformation
         }
     }
     
-    $global:bla = $outObject | Group-Object -Property FullQualifiedDomainName
-
     $systemsArrayList = New-Object System.Collections.ArrayList
     foreach ($itemGroup in ($outObject | Group-Object -Property FullQualifiedDomainName))
     {
@@ -743,7 +800,8 @@ foreach ($role in $destinationSystemObject.RoleList)
             # if CAS or secondary, do other stuff
 
             # if source or destination is another site, don't restrict the result to the sitecode
-            if (($firewallRule.Source -in ("CentralAdministrationSite","PrimarySite","SecondarySite")) -and ($firewallRule.Destination -in ("CentralAdministrationSite","PrimarySite","SecondarySite")))
+            $searchRoleArray = ("CentralAdministrationSite","PrimarySite","SecondarySite","SECSQLServerRole","PRISQLServerRole","CASSQLServerRole")
+            if (($firewallRule.Source -in $searchRoleArray) -and ($firewallRule.Destination -in $searchRoleArray))
             {
                 $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString})
             }
@@ -893,7 +951,7 @@ if ($MergeSimilarRules)
         
     }
 
-    $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 3: Select merged firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
+    $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 3: Select MERGED firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
 }
 
 

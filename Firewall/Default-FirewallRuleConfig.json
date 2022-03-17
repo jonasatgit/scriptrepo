@@ -45,8 +45,25 @@
     "SystemAndRoleList": 
     [
         {
+            "FullQualifiedDomainName":  "CAS.contoso.local",
+            "IPAddress":  "10.11.12.13",
+            "SiteCode":  "CAS",
+            "Description":  "",
+            "RoleList":  [
+                             "CASSQLServerRole",
+                             "SQLServerRole",
+                             "CentralAdministrationSite",
+                             "SMSProvider",
+                             "PrimarySoftwareUpdatePoint",
+                             "CentralSoftwareUpdatePoint",
+                             "SoftwareUpdatePoint",
+                             "EndpointProtectionPoint"
+                         ]
+        },
+        {
             "FullQualifiedDomainName": "cm01.contoso.local",
             "IPAddress": "10.10.10.15",
+            "SiteCode":  "P01",            
             "Description": "Main Primary Site",
             "RoleList": [
                             "PrimarySite",
@@ -59,6 +76,7 @@
         {
             "FullQualifiedDomainName": "cm02.contoso.local",
             "IPAddress": "10.10.10.16",
+            "SiteCode":  "P01",
             "Description": "MP,DP 1",
             "RoleList": [
                             "ManagementPoint",
@@ -68,6 +86,7 @@
         {
             "FullQualifiedDomainName": "cm03.contoso.local",
             "IPAddress": "10.10.10.17",
+            "SiteCode":  "P01",
             "Description": "MP,DP 2",
             "RoleList": [
                             "ManagementPoint",
@@ -77,6 +96,7 @@
         {
             "FullQualifiedDomainName": "cm04.contoso.local",
             "IPAddress": "10.10.10.18",
+            "SiteCode":  "P01",            
             "Description": "SUP 1",
             "RoleList": [
                             "PrimarySoftwareUpdatePoint",
@@ -94,10 +114,20 @@
         {
             "FullQualifiedDomainName": "ts01.contoso.local",
             "IPAddress": "10.10.11.12",
+            "SiteCode":  "P01",
             "Description": "Terminal Server 1",
             "RoleList": [
                             "RDP",
                             "MECMConsole"
+                        ]
+        },
+        {
+            "FullQualifiedDomainName": "CMDB.contoso.local",
+            "IPAddress": "10.10.12.30",
+            "SiteCode":  "P01",
+            "Description": "Terminal Server 1",
+            "RoleList": [
+                            "ExternalSQLConnection"
                         ]
         }
     ],
@@ -619,20 +649,75 @@
                       ]
       },
       {
-          "RuleName": "MECM SQL to SQL",
-          "Source": "SQLServerRole",
-          "Destination": "SQLServerRole",
+        "RuleName": "MECM Primary SUP to Central SUB",
+        "Source": "PrimarySoftwareUpdatePoint",
+        "Destination": "CentralSoftwareUpdatePoint",
+        "Direction": "Inbound",
+        "Action": "Allow",
+        "Profile": "Any",
+        "Group": "MECM",
+        "Description": "Primary Software Update Point to Central Software Update Point",
+        "Services": [
+                        "WSUSCustom"
+                    ]
+       },
+      {
+          "RuleName": "MECM CAS SQL to Primary Site SQL",
+          "Source": "CASSQLServerRole",
+          "Destination": "PRISQLServerRole",
           "Direction": "Inbound",
           "Action": "Allow",
           "Profile": "Any",
           "Group": "MECM",
-          "Description": "SQL to SQL",
+          "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
           "Services": [
                           "SQLEndpoint",
                           "SQLBroker"
                       ]
       },
       {
+        "RuleName": "MECM Primary Site SQL to CAS SQL",
+        "Source": "PRISQLServerRole",
+        "Destination": "CASSQLServerRole",
+        "Direction": "Inbound",
+        "Action": "Allow",
+        "Profile": "Any",
+        "Group": "MECM",
+        "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+        "Services": [
+                        "SQLEndpoint",
+                        "SQLBroker"
+                    ]
+      },
+      {
+        "RuleName": "MECM SecondarySite SQL to Primary Site SQL",
+        "Source": "SECSQLServerRole",
+        "Destination": "PRISQLServerRole",
+        "Direction": "Inbound",
+        "Action": "Allow",
+        "Profile": "Any",
+        "Group": "MECM",
+        "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+        "Services": [
+                        "SQLEndpoint",
+                        "SQLBroker"
+                    ]
+       },
+        {
+        "RuleName": "MECM Primary Site SQL to SecondarySite SQL",
+        "Source": "PRISQLServerRole",
+        "Destination": "SECSQLServerRole",
+        "Direction": "Inbound",
+        "Action": "Allow",
+        "Profile": "Any",
+        "Group": "MECM",
+        "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+        "Services": [
+                        "SQLEndpoint",
+                        "SQLBroker"
+                    ]
+       },
+       {
           "RuleName": "MECM Pull-Distribution Point to Pull-Source",
           "Source": "PullDistributionPoint",
           "Destination": "PullDistributionPointSource",
@@ -763,7 +848,7 @@
     {
         "RuleName": "Block unsafe Powershell connections outbound",
         "Source": "Any",
-        "Destination": "Any",
+        "Destination": "Internet",
         "Direction": "Outbound",
         "Action": "Block",
         "Profile": "Any",
@@ -857,11 +942,11 @@
           "Description": "WSUSCustom"    
       },
       {
-        "Name": "PXE",
-        "Protocol": "UDP",
-        "Port": "67,68,69,4011",
-        "Program": "",
-        "Description": "PXE boot"    
+          "Name": "PXE",
+          "Protocol": "UDP",
+          "Port": "67,68,69,4011",
+          "Program": "",
+          "Description": "PXE boot"    
       },
       {
           "Name": "CScript32Bit",
