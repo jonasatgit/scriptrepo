@@ -87,7 +87,10 @@ if ($WebhookData)
 # With two string we can always re-new one string while the other can still work
 # First, lets see if we are running within Azure Automation or as a standalone script
 # That step is helpful to be able to run the script locally (in VisualStudio Code for example) without a startstring
-if (Get-Command -Name Get-AutomationVariable)
+# We do that by testing for the Azure Automation command: Get-AutomationVariable
+[bool]$inAzureAutomationEnvironment = if (Get-Command -Name Get-AutomationVariable){$true}else{$false}
+
+if ($inAzureAutomationEnvironment)
 {
 	$runbookRunString01 = Get-AutomationVariable -Name "Var-RunString1"
 	$runbookRunString02 = Get-AutomationVariable -Name "Var-RunString2"
@@ -105,9 +108,21 @@ else
 #endregion
 
 #region STEP 3 - Get MECM site information
-# In this section we read two varibles to be able to connect to the correct MECM site
-$SiteCode = Get-AutomationVariable -Name "Var-SiteCode"
-$ProviderMachineName = Get-AutomationVariable -Name "Var-ProviderName"
+# In this section we read two varibles to be able to connect to the correct MECM site inc ase we are running in Azure Automation
+# Otehrwise we try to use the parameter values
+if ($inAzureAutomationEnvironment)
+{
+	$SiteCode = Get-AutomationVariable -Name "Var-SiteCode"
+	$ProviderMachineName = Get-AutomationVariable -Name "Var-ProviderName"
+}
+else
+{
+	# Let's test if we have the values passed via parameters
+	if ([string]::IsNullOrEmpty($ProviderMachineName) -or [string]::IsNullOrEmpty($SiteCode))
+	{
+		throw "ProviderMachineName or SiteCode missing"	
+	}
+}
 #endregion
 
 #region STEP 4 - Data validation
@@ -139,8 +154,10 @@ $initParams = @{}
 #$initParams.Add("ErrorAction", "Stop") # Uncomment this line to stop the script on any errors
 
 # Import the ConfigurationManager.psd1 module 
-if((Get-Module ConfigurationManager) -eq $null) {
-    Import-Module "E:\Program Files\Microsoft Configuration Manager\AdminConsole\bin\ConfigurationManager.psd1" @initParams 
+if(-NOT (Get-Module ConfigurationManager)) 
+{
+	$modulePath = '{0}\ConfigurationManager.psd1' -f ($env:SMS_ADMIN_UI_PATH | Split-Path -Parent)
+    Import-Module $modulePath @initParams 
 }
 
 # Connect to the site's drive if it is not already present
@@ -148,7 +165,7 @@ if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
     New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
 }
 
-# Set the current location to be the site code.
+# Set the current location to be the site code to be able to connect to the MECM environment
 Set-Location "$($SiteCode):\" @initParams
 
 Import-CMComputerInformation -CollectionName $CollectionName -ComputerName $SystemName -MacAddress $SystemMacAdress
