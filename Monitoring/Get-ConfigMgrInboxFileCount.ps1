@@ -21,7 +21,7 @@
     The inbox perf counter refresh intervall is 15 minutes. It therefore makes no sense to validate a counter more often. 
     Get the full list of available inbox perf counter via the following command:
     Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
-    Source: https://github.com/jonasatgit/scriptrepo
+   Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER GridViewOutput
     Switch parameter to be able to output the results in a GridView instead of compressed JSON
@@ -42,6 +42,7 @@
 [CmdletBinding()]
 param
 (
+    [Parameter(Mandatory=$false)]
     [Switch]$GridViewOutput
 )
 
@@ -100,11 +101,13 @@ else
     $systemName = $env:COMPUTERNAME
 }
 
+# temp results object
+$resultsObject = New-Object System.Collections.ArrayList
+[bool]$badResult = $false
+
 $inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
 if ($inboxCounterList)
 {
-    # temp results object
-    $resultsObject = New-Object System.Collections.ArrayList
     
     foreach ($inboxCounter in $inboxCounterList)
     {
@@ -125,7 +128,8 @@ if ($inboxCounterList)
                 $tmpResultObject.Status = 1
                 $tmpResultObject.ShortDescription = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $counterMaxValue[1]
                 $tmpResultObject.Debug = ''
-                [void]$resultsObject.Add($tmpResultObject)        
+                [void]$resultsObject.Add($tmpResultObject)
+                $badResult = $true      
             }
         }
     }
@@ -144,6 +148,7 @@ if ($inboxCounterList)
             $tmpResultObject.ShortDescription = 'Counter: `"{0}`" not found on machine! ' -f $_.key
             $tmpResultObject.Debug = ''
             [void]$resultsObject.Add($tmpResultObject) 
+            $badResult = $true 
         }
     }
 } 
@@ -152,7 +157,7 @@ if ($inboxCounterList)
 # used as a temp object for JSON output
 $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
 $outObject.InterfaceVersion = 1
-if ($resultsObject)
+if ($badResult)
 {
     $outObject.Results = $resultsObject
 }
@@ -162,10 +167,10 @@ else
     $tmpResultObject.Name = $systemName
     $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
     $tmpResultObject.Status = 0
-    $tmpResultObject.ShortDescription = ''
+    $tmpResultObject.ShortDescription = 'ok'
     $tmpResultObject.Debug = ''
-
-    $outObject.Results = $tmpResultObject
+    [void]$resultsObject.Add($tmpResultObject)
+    $outObject.Results = $resultsObject
 }
 
 if ($GridViewOutput)
@@ -176,4 +181,3 @@ else
 {
     $outObject | ConvertTo-Json -Compress
 }
-

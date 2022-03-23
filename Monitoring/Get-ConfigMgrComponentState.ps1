@@ -41,6 +41,7 @@
 [CmdletBinding()]
 param
 (
+    [Parameter(Mandatory=$false)]
     [Switch]$GridViewOutput
 )
 
@@ -56,7 +57,7 @@ $excludedComponents = ('')
    Function to read from HKLM:\SOFTWARE\Microsoft\SMS\Identification' 'Site Servers' and determine the active site server node
    Possible values could be: 
         1;server1.contoso.local;
-        1;server1.contoso.local;0;server2.contoso.local;
+       1;server1.contoso.local;0;server2.contoso.local;
         0;server1.contoso.local;1;server2.contoso.local;
 
 .PARAMETER SiteSystemFQDN
@@ -113,13 +114,13 @@ else
     $systemName = $env:COMPUTERNAME
 }
 
-
+# temp results object
+$resultsObject = New-Object System.Collections.ArrayList
+[bool]$badResult = $false
 switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
 {
     1 ## ACTIVE NODE FOUND. Run checks
     {
-        # temp results object
-        $resultsObject = New-Object System.Collections.ArrayList
         $componentList = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\SMS\Operations Management\Components' 
 
         #$listOfMonitoredComponents = New-Object System.Collections.ArrayList
@@ -150,6 +151,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                         $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
                         $tmpResultObject.Debug = ''
                         [void]$resultsObject.Add($tmpResultObject)
+                        $badResult = $true
                     }
                 }
             }
@@ -159,7 +161,7 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         # used as a temp object for JSON output
         $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
         $outObject.InterfaceVersion = 1
-        if ($resultsObject)
+        if ($badResult)
         {
             $outObject.Results = $resultsObject
         }
@@ -169,10 +171,10 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
             $tmpResultObject.Name = $systemName
             $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 0
-            $tmpResultObject.ShortDescription = ''
+            $tmpResultObject.ShortDescription = 'ok'
             $tmpResultObject.Debug = ''
-
-            $outObject.Results = $tmpResultObject
+            [void]$resultsObject.Add($tmpResultObject)
+            $outObject.Results = $resultsObject
         }
     }
 
@@ -185,10 +187,10 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         $tmpResultObject.Name = $systemName
         $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
         $tmpResultObject.Status = 0
-        $tmpResultObject.ShortDescription = ''
+        $tmpResultObject.ShortDescription = 'ok'
         $tmpResultObject.Debug = ''
-
-        $outObject.Results = $tmpResultObject        
+        [void]$resultsObject.Add($tmpResultObject)
+        $outObject.Results = $resultsObject       
 
     }
 
@@ -204,8 +206,8 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         $tmpResultObject.Status = 1
         $tmpResultObject.ShortDescription = 'Error: No ConfigMgr Site System found'
         $tmpResultObject.Debug = ''
-
-        $outObject.Results = $tmpResultObject 
+        [void]$resultsObject.Add($tmpResultObject)
+        $outObject.Results = $resultsObject
     }
 }
 
@@ -216,4 +218,4 @@ if ($GridViewOutput)
 else
 {
     $outObject | ConvertTo-Json -Compress
-} 
+}  
