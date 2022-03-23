@@ -15,6 +15,7 @@
 <#
 .Synopsis
     Script to monitor ConfigMgr component states
+    Version: 2022-03-23
     
 .DESCRIPTION
     The script will read the available ConfigMgr components which are monitored by ConfigMgr itself. 

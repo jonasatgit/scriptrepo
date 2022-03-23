@@ -15,6 +15,7 @@
 <#
 .Synopsis
     Script to monitor ConfigMgr/MECM performance counter
+    Version: 2022-03-23
     
 .DESCRIPTION
     The script reads from an in script hashtable called "$referenceData" to validate a list of specific performance counter
