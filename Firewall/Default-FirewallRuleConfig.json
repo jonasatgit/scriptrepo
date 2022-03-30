@@ -17,6 +17,7 @@
                                     "CentralAdministrationSite",
                                     "PrimarySite",
                                     "SecondarySite",
+                                    "SiteServer",
                                     "SMSProvider",
                                     "ManagementPoint",
                                     "DistributionPoint",
@@ -37,9 +38,11 @@
                                     "StateMigrationPoint",
                                     "DataWarehouseServicePoint",
                                     "CertificateRegistrationPoint",
+                                    "ContentLibraryServer",
+                                    "ContentSourceServer",
                                     "ExternalSQLConnection",
-                                    "RDP",
-                                    "SMB"
+                                    "RDPSystem",
+                                    "SMBSystem"
                                 ]
                 }
             ]
@@ -52,6 +55,7 @@
             "FullQualifiedDomainName":  "CAS.contoso.local",
             "IPAddress":  "10.11.12.13",
             "SiteCode":  "CAS",
+            "ParentSiteCode":  "CAS",
             "Description":  "",
             "RoleList":  [
                              "CASSQLServerRole",
@@ -67,12 +71,16 @@
         {
             "FullQualifiedDomainName": "cm01.contoso.local",
             "IPAddress": "10.10.10.15",
-            "SiteCode":  "P01",            
-            "Description": "Main Primary Site",
+            "SiteCode":  "P01", 
+            "ParentSiteCode":  "CAS",                       
+            "Description": "Main Primary Site without MP and DP",
             "RoleList": [
                             "PrimarySite",
                             "SMSProvider",
+                            "PRISQLServerRole",
                             "SQLServerRole",
+                            "SoftwareUpdatePoint",
+                            "PrimarySoftwareUpdatePoint",
                             "ServiceConnectionPoint",
                             "MECMConsole"
                         ]
@@ -81,6 +89,7 @@
             "FullQualifiedDomainName": "cm02.contoso.local",
             "IPAddress": "10.10.10.16",
             "SiteCode":  "P01",
+            "ParentSiteCode":  "CAS",            
             "Description": "MP,DP 1",
             "RoleList": [
                             "ManagementPoint",
@@ -91,6 +100,7 @@
             "FullQualifiedDomainName": "cm03.contoso.local",
             "IPAddress": "10.10.10.17",
             "SiteCode":  "P01",
+            "ParentSiteCode":  "CAS",            
             "Description": "MP,DP 2",
             "RoleList": [
                             "ManagementPoint",
@@ -100,7 +110,8 @@
         {
             "FullQualifiedDomainName": "cm04.contoso.local",
             "IPAddress": "10.10.10.18",
-            "SiteCode":  "P01",            
+            "SiteCode":  "P01", 
+            "ParentSiteCode":  "CAS",                       
             "Description": "SUP 1",
             "RoleList": [
                             "PrimarySoftwareUpdatePoint",
@@ -111,6 +122,8 @@
             "FullQualifiedDomainName": "cm05.contoso.local",
             "IPAddress": "10.10.10.19",
             "Description": "SUP 2",
+            "SiteCode":  "P01",             
+            "ParentSiteCode":  "CAS",            
             "RoleList": [
                             "SoftwareUpdatePoint"
                         ]
@@ -119,6 +132,7 @@
             "FullQualifiedDomainName": "ts01.contoso.local",
             "IPAddress": "10.10.11.12",
             "SiteCode":  "P01",
+            "ParentSiteCode":  "",            
             "Description": "Terminal Server 1",
             "RoleList": [
                             "RDP",
@@ -129,7 +143,8 @@
             "FullQualifiedDomainName": "CMDB.contoso.local",
             "IPAddress": "10.10.12.30",
             "SiteCode":  "P01",
-            "Description": "Terminal Server 1",
+            "ParentSiteCode":  "",              
+            "Description": "Main CMDB",
             "RoleList": [
                             "ExternalSQLConnection"
                         ]
@@ -137,1011 +152,1099 @@
     ],
    "RuleDefinition": 
     [
-      {
-          "RuleName": "MECM CMG connection point to Management Point",
-          "Source": "CMGConnectionPoint",
-          "Destination": "ManagementPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "CMG connection point to Management Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTPS",
-                          "HTTP"
-                      ]
-      },
-      {
-          "RuleName": "MECM CMG Connection Point to Software Update Point",
-          "Source": "CMGConnectionPoint",
-          "Destination": "SoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "CMG Connection Point to Software Update Point",
-          "IgnoreSiteCode": "",
-          "Services": [
+        {
+            "RuleName": "MECM Clients to Distribution Point ",
+            "Source": "Any",
+            "Destination": "DistributionPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports?branch=main#BKMK_PortsClient-DP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },        
+        {
+            "RuleName": "MECM Clients to Distribution Point with PXE",
+            "Source": "Any",
+            "Destination": "DistributionPointPXE",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-DP3",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "PXE"
+                        ]
+        },
+        {
+            "RuleName": "MECM Client to Fallback status point",
+            "Source": "Any",
+            "Destination": "FallbackStatusPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-FSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTP"
+                        ]
+        },
+        {
+            "RuleName": "MECM Clients to Management Point",
+            "Source": "Any",
+            "Destination": "ManagementPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "MPDefault"
+                        ]
+        },
+        {
+            "RuleName": "MECM Clients to Software update point",
+            "Source": "Any",
+            "Destination": "SoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "WSUSCustom"
+                        ]
+        },
+        {
+            "RuleName": "MECM Clients to State migration point",
+            "Source": "Any",
+            "Destination": "StateMigrationPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-SMP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTP",
+                            "HTTPS",
+                            "FastChannel"
+                        ]
+        },
+        {
+            "RuleName": "MECM CMG connection point to Management Point",
+            "Source": "CMGConnectionPoint",
+            "Destination": "ManagementPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-mp",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTPS",
+                            "HTTP"
+                        ]
+        },
+        {
+            "RuleName": "MECM CMG Connection Point to Software Update Point",
+            "Source": "CMGConnectionPoint",
+            "Destination": "SoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-sup",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "WSUSCustom"
+                        ]
+        },
+        {
+            "RuleName": "MECM Console to Reporting Service Point",
+            "Source": "MECMConsole",
+            "Destination": "ReportingServicePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-RSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTPS",
+                            "HTTP"
+                        ]
+        },
+        {
+            "RuleName": "MECM Console to Site Server",
+            "Source": "MECMConsole",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "RPC initial connection to WMI to locate SMS provider system. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Site",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC"
+                        ]
+        },
+        {
+            "RuleName": "MECM Console to SMS provider",
+            "Source": "MECMConsole",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Console to WMI SMS provider connection. HTTPS for AdminService. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Provider",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "MECM Data Warehouse to SQL server",
+            "Source": "DataWarehouseServicePoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDWSPSQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Distribution Point to Management Point",
+            "Source": "DistributionPoint",
+            "Destination": "ManagementPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Each Distribution Point sends usage and content validation data to the MP. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDist_MP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "MECM Endpoint Protection Point to SQL",
+            "Source": "EndpointProtectionPoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Endpoint Protection Point to SQL DB. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEP-to-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Management Point",
+            "Source": "SiteServer",
+            "Destination": "ManagementPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Site Server to Management Point https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Management Point to Site Server",
+            "Source": "ManagementPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Rule not required if -Require the site server to initiate connections to this site system- is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Management Point to SQL",
+            "Source": "ManagementPoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Reporting Service Point to SQL",
+            "Source": "ReportingServicePoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsRSP-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Distribution Point",
+            "Source": "SiteServer",
+            "Destination": "DistributionPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Note: From DP to Site Server is not a requirement. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to CMG connection point",
+            "Source": "SiteServer",
+            "Destination": "CMGConnectionPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM CMG connection point to Site Server",
+            "Source": "CMGConnectionPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Endpoint Protection Point",
+            "Source": "SiteServer",
+            "Destination": "EndpointProtectionPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Endpoint Protection Point to Site Server",
+            "Source": "EndpointProtectionPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Fallback Status Point",
+            "Source": "SiteServer",
+            "Destination": "FallbackStatusPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Fallback Status Point to Site Server",
+            "Source": "FallbackStatusPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Server hosting remote content library share",
+            "Source": "SiteServer",
+            "Destination": "ContentLibraryServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RCL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Server hosting content source data",
+            "Source": "SiteServer",
+            "Destination": "ContentSourceServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Package, Application, Image, Updates source server",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SMB"
+                        ]
+        },        
+        {
+            "RuleName": "MECM Site Server to Service Connection Point",
+            "Source": "SiteServer",
+            "Destination": "ServiceConnectionPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Service Connection Point to Site Server",
+            "Source": "ServiceConnectionPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Reporting Service Point",
+            "Source": "SiteServer",
+            "Destination": "ReportingServicePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Reporting Service Point to Site Server",
+            "Source": "ReportingServicePoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM CAS to Primary Site",
+            "Source": "CentralAdministrationSite",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Primary Site to CAS",
+            "Source": "PrimarySite",
+            "Destination": "CentralAdministrationSite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Primary Site to Secondary Site",
+            "Source": "PrimarySite",
+            "Destination": "SecondarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Secondary Site to Primary Site",
+            "Source": "SecondarySite",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to SQL",
+            "Source": "SiteServer",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to SQL Install",
+            "Source": "SiteServer",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Site Server to SQL. The ports are just required during the site database installation of a remote SQL server. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to WSUS SQL",
+            "Source": "SiteServer",
+            "Destination": "SUPSQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "The Site Server connects to each Software Update Point SQL database for maintenance. NOTE: Does not work with the Windows Internal Database. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL-WSUS",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to Software Update Point",
+            "Source": "SiteServer",
+            "Destination": "SoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Site Server to Software Update Point. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB",
+                            "WSUSCustom"
+                        ]
+        },
+        {
+            "RuleName": "MECM Software Update Point to Site Server",
+            "Source": "SoftwareUpdatePoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Rule not required if: -Require the site server to initiate connections to this site system- is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Site Server to State Migration Point",
+            "Source": "SiteServer",
+            "Destination": "StateMigrationPoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM State Migration Point to Site Server",
+            "Source": "StateMigrationPoint",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM SMS Provider to SQL",
+            "Source": "SMSProvider",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsProvider-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Software Update Point to Upstream WSUS",
+            "Source": "SoftwareUpdatePoint",
+            "Destination": "PrimarySoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Software Update Point to Upstream WSUS. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "WSUSCustom"
+                        ]
+        },
+        {
+            "RuleName": "MECM Primary Software Update Point to Central Software Update Point",
+            "Source": "PrimarySoftwareUpdatePoint",
+            "Destination": "CentralSoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Primary Software Update Point to Central Software Update Point. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "IgnoreSiteCode": "True",
+            "Services": [
                           "WSUSCustom"
-                      ]
-      },
-      {
-          "RuleName": "MECM Console to Reporting Service Point",
-          "Source": "MECMConsole",
-          "Destination": "ReportingServicePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Console to Reporting Service Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTPS",
-                          "HTTP"
-                      ]
-      },
-      {
-          "RuleName": "MECM Console to Site Server",
-          "Source": "MECMConsole",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "RPC initial connection to WMI to locate SMS provider system",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC"
-                      ]
-      },
-      {
-          "RuleName": "MECM Console to SMS provider",
-          "Source": "MECMConsole",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Console to WMI SMS provider connection. HTTPS for AdminService",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "HTTPS"
-                      ]
-      },
-      {
-          "RuleName": "MECM Data Warehouse to SQL server",
-          "Source": "DataWarehouseServicePoint",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Data Warehouse Service Point to SQL connection",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Distribution Point to Management Point",
-          "Source": "DistributionPoint",
-          "Destination": "ManagementPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Each Distribution Point sends usage and content validation data to the MP",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTP",
-                          "HTTPS"
-                      ]
-      },
-      {
-          "RuleName": "MECM Endpoint Protection Point to SQL",
-          "Source": "EndpointProtectionPoint",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Endpoint Protection Point to SQL DB",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Management Point to Site Server",
-          "Source": "ManagementPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Rule not required if 'Require the site server to initiate connections to this site system' is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Management Point",
-          "Source": "PrimarySite",
-          "Destination": "ManagementPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Management Point https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Management Point to SQL",
-          "Source": "ManagementPoint",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Management Point to SQL DB https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Reporting Service Point to SQL",
-          "Source": "ReportingServicePoint",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Reporting Service Point to SQL DB. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsRSP-SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Distribution Point",
-          "Source": "PrimarySite",
-          "Destination": "DistributionPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Distribution Point. Note: From DP to Site Server is not a requirement. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to CMG connection point",
-          "Source": "PrimarySite",
-          "Destination": "CMGConnectionPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to CMG connection point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM CMG connection point to Site Server",
-          "Source": "CMGConnectionPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to CMG connection point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Endpoint Protection Point",
-          "Source": "PrimarySite",
-          "Destination": "EndpointProtectionPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Endpoint Protection Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Endpoint Protection Point to Site Server",
-          "Source": "EndpointProtectionPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Endpoint Protection Point to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Fallback Status Point",
-          "Source": "PrimarySite",
-          "Destination": "FallbackStatusPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Endpoint Protection Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Fallback Status Point to Site Server",
-          "Source": "FallbackStatusPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Fallback Status Point to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Service Connection Point",
-          "Source": "PrimarySite",
-          "Destination": "ServiceConnectionPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Service Connection Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Service Connection Point to Site Server",
-          "Source": "ServiceConnectionPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Service Connection Point to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Reporting Service Point",
-          "Source": "PrimarySite",
-          "Destination": "ReportingServicePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Reporting Service Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Reporting Service Point to Site Server",
-          "Source": "ReportingServicePoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Reporting Service Point to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Site Server",
-          "Source": "PrimarySite",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to SQL",
-          "Source": "PrimarySite",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to SQL Install",
-          "Source": "PrimarySite",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to SQL. The ports are just required during the site database installation",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to WSUS SQL",
-          "Source": "PrimarySite",
-          "Destination": "SoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "The Site Server connects to each Software Update Point SQL database: ",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to SMS Provider",
-          "Source": "PrimarySite",
-          "Destination": "SMSProvider",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to SMS Provider",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to Software Update Point",
-          "Source": "PrimarySite",
-          "Destination": "SoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to Software Update Point. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB",
+                        ]
+        },
+        {
+            "RuleName": "MECM Secondary Software Update Point to Primary Software Update Point",
+            "Source": "SecondarySoftwareUpdatePoint",
+            "Destination": "PrimarySoftwareUpdatePoint",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "IgnoreSiteCode": "True",
+            "Services": [
                           "WSUSCustom"
-                      ]
-      },
-      {
-          "RuleName": "MECM Software Update Point to Site Server",
-          "Source": "SoftwareUpdatePoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "RPC and SMB not required if: 'Require the site server to initiate connections to this site system' is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "RPCDynamic",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Site Server to State Migration Point",
-          "Source": "PrimarySite",
-          "Destination": "StateMigrationPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Site Server to State Migration Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM State Migration Point to Site Server",
-          "Source": "StateMigrationPoint",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "State Migration Point to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RPC",
-                          "RPCUDP",
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM State Migration Point to SQL",
-          "Source": "StateMigrationPoint",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "State Migration Point to SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM SMS Provider to SQL",
-          "Source": "SMSProvider",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "SMS Provider to SQL",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      },
-      {
-          "RuleName": "MECM Software Update Point to Upstream WSUS",
-          "Source": "SoftwareUpdatePoint",
-          "Destination": "PrimarySoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Software Update Point to Upstream WSUS. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "WSUSCustom"
-                      ]
-      },
-      {
-          "RuleName": "MECM Primary SUP to Central SUP",
-          "Source": "PrimarySoftwareUpdatePoint",
-          "Destination": "CentralSoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Primary Software Update Point to Central Software Update Point",
-          "IgnoreSiteCode": "True",
-          "Services": [
-                        "WSUSCustom"
-                      ]
-      },
-      {
-          "RuleName": "MECM CAS to Primary Site ",
-          "Source": "CentralAdministrationSite",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
-          "IgnoreSiteCode": "True",                    
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Primary Site to CAS",
-          "Source": "PrimarySite",
-          "Destination": "CentralAdministrationSite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
-          "IgnoreSiteCode": "True",                    
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Secondary Site to Primary Site ",
-          "Source": "SecondarySite",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
-          "IgnoreSiteCode": "True",                    
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM PrimarySite to Secondary Site",
-          "Source": "PrimarySite",
-          "Destination": "SecondarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
-          "IgnoreSiteCode": "True",                    
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM CAS SQL to Primary Site SQL",
-          "Source": "CASSQLServerRole",
-          "Destination": "PRISQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
-          "IgnoreSiteCode": "True",                    
-          "Services": [
+                        ]
+        },        
+        {
+            "RuleName": "MECM CAS SQL to Primary Site SQL",
+            "Source": "CASSQLServerRole",
+            "Destination": "PRISQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "IgnoreSiteCode": "True",                    
+            "Services": [
+                            "SQLEndpoint",
+                            "SQLBroker"
+                        ]
+        },
+        {
+            "RuleName": "MECM Primary Site SQL to CAS SQL",
+            "Source": "PRISQLServerRole",
+            "Destination": "CASSQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "IgnoreSiteCode": "True",
+            "Services": [
                           "SQLEndpoint",
                           "SQLBroker"
-                      ]
+                        ]
+        },
+        {
+            "RuleName": "MECM SecondarySite SQL to Primary Site SQL",
+            "Source": "SECSQLServerRole",
+            "Destination": "PRISQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                          "SQLEndpoint",
+                          "SQLBroker"
+                        ]
+         },
+         {
+            "RuleName": "MECM Primary Site SQL to SecondarySite SQL",
+            "Source": "PRISQLServerRole",
+            "Destination": "SECSQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                          "SQLEndpoint",
+                          "SQLBroker"
+                       ]
+         },
+         {
+            "RuleName": "MECM State Migration Point to SQL",
+            "Source": "StateMigrationPoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsStateMigrationPoint-to-SQL",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Pull-Distribution Point to Pull-Source",
+            "Source": "PullDistributionPoint",
+            "Destination": "PullDistributionPointSource",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "Pull-Distribution Point to Pull-Source-Distribution Point",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "MECM External systems to CAS SQL database",
+            "Source": "ExternalSQLConnection",
+            "Destination": "CASSQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "MECM external systems to CAS SQL database",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        }, 
+        {
+            "RuleName": "MECM External systems to Primary Site SQL database",
+            "Source": "ExternalSQLConnection",
+            "Destination": "PRISQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "MECM external systems to Primary Site SQL database",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "MECM Custom SMB to Primary Server",
+            "Source": "SMBSystem",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "External Systems with the need to connect via SMB to a Primary Site Server",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Custom SMB to CAS",
+            "Source": "SMBSystem",
+            "Destination": "CentralAdministrationSite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "External Systems with the need to connect via SMB to a CAS",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SMB"
+                        ]
+        },
+        {
+            "RuleName": "MECM Custom RDP to Primary Server",
+            "Source": "RDPSystem",
+            "Destination": "PrimarySite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "External Systems with the need to connect via RDP to a Primary Site Server",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RDP"
+                        ]
+        },
+        {
+            "RuleName": "MECM Custom RDP to CAS",
+            "Source": "RDPSystem",
+            "Destination": "CentralAdministrationSite",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "External Systems with the need to connect via RDP to a CAS",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RDP"
+                        ]
+        }, 
+        {
+            "RuleName": "Block unsafe connections outbound",
+            "Source": "Any",
+            "Destination": "Any",
+            "Direction": "Outbound",
+            "Action": "Block",
+            "Profile": "Any",
+            "Group": "SecurityCustom",
+            "Description": "Rule will block unsafe process outbound",
+            "IgnoreSiteCode": "",
+            "Services": [
+                          "CScript32Bit",
+                          "CScript64Bit",
+                          "Regsvr32Bit",
+                          "Regsvr64Bit",
+                          "Rundll32Bit",
+                          "Rundll64Bit",
+                          "Wscript32Bit",
+                          "Wscript64Bit"
+                       ]
       },
       {
-          "RuleName": "MECM Primary Site SQL to CAS SQL",
-          "Source": "PRISQLServerRole",
-          "Destination": "CASSQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
-          "IgnoreSiteCode": "True",
-          "Services": [
-                        "SQLEndpoint",
-                        "SQLBroker"
-                      ]
-      },
-      {
-          "RuleName": "MECM SecondarySite SQL to Primary Site SQL",
-          "Source": "SECSQLServerRole",
-          "Destination": "PRISQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
-          "IgnoreSiteCode": "True",
-          "Services": [
-                        "SQLEndpoint",
-                        "SQLBroker"
-                      ]
-       },
-       {
-          "RuleName": "MECM Primary Site SQL to SecondarySite SQL",
-          "Source": "PRISQLServerRole",
-          "Destination": "SECSQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
-          "IgnoreSiteCode": "True",
-          "Services": [
-                        "SQLEndpoint",
-                        "SQLBroker"
-                     ]
-       },
-       {
-          "RuleName": "MECM Pull-Distribution Point to Pull-Source",
-          "Source": "PullDistributionPoint",
-          "Destination": "PullDistributionPointSource",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Distribution Point to Management Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTP",
-                          "HTTPS"
-                      ]
-      }, 
-      {
-          "RuleName": "MECM External systems to SQL database",
-          "Source": "ExternalSQLConnection",
-          "Destination": "SQLServerRole",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "MECM external systems to SQL database",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SQLEndpoint"
-                      ]
-      }, 
-      {
-          "RuleName": "MECM Custom SMB to Site Server",
-          "Source": "SMB",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "External Systems with the need to connect via SMB to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "SMB"
-                      ]
-      },
-      {
-          "RuleName": "MECM Custom RDP to Site Server",
-          "Source": "RDP",
-          "Destination": "PrimarySite",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "MECM RDP to Site Server",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "RDP"
-                      ]
-      },
-      {
-          "RuleName": "MECM Clients to Management Point",
-          "Source": "Any",
-          "Destination": "ManagementPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Clients to Management Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTP",
-                          "HTTPS",
-                          "FastChannel"
-                      ]
-      },
-      {
-          "RuleName": "MECM Clients to Distribution Point",
-          "Source": "Any",
-          "Destination": "DistributionPoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Clients to Distribution Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "HTTP",
-                          "HTTPS"
-                      ]
-      },
-      {
-          "RuleName": "MECM Clients to Distribution Point with PXE",
-          "Source": "Any",
-          "Destination": "DistributionPointPXE",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Clients to Distribution Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "PXE"
-                      ]
-      },
-      {
-          "RuleName": "MECM Clients to Software Update Point",
-          "Source": "Any",
-          "Destination": "SoftwareUpdatePoint",
-          "Direction": "Inbound",
-          "Action": "Allow",
-          "Profile": "Any",
-          "Group": "MECM",
-          "Description": "Clients to Software Update Point",
-          "IgnoreSiteCode": "",
-          "Services": [
-                          "WSUSCustom"
-                      ]
-      },
-      {
-          "RuleName": "Block unsafe connections outbound",
-          "Source": "Any",
-          "Destination": "Any",
-          "Direction": "Outbound",
-          "Action": "Block",
-          "Profile": "Any",
-          "Group": "SecurityCustom",
-          "Description": "Rule will block unsafe process outbound",
-          "IgnoreSiteCode": "True",
-          "Services": [
-                        "CScript32Bit",
-                        "CScript64Bit",
-                        "Regsvr32Bit",
-                        "Regsvr64Bit",
-                        "Rundll32Bit",
-                        "Rundll64Bit",
-                        "Wscript32Bit",
-                        "Wscript64Bit"
-                     ]
-    },
-    {
-          "RuleName": "Block unsafe Powershell connections outbound",
-          "Source": "Any",
-          "Destination": "Internet",
-          "Direction": "Outbound",
-          "Action": "Block",
-          "Profile": "Any",
-          "Group": "SecurityCustom",
-          "Description": "Rule will block PowerShell process outbound",
-          "IgnoreSiteCode": "",
-          "Services": [
-                        "PowershellISE32Bit",
-                        "PowershellISE64Bit",
-                        "Powershell32Bit",
-                        "Powershell64Bit"
-                      ]
+            "RuleName": "Block unsafe Powershell internet connections outbound",
+            "Source": "Any",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Block",
+            "Profile": "Any",
+            "Group": "SecurityCustom",
+            "Description": "Rule will block PowerShell process outbound",
+            "IgnoreSiteCode": "",
+            "Services": [
+                          "PowershellISE32Bit",
+                          "PowershellISE64Bit",
+                          "Powershell32Bit",
+                          "Powershell64Bit"
+                        ]
+      }
+      ],
+      "ServiceDefinition": 
+      [
+        {
+            "Name": "RPC",
+            "Protocol": "TCP",
+            "Port": "RPCEPMAP",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Endpoint Mapper"
+        },
+        {
+            "Name": "RPCUDP",
+            "Protocol": "UDP",
+            "Port": "135",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Endpoint Mapper"
+        },
+        {
+            "Name": "RPCDynamic",
+            "Protocol": "TCP",
+            "Port": "RPC",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Dynamic Ports"
+        },
+        {
+            "Name": "SQLEndpoint",
+            "Protocol": "TCP",
+            "Port": "1433",
+            "Program": "",
+            "Description": "SQL Server Endpoint"    
+        },
+        {
+            "Name": "SQLBroker",
+            "Protocol": "TCP",
+            "Port": "4022",
+            "Program": "",
+            "Description": "SQL Broker"    
+        },
+        {
+            "Name": "RDP",
+            "Protocol": "TCP",
+            "Port": "3389",
+            "Program": "",
+            "Description": "RDP"    
+        },
+        {
+            "Name": "HTTP",
+            "Protocol": "TCP",
+            "Port": "80",
+            "Program": "",
+            "Description": "HTTP"    
+        },
+        {
+            "Name": "HTTPS",
+            "Protocol": "TCP",
+            "Port": "443",
+            "Program": "",
+            "Description": "HTTPS"    
+        },
+        {
+            "Name": "FastChannel",
+            "Protocol": "TCP",
+            "Port": "10123",
+            "Program": "",
+            "Description": "FastChannel"    
+        },
+        {
+            "Name": "MPDefault",
+            "Protocol": "TCP",
+            "Port": "80,443,10123",
+            "Program": "",
+            "Description": "All MP default ports"    
+        },
+        {
+            "Name": "WSUSCustom",
+            "Protocol": "TCP",
+            "Port": "8530-8531",
+            "Program": "",
+            "Description": "WSUSCustom"    
+        },
+        {
+            "Name": "SMB",
+            "Protocol": "TCP",
+            "Port": "445",
+            "Program": "",
+            "Description": "WSUSCustom"    
+        },
+        {
+            "Name": "PXE",
+            "Protocol": "UDP",
+            "Port": "67,68,69,4011",
+            "Program": "",
+            "Description": "PXE boot"    
+        },
+        {
+            "Name": "CScript32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\cscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "CScript64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\system32\\cscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "PowershellISE32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
+            "Description": "Powershell_ISE process 32bit"    
+        },
+        {
+            "Name": "PowershellISE64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
+            "Description": "Powershell_ISE process 64bit"    
+        },
+        {
+            "Name": "Powershell32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "Description": "Powershell process 32bit"    
+        },
+        {
+            "Name": "Powershell64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "Description": "Powershell process 64bit"    
+        },
+        {
+            "Name": "Regsvr32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\regsvr32.exe",
+            "Description": "Regsvr32 process 32bit"    
+        },
+        {
+            "Name": "Regsvr64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\regsvr32.exe",
+            "Description": "Regsvr32 process 64bit"    
+        },
+        {
+            "Name": "Rundll32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\rundll32.exe",
+            "Description": "Rundll32 process 32bit"    
+        },
+        {
+            "Name": "Rundll64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\rundll32.exe",
+            "Description": "Rundll32 process 64bit"    
+        },
+        {
+            "Name": "Wscript32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\wscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "Wscript64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\wscript.exe",
+            "Description": "Cscript process 64bit"    
+        }      
+      ]
     }
-    ],
-    "ServiceDefinition": 
-    [
-      {
-          "Name": "RPC",
-          "Protocol": "TCP",
-          "Port": "RPCEPMAP",
-          "Program": "%systemroot%\\system32\\svchost.exe",
-          "Description": "RPC Endpoint Mapper"
-      },
-      {
-          "Name": "RPCUDP",
-          "Protocol": "UDP",
-          "Port": "135",
-          "Program": "%systemroot%\\system32\\svchost.exe",
-          "Description": "RPC Endpoint Mapper"
-      },
-      {
-          "Name": "RPCDynamic",
-          "Protocol": "TCP",
-          "Port": "RPC",
-          "Program": "%systemroot%\\system32\\svchost.exe",
-          "Description": "RPC Dynamic Ports"
-      },
-      {
-          "Name": "SQLEndpoint",
-          "Protocol": "TCP",
-          "Port": "1433",
-          "Program": "",
-          "Description": "SQL Server Endpoint"    
-      },
-      {
-          "Name": "SQLBroker",
-          "Protocol": "TCP",
-          "Port": "4022",
-          "Program": "",
-          "Description": "SQL Broker"    
-      },
-      {
-          "Name": "RDP",
-          "Protocol": "TCP",
-          "Port": "3389",
-          "Program": "",
-          "Description": "RDP"    
-      },
-      {
-          "Name": "HTTP",
-          "Protocol": "TCP",
-          "Port": "80",
-          "Program": "",
-          "Description": "HTTP"    
-      },
-      {
-          "Name": "HTTPS",
-          "Protocol": "TCP",
-          "Port": "443",
-          "Program": "",
-          "Description": "HTTPS"    
-      },
-      {
-          "Name": "FastChannel",
-          "Protocol": "TCP",
-          "Port": "10123",
-          "Program": "",
-          "Description": "FastChannel"    
-      },
-      {
-          "Name": "WSUSCustom",
-          "Protocol": "TCP",
-          "Port": "8530-8531",
-          "Program": "",
-          "Description": "WSUSCustom"    
-      },
-      {
-          "Name": "SMB",
-          "Protocol": "TCP",
-          "Port": "445",
-          "Program": "",
-          "Description": "WSUSCustom"    
-      },
-      {
-          "Name": "PXE",
-          "Protocol": "UDP",
-          "Port": "67,68,69,4011",
-          "Program": "",
-          "Description": "PXE boot"    
-      },
-      {
-          "Name": "CScript32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\cscript.exe",
-          "Description": "Cscript process 32bit"    
-      },
-      {
-          "Name": "CScript64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\system32\\cscript.exe",
-          "Description": "Cscript process 32bit"    
-      },
-      {
-          "Name": "PowershellISE32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
-          "Description": "Powershell_ISE process 32bit"    
-      },
-      {
-          "Name": "PowershellISE64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
-          "Description": "Powershell_ISE process 64bit"    
-      },
-      {
-          "Name": "Powershell32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
-          "Description": "Powershell process 32bit"    
-      },
-      {
-          "Name": "Powershell64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-          "Description": "Powershell process 64bit"    
-      },
-      {
-          "Name": "Regsvr32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\regsvr32.exe",
-          "Description": "Regsvr32 process 32bit"    
-      },
-      {
-          "Name": "Regsvr64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\System32\\regsvr32.exe",
-          "Description": "Regsvr32 process 64bit"    
-      },
-      {
-          "Name": "Rundll32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\rundll32.exe",
-          "Description": "Rundll32 process 32bit"    
-      },
-      {
-          "Name": "Rundll64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\System32\\rundll32.exe",
-          "Description": "Rundll32 process 64bit"    
-      },
-      {
-          "Name": "Wscript32Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\SysWOW64\\wscript.exe",
-          "Description": "Cscript process 32bit"    
-      },
-      {
-          "Name": "Wscript64Bit",
-          "Protocol": "Any",
-          "Port": "Any",
-          "Program": "%systemroot%\\System32\\wscript.exe",
-          "Description": "Cscript process 64bit"    
-      }      
-    ]
-  }
-  }
+}

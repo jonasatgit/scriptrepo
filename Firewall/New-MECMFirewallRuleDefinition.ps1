@@ -123,6 +123,11 @@ param
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [switch]$CreateOutboundRuleForeachInboundRule,
+
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
 
@@ -151,12 +156,15 @@ param
 
     [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
     [switch]$ExportMECMSystemRoleInformation,
+    #[switch]$ExportMECMSystemRoleInformation=$true,
 
     [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
     [string]$ProviderMachineName,
+    #[string]$ProviderMachineName=$env:COMPUTERNAME,
 
     [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
     [string]$SiteCode
+    #[string]$SiteCode='P02'
 )
 
 
@@ -174,16 +182,14 @@ function Compare-TwoArrays
         [array]$ArrayDifference
     )
 
-    $ipFound = $false
     foreach ($item in $ArrayDifference)
     {
         if ($ArrayReference -contains $item)
         {
-            $ipFound = $true
+            return $true
         }
     }
-
-    return $ipFound
+    return $false
 }
 
 
@@ -207,7 +213,7 @@ Function Export-SystemRoleInformation
         [ValidateSet("IPv4","IPv6","All")]
         [string]$IPType = "IPv4"
     )
-    
+  
     
     if (-NOT (Test-Path $DefaultConfigFile))
     {
@@ -218,11 +224,25 @@ Function Export-SystemRoleInformation
         $defaultDefinition = Get-Content $DefaultConfigFile | ConvertFrom-Json
     }
 
-    $siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'"
+    $siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -ErrorAction Stop
     if (-not ($siteSystems))
     {
         Write-host "$(Get-date -Format u): No site systems found" -ForegroundColor Yellow
         exit
+    }
+
+    # getting sitecode and parent to have hierarchy information
+    $siteCodeHash = @{}
+    $siteCodeInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -ClassName SMS_SCI_SiteDefinition -ErrorAction Stop
+    $siteCodeInfo | ForEach-Object {   
+        if ([string]::IsNullOrEmpty($_.ParentSiteCode))
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.SiteCode)
+        }
+        else
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.ParentSiteCode)
+        }
     }
 
     Function Get-IPAddressFromName
@@ -288,77 +308,142 @@ Function Export-SystemRoleInformation
         {
             'SMS SQL Server' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
-                $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode]
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode] # specific role like PRI, CAS, SEC or WSUS SQL 
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
 
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'SQLServerRole'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Site Server' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
-                $tmpObj.Role = $siteCodeHashTable[$system.SiteCode]
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj.Role = $siteCodeHashTable[$system.SiteCode] # specific role like PRI, CAS or SEC
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj.Role = 'SiteServer'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
             }
             'SMS Provider' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'SMSProvider'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Software Update Point' 
             {
-
                 if ($siteCodeHashTable[$system.SiteCode] -eq 'CentralAdministrationSite')
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                     $tmpObj.Role = 'CentralSoftwareUpdatePoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                     $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                     [void]$outObject.Add($tmpObj)                
                 }
 
-
-                $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
-                if ($useParentWSUS.Value -eq 0)
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'SecondarySite')
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
-                    $tmpObj.Role = 'PrimarySoftwareUpdatePoint'
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj.Role = 'SecondarySoftwareUpdatePoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                     $tmpObj.SiteCode = $system.SiteCode
-                    [void]$outObject.Add($tmpObj)
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+                else
+                {             
+                    $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
+                    if ($useParentWSUS.Value -eq 1)
+                    {
+                        $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                        $tmpObj.Role = 'PrimarySoftwareUpdatePoint'
+                        $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                        $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                        $tmpObj.SiteCode = $system.SiteCode
+                        $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                        [void]$outObject.Add($tmpObj)
+                    }
+                }
+
+                $supSQLServer = $system.Props | Where-Object {$_.PropertyName -eq 'DBServerName'}
+                if (-NOT ([string]::IsNullOrEmpty($supSQLServer.Value2)))
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj.Role = 'SUPSQLServerRole'
+                  
+                    $systemNameFromNetworkOSPath = $system.NetworkOSPath -replace '\\\\'
+                    [array]$dbServerName = $supSQLServer.Value2 -split '\\' # extract servername from server\instancename string
+                    # making sure we have a FQDN
+                    if ($systemNameFromNetworkOSPath -like "$($dbServerName[0])*")
+                    {
+                        $tmpObj.FullQualifiedDomainName = $systemNameFromNetworkOSPath
+                    }
+                    else 
+                    {
+                        if ($dbServerName[0] -notmatch '\.') # in case we don't have a FQDN, create one based on the FQDN of the initial system  
+                        {
+                            [array]$fqdnSplit =  $systemNameFromNetworkOSPath -split '\.' # split FQDN to easily replace hostname
+                            $fqdnSplit[0] = $dbServerName[0] # replace hostname
+                            $tmpObj.FullQualifiedDomainName = $fqdnSplit -join '.' # join back to FQDN
+                        }   
+                        else 
+                        {
+                            $tmpObj.FullQualifiedDomainName = $dbServerName[0] 
+                        }              
+                    }
+
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                    
                 }
                 
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'SoftwareUpdatePoint'            
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
+
+                Write-host "$(Get-date -Format u): If SUSDB of: `"$($tmpObj.FullQualifiedDomainName)`" is hosted on a SQL cluster, make sure to add each cluster node to the JSON config with role `"SUPSQLServerRole`" " -ForegroundColor Yellow
+
             }
             'SMS Endpoint Protection Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'EndpointProtectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Distribution Point' 
@@ -367,22 +452,24 @@ Function Export-SystemRoleInformation
                 $isPXE = $system.Props | Where-Object {$_.PropertyName -eq 'IsPXE'}
                 if ($isPXE.Value -eq 1)
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                     $tmpObj.Role = 'DistributionPointPXE'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                     $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                     [void]$outObject.Add($tmpObj)                
                 }
 
                 $isPullDP = $system.Props | Where-Object {$_.PropertyName -eq 'IsPullDP'}
                 if ($isPullDP.Value -eq 1)
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                     $tmpObj.Role = 'PullDistributionPoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                     $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                     [void]$outObject.Add($tmpObj)
     
                     $pullSources = $system.PropLists | Where-Object {$_.PropertyListName -eq 'SourceDistributionPoints'}
@@ -398,11 +485,12 @@ Function Export-SystemRoleInformation
                                 $retVal = $_ -match '(DISPLAY=\\\\)(.+)(\\")'
                                 if ($retVal)
                                 {
-                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                                     $tmpObj.Role = 'PullDistributionPointSource'
                                     $tmpObj.FullQualifiedDomainName = ($Matches[2])
                                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($Matches[2]) -Type $IPType
                                     $tmpObj.SiteCode = $system.SiteCode
+                                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                                     [void]$outObject.Add($tmpObj)
                                 }
                                 else
@@ -413,74 +501,82 @@ Function Export-SystemRoleInformation
                     }
                 }
     
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'DistributionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Management Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'ManagementPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS SRS Reporting Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'ReportingServicePoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Dmp Connector' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'ServiceConnectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'Data Warehouse Service Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'DataWarehouseServicePoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Cloud Proxy Connector' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'CMGConnectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS State Migration Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'StateMigrationPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Fallback Status Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'FallbackStatusPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             'SMS Component Server' 
@@ -498,17 +594,18 @@ Function Export-SystemRoleInformation
             <#
             'SMS Certificate Registration Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
                 $tmpObj.Role = 'CertificateRegistrationPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                 $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
             }
             #>
             Default 
             {
-                Write-host "$(Get-date -Format u): Role `"$($system.RoleName)`" not supported by the script at the moment. Create you own firewallrules and definitions in the config fiel if desired." -ForegroundColor Yellow
+                Write-host "$(Get-date -Format u): Role `"$($system.RoleName)`" not supported by the script at the moment. Create you own firewallrules and definitions in the config file if desired." -ForegroundColor Yellow
             }
     
             <# still missing
@@ -524,6 +621,7 @@ Function Export-SystemRoleInformation
         }
     }
     
+    # group roles by system to have a by system list
     $systemsArrayList = New-Object System.Collections.ArrayList
     foreach ($itemGroup in ($outObject | Group-Object -Property FullQualifiedDomainName))
     {
@@ -537,14 +635,14 @@ Function Export-SystemRoleInformation
             FullQualifiedDomainName = $itemGroup.Name
             IPAddress = $itemGroup.Group[0].IPAddress -join ','
             SiteCode = $itemGroup.Group[0].SiteCode
+            ParentSiteCode = $itemGroup.Group[0].ParentSiteCode
             Description = ""
             RoleList = $roleList
         }
             
         [void]$systemsArrayList.Add($itemList)
-    
     }
-    
+        
     $tmpObjRuleDefinition = New-Object pscustomobject | Select-Object FirewallRuleDefinition
     $tmpObjDefinitions = New-Object pscustomobject | Select-Object SystemAndRoleList, RuleDefinition, ServiceDefinition
     
@@ -657,7 +755,7 @@ if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $SetRulesLocall
 
 if ($ExportMECMSystemRoleInformation)
 {
-    if (([string]::IsNullOrEmpty($ProviderMachineName)) -and ([string]::IsNullOrEmpty($SiteCode)))
+    if (([string]::IsNullOrEmpty($ProviderMachineName)) -or ([string]::IsNullOrEmpty($SiteCode)))
     {
         Write-Host "$(Get-date -Format u): ProviderMachineName or SiteCode parameter missing" -ForegroundColor Yellow
         break
@@ -667,12 +765,7 @@ if ($ExportMECMSystemRoleInformation)
     break
 }
 
-# reading config file
-if (-NOT $DestinationSystemFQDN)
-{
-    $DestinationSystemFQDN = Get-LocalSystemFQDN 
-}
-
+# getting config file 
 if ($DefinitionFilePath)
 {
     $DefinitionFile = Get-Content $DefinitionFilePath | ConvertFrom-Json
@@ -697,6 +790,33 @@ if ($ShowConfig)
     $DefinitionFile.FirewallRuleDefinition.RuleDefinition | Out-GridView -Title 'Firewallrule-Definition'
     $DefinitionFile.FirewallRuleDefinition.ServiceDefinition | Out-GridView -Title 'Service-Definition'
     Exit
+}
+
+# Validate if each system has a sitecode since we need one to determin which system belogs to which hierarchy
+####### CREATE NEW LIST OF SYSTEMS WITH SITECODE AS ARRAY TO BE ABLE To USE MULTIPLE SITECODES FOR EXTERNAL SYSTEMS
+$systemsWithoutSiteCode = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({[string]::IsNullOrEmpty($_.SiteCode) -eq $true})
+if ($systemsWithoutSiteCode)
+{
+    foreach ($system in $systemsWithoutSiteCode)
+    {
+        Write-Host "$(Get-date -Format u): WARNING: System $($system.FullQualifiedDomainName) has no sitecode set. Stopping script since that is a requirement" -ForegroundColor Yellow
+    }
+    Exit
+}
+
+# getting system if parameter is not set
+if ([string]::IsNullOrEmpty($DestinationSystemFQDN))
+{
+    $selectResult = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList | Out-GridView -Title 'Choose a system you want firewall rules for' -OutputMode Single
+    if ($selectResult)
+    {
+        $DestinationSystemFQDN = $selectResult.FullQualifiedDomainName
+    }
+    else
+    {
+        Write-Host "$(Get-date -Format u): Nothing selected!" -ForegroundColor Green
+        exit        
+    }
 }
 
 # Create new group suffix for rule versioning
@@ -742,152 +862,176 @@ else
     break
 }
 
-[int]$iteration = 1
-$outParamObject = New-Object System.Collections.ArrayList
-foreach ($role in $destinationSystemObject.RoleList)
+# List of rules with all the data we need to actually create a firewall rule
+$outParamObject = New-Object System.Collections.ArrayList 
+
+[array]$requiredRules = $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -in ($destinationSystemObject.RoleList)})
+# adding ANY and Internet rules to the list
+[array]$requiredRules += $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -eq 'Any' -or $_.Destination -eq 'Internet'})
+
+Write-Verbose "$(Get-date -Format u): Found: `"$($requiredRules.count)`" possible rules for: `"$DestinationSystemFQDN`""
+
+# Collectiong all the data we need for each rule
+foreach ($firewallRule in $requiredRules)
 {
-    $requiredRules = $null
-    [array]$requiredRules = $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -eq $role})
+    $status = "OK"
+    $statusDescription = ''
+    $IPAddressList = @()
+    $SourceSystems = @()
+    $remoteAddressString = ""
+    $searchString = ''
 
-    if ($iteration -eq 1)     
+    Write-Verbose "$(Get-date -Format u): Getting data for rule: $($firewallRule.RuleName)"
+
+    # Making sure we look for the right role based on outbound or inbound rule
+    if ($firewallRule.Direction -eq 'Inbound')
     {
-        # Include ANY or INTERNET destination rules once
-        [array]$requiredRules += $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -eq 'Any' -or $_.Destination -eq 'Internet'})
-        $iteration++
+        $searchString = $firewallRule.Source
+    }
+    else 
+    {
+        $searchString = $firewallRule.Destination
     }
 
-    # Create two seperate rules for in and outbound in case we have one rule with both in and out as direction
-    $requiredRulesArrayList = New-Object System.Collections.ArrayList
-    foreach ($firewallRule in $requiredRules)
+    # Just looking for rules with actual systems as source to get the correct IP addresses. Skip an or internet
+    if ($searchString -in ('Any','Internet'))
     {
-        if ($firewallRule.Direction -match '(inbound|outbound),(inbound|outbound)')
+        $remoteAddressString = $searchString
+    }
+    else 
+    {
+        if ($firewallRule.IgnoreSiteCode -eq 'True')
         {
-            # Create two seperate rules for in and outbound
-            $firewallRule.Direction = 'Inbound'
-            [void]$requiredRulesArrayList.Add($firewallRule) 
-
-            $firewallRule.Direction = 'Outbound'
-            [void]$requiredRulesArrayList.Add($firewallRule) 
+            # We need to look up to a parent site and down to a child side to find the correct systems in a hierarchy
+            $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString})
         }
         else 
         {
-            [void]$requiredRulesArrayList.Add($firewallRule)   
-        }       
+            # We are looking for a role for a specific sitecode. A Distribution Point of a Primary Site for example
+            $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString -and $_.SiteCode -eq $destinationSystemObject.SiteCode})   
+
+        }
     }
 
-    foreach ($firewallRule in $requiredRulesArrayList)
+    # Trying to get all required IP addresses and validate if source and destination system are the same to skip it in that case
+    if ($searchString -notin ('Any','Internet'))
     {
-        $status = "OK"
-        $statusDescription = ''
-        $IPAddressList = @()
-        $remoteAddressString = ""
-
-        if ($firewallRule.Direction -eq 'Inbound')
+        if ($SourceSystems.count -eq 0)
         {
-            $searchString = $firewallRule.Source
+            Write-Verbose "$(Get-date -Format u): WARNING: No systems with role: `"$($searchString)`" found in configfile"
+            $status = "NOT OK"
+            $statusDescription = 'No system with specified role found'
         }
         else 
         {
-            $searchString = $firewallRule.Destination
-        }
-
-
-        if ($searchString -notin ('Any','Internet'))
-        {
-            Write-Verbose "$(Get-date -Format u): Getting all source systems for role: `"$($searchString)`""
-            $SourceSystems = $null
-
-            # if CAS or secondary, do other stuff
-
-            # if source or destination is another site, don't restrict the result to the sitecode
-            $searchRoleArray = ("CentralAdministrationSite","PrimarySite","SecondarySite","SECSQLServerRole","PRISQLServerRole","CASSQLServerRole")
-            if (($firewallRule.Source -in $searchRoleArray) -and ($firewallRule.Destination -in $searchRoleArray))
+            foreach ($SourceSystem in $SourceSystems)
             {
-                $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString})
-            }
-            else
-            {
-                # using the sitecode to make sure we string the right systems together
-                $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString -and $_.SiteCode -eq $destinationSystemObject.SiteCode})
-            }
-
-            if (-NOT $SourceSystems)
-            {
-                Write-Verbose "$(Get-date -Format u): WARNING: No systems with role: `"$($searchString)`" found in configfile"
-                $status = "NOT OK"
-                $statusDescription = 'No system with specified role found'
-            }
-            else 
-            {
-                foreach ($SourceSystem in $SourceSystems)
+                if ([string]::IsNullOrEmpty($SourceSystem.IPAddress))
                 {
-                    
-                    if ([string]::IsNullOrEmpty($SourceSystem.IPAddress))
+                    Write-Host "$(Get-date -Format u): WARNING: No IPAddress in config file found for `"$($SourceSystem.FullQualifiedDomainName)`". Trying to resolve name..." -ForegroundColor Yellow
+                    [array]$SourceSystemIPAddresses = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
+                    if (-NOT ($SourceSystemIPAddresses))
                     {
-                        Write-Host "$(Get-date -Format u): WARNING: No IPAddress in config file found for `"$($SourceSystem.FullQualifiedDomainName)`". Trying to resolve name..." -ForegroundColor Yellow
-                        [array]$SourceSystemIPAddresses = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
-                        if (-NOT ($SourceSystemIPAddresses))
-                        {
-                            Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$($SourceSystem.FullQualifiedDomainName)`" Neither in config file nor via DNS!" -ForegroundColor Yellow
-                            break           
-                        }
-                        else
-                        {
-                            $IPAddressList += $SourceSystemIPAddresses
-                        }
+                        Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$($SourceSystem.FullQualifiedDomainName)`" Neither in config file nor via DNS!" -ForegroundColor Yellow
+                        break           
                     }
                     else
                     {
-                        [array]$SourceSystemIPAddresses = $SourceSystem.IPAddress -split ','
-                        [array]$dnsLookupResult = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
-                        if ($dnsLookupResult)
-                        {
-                            if (-NOT (Compare-TwoArrays -ArrayReference $SourceSystemIPAddresses -ArrayDifference $dnsLookupResult))
-                            {
-                                Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($SourceSystem.IPAddress)`" DNS: `"$($dnsLookupResult -join ',')`"" -ForegroundColor Yellow
-                            }
-                        }
-                        
                         $IPAddressList += $SourceSystemIPAddresses
                     }
                 }
-            }
-
-            if ($IPAddressList)
-            {
-                # validate if destination system is the only system in a rule. If so, skip the rule.
-                $IPAddressList = $IPAddressList | Where-Object {$_ -notin $destinationSystemIPAddresses}
-                if (-NOT $IPAddressList) # if we don't have an IP at all, skip the rule
+                else
                 {
-                    $status = "NOT OK"
-                    $statusDescription = 'Source IP equals destination IP'
-                    Write-Verbose "$(Get-date -Format u): WARNING: Source system is equal to destination system. That's expected if the role is installed on the destination system!"
+                    [array]$SourceSystemIPAddresses = $SourceSystem.IPAddress -split ','
+                    [array]$dnsLookupResult = Get-IPAddressFromName -SystemName ($SourceSystem.FullQualifiedDomainName) -Type $IPType
+                    if ($dnsLookupResult)
+                    {
+                        if (-NOT (Compare-TwoArrays -ArrayReference $SourceSystemIPAddresses -ArrayDifference $dnsLookupResult))
+                        {
+                            Write-Host "$(Get-date -Format u): WARNING: IPAddress in config file differs from DNS lookup result. Config: `"$($SourceSystem.IPAddress)`" DNS: `"$($dnsLookupResult -join ',')`"" -ForegroundColor Yellow
+                        }
+                    }
+                    
+                    $IPAddressList += $SourceSystemIPAddresses
                 }
-            } 
-
-        }
-        else 
-        {
-            $remoteAddressString = $searchString
-        }
-
-        # lets now get all the defined services and create a rule object
-        foreach ($service in $firewallRule.Services)
-        {
-            $requiredServices = $DefinitionFile.FirewallRuleDefinition.ServiceDefinition.Where({$_.Name -eq $service})
-
-            if (-NOT ($requiredServices))
-            {
-                Write-Host "$(Get-date -Format u): WARNING: Service not found in config file: `"$service`" " -ForegroundColor Yellow
-                $status = "NOT OK"
-                $statusDescription = "Service not found in config file: `"$service`""
             }
+        }
+    }
 
-            foreach ($requiredService in $requiredServices)
+    if ($IPAddressList)
+    {
+        # validate if destination system is the only system in a rule. If so, skip the rule.
+        $IPAddressList = $IPAddressList | Where-Object {$_ -notin $destinationSystemIPAddresses}
+        if (-NOT $IPAddressList) # if we don't have an IP at all, skip the rule
+        {
+            $status = "NOT OK"
+            $statusDescription = 'Source IP equals destination IP'
+            Write-Verbose "$(Get-date -Format u): WARNING: Source system is equal to destination system. That's expected if the role is installed on the destination system!"
+        }
+    } 
+
+    # lets now get all the defined services and create a rule object
+    foreach ($service in $firewallRule.Services)
+    {
+        $requiredServices = $DefinitionFile.FirewallRuleDefinition.ServiceDefinition.Where({$_.Name -eq $service})
+        if (-NOT ($requiredServices))
+        {
+            Write-Host "$(Get-date -Format u): WARNING: Service not found in config file: `"$service`" " -ForegroundColor Yellow
+            $status = "NOT OK"
+            $statusDescription = "Service not found in config file: `"$service`""
+        }
+
+        $statusDescriptionTemp = ''
+        if ($firewallRule.Description -like '*Rule not required*')
+        {
+            $statusDescriptionTemp = 'See rule description! {0}' -f $statusDescription
+        }
+
+        foreach ($requiredService in $requiredServices)
+        {
+            if ($CreateOutboundRuleForeachInboundRule -and ($firewallRule.Direction -eq 'Inbound'))
+            {
+                # Create two rules in that case. One in and one out with the same ssetings
+                $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
+                $tmpObj.Status = $status
+                $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
+                $tmpObj.DisplayName = $firewallRule.RuleName
+                $tmpObj.Direction = 'Inbound'
+                $tmpObj.LocalName = $DestinationSystemFQDN
+                $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
+                $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
+                $tmpObj.Protocol = $requiredService.Protocol
+                $tmpObj.LocalPort = $requiredService.Port
+                $tmpObj.Profile = $firewallRule.Profile
+                $tmpObj.Action = $firewallRule.Action
+                $tmpObj.Group = '{0}-{1}' -f $firewallRule.Group, $ruleGroupSuffix
+                $tmpObj.Program = $requiredService.Program
+                $tmpObj.Description = $firewallRule.Description
+                [void]$outParamObject.Add($tmpObj)
+
+                # Outbound
+                $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
+                $tmpObj.Status = $status
+                $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
+                $tmpObj.DisplayName = $firewallRule.RuleName
+                $tmpObj.Direction = 'Outbound'
+                $tmpObj.LocalName = $DestinationSystemFQDN
+                $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
+                $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
+                $tmpObj.Protocol = $requiredService.Protocol
+                $tmpObj.LocalPort = $requiredService.Port
+                $tmpObj.Profile = $firewallRule.Profile
+                $tmpObj.Action = $firewallRule.Action
+                $tmpObj.Group = '{0}-{1}' -f $firewallRule.Group, $ruleGroupSuffix
+                $tmpObj.Program = $requiredService.Program
+                $tmpObj.Description = $firewallRule.Description
+                [void]$outParamObject.Add($tmpObj)
+            }
+            else
             {
                 $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
                 $tmpObj.Status = $status
-                $tmpObj.StatusDescription = $statusDescription
+                $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
                 $tmpObj.DisplayName = $firewallRule.RuleName
                 $tmpObj.Direction = $firewallRule.Direction
                 $tmpObj.LocalName = $DestinationSystemFQDN
@@ -903,23 +1047,24 @@ foreach ($role in $destinationSystemObject.RoleList)
                 [void]$outParamObject.Add($tmpObj)
             }
         }
-    } # foreach firewallrule
-} # foreach role
+    }
+}
 
-
-
+# Show just the rules which are evaluated to be ok
+$ogvTitle = 'List of possible firewall rules based on target systems roles. Choose the rules you want to apply or show for: "{0}"' -f $DestinationSystemFQDN
 if ($ValidRulesOnly)
 {
-    $selectedFirewallRules = $outParamObject | Where-Object {$_.Status -eq 'OK' } | Sort-Object -Property Status, Direction, DisplayName | Out-GridView -Title "STEP 2: Select firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple
+    $selectedFirewallRules = $outParamObject | Where-Object {$_.Status -eq 'OK' } | Sort-Object -Property Status, Direction, DisplayName | Out-GridView -Title $ogvTitle -OutputMode Multiple
 }
 else 
 {
-    $selectedFirewallRules = $outParamObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 2: Select firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
+    $selectedFirewallRules = $outParamObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title $ogvTitle -OutputMode Multiple        
 }
 
 
 if ($MergeSimilarRules)
 {
+    # Let's merge rules with same settings to have only one rule instead of multiple rules  
     $mergedOutObject = New-Object System.Collections.ArrayList
     $mergedRules = $selectedFirewallRules | Where-Object {$_.Status -eq 'OK' } | Group-Object -Property Direction, LocalAddress, Protocol, LocalPort, Profile, Action, Program
     foreach ($ruleGroup in $mergedRules)
@@ -927,19 +1072,21 @@ if ($MergeSimilarRules)
         $RemoteAddressList = @()
         foreach ($groupItem in $ruleGroup.Group)
         {
+            # Adding all the IPAddresses to the rule
             $RemoteAddressList += $groupItem.RemoteAddress
         }       
-
-        [array]$RemoteAddressList = $RemoteAddressList | Select-Object -Unique
+        
+        # Making sure we don't have any duplicates 
+        [array]$RemoteAddressList = $RemoteAddressList | Select-Object -Unique 
 
         $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
         $tmpObj.Status = $ruleGroup.Group[0].Status
         $tmpObj.StatusDescription = $ruleGroup.Group[0].StatusDescription
-        $tmpObj.DisplayName = 'MECM {0} {1}' -f ($ruleGroup.Group[0].Direction), ($ruleGroup.Group[0].LocalPort)
+        $tmpObj.DisplayName = 'MECM {0} {1}' -f ($ruleGroup.Group[0].Direction), ($ruleGroup.Group[0].LocalPort) # Create new rule name
         $tmpObj.Direction = $ruleGroup.Group[0].Direction
         $tmpObj.LocalName = $ruleGroup.Group[0].LocalName
         $tmpObj.LocalAddress = $ruleGroup.Group[0].LocalAddress
-        $tmpObj.RemoteAddress = $RemoteAddressList
+        $tmpObj.RemoteAddress = if ($RemoteAddressList -contains 'Any'){'Any'}else{$RemoteAddressList}
         $tmpObj.Protocol = $ruleGroup.Group[0].Protocol
         $tmpObj.LocalPort = $ruleGroup.Group[0].LocalPort
         $tmpObj.Profile = $ruleGroup.Group[0].Profile
@@ -951,11 +1098,11 @@ if ($MergeSimilarRules)
         
     }
 
-    $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title "STEP 3: Select MERGED firewall rules for system `"$DestinationSystemFQDN`"" -OutputMode Multiple        
+    $ogvTitle = 'List of merged rules for system: "[0]" Select the rules you want to apply or show commands for.' -f $DestinationSystemFQDN
+    $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title $ogvTitle -OutputMode Multiple        
 }
 
-
-
+# Adding GPO specific strings to list
 $commandOutput = New-Object System.Collections.ArrayList
 if ($ShowGPOCommands)
 {
@@ -963,6 +1110,7 @@ if ($ShowGPOCommands)
     [void]$commandOutput.Add($RuleString)                      
 }
 
+# Create connection to GPO in order to change settings
 if ($AddRulesToGPO)
 {
     $policyPath = '{0}}\{1}}' -f $DomainName, $GPOName    
@@ -974,7 +1122,7 @@ if ($AddRulesToGPO)
     }
 }
 
-
+# Prepare parameter list either for New-NetFirewallRule command or for gridview 
 foreach($selectedRule in $selectedFirewallRules)
 {
     if ($selectedRule.Status -eq 'OK')
@@ -991,28 +1139,32 @@ foreach($selectedRule in $selectedFirewallRules)
             Group = $selectedRule.Group
         }
 
+        # Adding parameter values if required
         if (-NOT ([string]::IsNullOrEmpty($selectedRule.Description)))
         {
             $paramSplatting.add("Description", "$($selectedRule.Description)")
         }
 
+        # Adding parameter values if required
         if (-NOT ([string]::IsNullOrEmpty($selectedRule.Program)))
         {
             $programPath = ($selectedRule.Program).Replace('\\','\')
             $paramSplatting.add("Program", "$($programPath)")
         }
 
+        # Adding parameter values if required
         if ($selectedRule.LocalAddress -ne 'Any')
         {
             $paramSplatting.add("LocalAddress", $selectedRule.LocalAddress)
         }
 
-
+        # Adding parameter values if required
         if ( $AddRulesToGPO -or $ShowGPOCommands)
         {
             $paramSplatting.add("GPOSession", $gpoSession)
         }
 
+        # Adding parameter values if required
         if ($SetRulesLocally -or $AddRulesToGPO)
         {
             try
@@ -1028,6 +1180,7 @@ foreach($selectedRule in $selectedFirewallRules)
         }
         elseif ($ShowCommands -or $ShowGPOCommands)
         {
+            # Creating New-NetFirewallRule command strings out of rule objects
             $RuleString = 'New-NetFirewallRule'
             $paramSplatting.GetEnumerator() | ForEach-Object {
 
@@ -1039,6 +1192,7 @@ foreach($selectedRule in $selectedFirewallRules)
                     }
                     else
                     {
+                        # Creating an array string out of IPAddresses for the cmdlet
                         $AdressList = $_.Value -join '","'
                         $AdressList = '("{0}")' -f $AdressList                        
                         $RuleString = '{0} -{1} {2}' -f $RuleString, $_.Name, $AdressList                            
@@ -1046,6 +1200,7 @@ foreach($selectedRule in $selectedFirewallRules)
                 }
                 elseif ($_.Name -eq 'GPOSession')
                 {
+                    # We need to add the GPO session variable to the string
                     $RuleString = '{0} -{1} $gpoSession' -f $RuleString, $_.Name
                 }
                 else
@@ -1069,6 +1224,7 @@ if ($gpoSession)
 {
     Write-Host "$(Get-date -Format u): Saving rules to GPO" -ForegroundColor Green
     Save-NetGPO -GPOSession $gpoSession
+    # No try catch block to properly let command fail
 }
 
 # Output rule commands either with GPO parameters or not
