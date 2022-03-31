@@ -72,7 +72,7 @@ Lorem Ipsum
 .PARAMETER GPOName
 Lorem Ipsum
 
-.PARAMETER ExportMECMSystemRoleInformation
+.PARAMETER ExportConfigMgrSystemRoleInformation
 Lorem Ipsum
 
 .PARAMETER ProviderMachineName
@@ -154,15 +154,15 @@ param
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [string]$GPOName,
 
-    [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
-    [switch]$ExportMECMSystemRoleInformation,
-    #[switch]$ExportMECMSystemRoleInformation=$true,
+    [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
+    [switch]$ExportConfigMgrSystemRoleInformation,
+    #[switch]$ExportConfigMgrSystemRoleInformation=$true,
 
-    [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
+    [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
     [string]$ProviderMachineName,
     #[string]$ProviderMachineName=$env:COMPUTERNAME,
 
-    [parameter(ParameterSetName = 'ExportMECMSystemRoleInformation',Mandatory=$true)]
+    [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
     [string]$SiteCode
     #[string]$SiteCode='P02'
 )
@@ -745,7 +745,7 @@ function Get-LocalSystemFQDN
 
 #region MAIN SCRIPT
 
-if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $AddRulesLocally -or $AddRulesToGPO -or $ExportMECMSystemRoleInformation))
+if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $AddRulesLocally -or $AddRulesToGPO -or $ExportConfigMgrSystemRoleInformation))
 {
     $ShowCommands = $true    
 }
@@ -753,7 +753,7 @@ if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $AddRulesLocall
 [string]$scriptName = $MyInvocation.MyCommand -replace '.ps1', ''
 [string]$exportFileName = '{0}\{1}-Config-{2}.json' -f $PSScriptRoot, $scriptName, ((Get-Date -Format u) -replace '-|:|Z' -replace ' ', '_')
 
-if ($ExportMECMSystemRoleInformation)
+if ($ExportConfigMgrSystemRoleInformation)
 {
     if (([string]::IsNullOrEmpty($ProviderMachineName)) -or ([string]::IsNullOrEmpty($SiteCode)))
     {
