@@ -87,7 +87,7 @@ $referenceData.add('distmgr.box>incoming','MaxValue=500')
 $referenceData.add('auth>statesys.box>incoming','MaxValue=500')                                                                                                                                                                                      
 $referenceData.add('polreq.box','MaxValue=500')                                                                                                                                                                                                      
 $referenceData.add('auth>statesys.box>incoming>low','MaxValue=500')                                                                                                                                                                                  
-$referenceData.add('auth>statesys.box>incoming>high','MaxValue=500')                                                                                                                                                                                 
+$referenceData.add('auth>statesys.box>incoming>high','MaxValue=2000')                                                                                                                                                                                 
 #$referenceData.add('OGprocess.box','MaxValue=500')                                                                                                                                                                                                   
 
 
