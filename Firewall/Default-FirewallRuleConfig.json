@@ -300,7 +300,7 @@
         {
             "RuleName": "MECM Console to SMS provider",
             "Source": "MECMConsole",
-            "Destination": "PrimarySite",
+            "Destination": "SMSProvider",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Any",

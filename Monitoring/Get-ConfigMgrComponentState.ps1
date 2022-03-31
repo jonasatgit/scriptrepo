@@ -15,7 +15,7 @@
 <#
 .Synopsis
     Script to monitor ConfigMgr component states
-    Version: 2022-03-23
+    Version: 2022-03-31
     
 .DESCRIPTION
     The script will read the available ConfigMgr components which are monitored by ConfigMgr itself. 
@@ -135,24 +135,29 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
             }
             else
             {
-    
-                $componentMonitoringType = $component | Get-ItemProperty -Name 'Site Component Manager Monitoring Type' -ErrorAction SilentlyContinue
-                if($componentMonitoringType.'Site Component Manager Monitoring Type' -like 'Monitored*')
-               {
-
-                    $componentAvailabilityState = $component | Get-ItemProperty -Name 'Availability State' -ErrorAction SilentlyContinue
-                    if($componentAvailabilityState.'Availability State' -ne 0)
+                # Only test component status if component is installed
+                $componentInstallState = $component | Get-ItemProperty -Name 'Install State' -ErrorAction SilentlyContinue
+                if($componentInstallState.'Install State' -eq 3)
+                {
+                    # Only test component if component is set to be monitored otherwise we might end up with false positives
+                    $componentMonitoringType = $component | Get-ItemProperty -Name 'Site Component Manager Monitoring Type' -ErrorAction SilentlyContinue
+                    if($componentMonitoringType.'Site Component Manager Monitoring Type' -like 'Monitored*')
                     {
-                        # Temp object for results
-                        # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                        $tmpResultObject.Name = $systemName
-                        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                        $tmpResultObject.Status = 2
-                        $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
-                        $tmpResultObject.Debug = ''
-                        [void]$resultsObject.Add($tmpResultObject)
-                        $badResult = $true
+                        # Availability State needs to be zero other values indicate a problem
+                        $componentAvailabilityState = $component | Get-ItemProperty -Name 'Availability State' -ErrorAction SilentlyContinue
+                        if($componentAvailabilityState.'Availability State' -ne 0)
+                        {
+                            # Temp object for results
+                            # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                            $tmpResultObject.Name = $systemName
+                            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                            $tmpResultObject.Status = 2
+                            $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
+                            $tmpResultObject.Debug = ''
+                            [void]$resultsObject.Add($tmpResultObject)
+                            $badResult = $true
+                        }
                     }
                 }
             }
@@ -219,4 +224,4 @@ if ($GridViewOutput)
 else
 {
     $outObject | ConvertTo-Json -Compress
-}  
+}   

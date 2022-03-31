@@ -60,7 +60,7 @@ Lorem Ipsum
 .PARAMETER ShowGPOCommands
 Lorem Ipsum
 
-.PARAMETER SetRulesLocally
+.PARAMETER AddRulesLocally
 Lorem Ipsum
 
 .PARAMETER AddRulesToGPO
@@ -90,43 +90,43 @@ https://github.com/jonasatgit/scriptrepo
 param
 (
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowConfig',Mandatory=$false)]
     [string]$DefinitionFilePath,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [string]$DestinationSystemFQDN,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [string]$GroupSuffix,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$UseAnyAsLocalAddress,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$ValidRulesOnly,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$MergeSimilarRules,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$CreateOutboundRuleForeachInboundRule,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
@@ -140,8 +140,8 @@ param
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$ShowGPOCommands,
 
-    [parameter(ParameterSetName = 'SetRulesLocally',Mandatory=$true)]
-    [switch]$SetRulesLocally,
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$true)]
+    [switch]$AddRulesLocally,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$true)]
     [switch]$AddRulesToGPO,
@@ -745,7 +745,7 @@ function Get-LocalSystemFQDN
 
 #region MAIN SCRIPT
 
-if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $SetRulesLocally -or $AddRulesToGPO -or $ExportMECMSystemRoleInformation))
+if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $AddRulesLocally -or $AddRulesToGPO -or $ExportMECMSystemRoleInformation))
 {
     $ShowCommands = $true    
 }
@@ -1165,7 +1165,7 @@ foreach($selectedRule in $selectedFirewallRules)
         }
 
         # Adding parameter values if required
-        if ($SetRulesLocally -or $AddRulesToGPO)
+        if ($AddRulesLocally -or $AddRulesToGPO)
         {
             try
             {
