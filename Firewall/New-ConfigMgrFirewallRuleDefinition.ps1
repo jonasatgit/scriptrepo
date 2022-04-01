@@ -308,7 +308,7 @@ Function Export-SystemRoleInformation
         {
             'SMS SQL Server' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode] # specific role like PRI, CAS, SEC or WSUS SQL 
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -316,7 +316,7 @@ Function Export-SystemRoleInformation
                 $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
 
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'SQLServerRole'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -326,7 +326,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Site Server' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = $siteCodeHashTable[$system.SiteCode] # specific role like PRI, CAS or SEC
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -334,7 +334,7 @@ Function Export-SystemRoleInformation
                 $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
                 [void]$outObject.Add($tmpObj)
 
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'SiteServer'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -345,7 +345,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Provider' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'SMSProvider'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -357,7 +357,7 @@ Function Export-SystemRoleInformation
             {
                 if ($siteCodeHashTable[$system.SiteCode] -eq 'CentralAdministrationSite')
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                     $tmpObj.Role = 'CentralSoftwareUpdatePoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -368,7 +368,7 @@ Function Export-SystemRoleInformation
 
                 if ($siteCodeHashTable[$system.SiteCode] -eq 'SecondarySite')
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                     $tmpObj.Role = 'SecondarySoftwareUpdatePoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -381,7 +381,7 @@ Function Export-SystemRoleInformation
                     $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
                     if ($useParentWSUS.Value -eq 1)
                     {
-                        $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                        $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                         $tmpObj.Role = 'PrimarySoftwareUpdatePoint'
                         $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                         $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -394,7 +394,7 @@ Function Export-SystemRoleInformation
                 $supSQLServer = $system.Props | Where-Object {$_.PropertyName -eq 'DBServerName'}
                 if (-NOT ([string]::IsNullOrEmpty($supSQLServer.Value2)))
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                     $tmpObj.Role = 'SUPSQLServerRole'
                   
                     $systemNameFromNetworkOSPath = $system.NetworkOSPath -replace '\\\\'
@@ -417,7 +417,6 @@ Function Export-SystemRoleInformation
                             $tmpObj.FullQualifiedDomainName = $dbServerName[0] 
                         }              
                     }
-
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
                     $tmpObj.SiteCode = $system.SiteCode
                     $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
@@ -425,7 +424,7 @@ Function Export-SystemRoleInformation
                 }
                 
                 
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'SoftwareUpdatePoint'            
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -438,7 +437,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Endpoint Protection Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'EndpointProtectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -452,7 +451,7 @@ Function Export-SystemRoleInformation
                 $isPXE = $system.Props | Where-Object {$_.PropertyName -eq 'IsPXE'}
                 if ($isPXE.Value -eq 1)
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                     $tmpObj.Role = 'DistributionPointPXE'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -464,7 +463,7 @@ Function Export-SystemRoleInformation
                 $isPullDP = $system.Props | Where-Object {$_.PropertyName -eq 'IsPullDP'}
                 if ($isPullDP.Value -eq 1)
                 {
-                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                     $tmpObj.Role = 'PullDistributionPoint'
                     $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -485,9 +484,10 @@ Function Export-SystemRoleInformation
                                 $retVal = $_ -match '(DISPLAY=\\\\)(.+)(\\")'
                                 if ($retVal)
                                 {
-                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                                     $tmpObj.Role = 'PullDistributionPointSource'
                                     $tmpObj.FullQualifiedDomainName = ($Matches[2])
+                                    $tmpObj.PullDistributionPointToSource = $system.NetworkOSPath -replace '\\\\'
                                     $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($Matches[2]) -Type $IPType
                                     $tmpObj.SiteCode = $system.SiteCode
                                     $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
@@ -501,7 +501,7 @@ Function Export-SystemRoleInformation
                     }
                 }
     
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'DistributionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -511,7 +511,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Management Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'ManagementPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -521,7 +521,7 @@ Function Export-SystemRoleInformation
             }
             'SMS SRS Reporting Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'ReportingServicePoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -531,7 +531,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Dmp Connector' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'ServiceConnectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -541,7 +541,7 @@ Function Export-SystemRoleInformation
             }
             'Data Warehouse Service Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'DataWarehouseServicePoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -551,7 +551,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Cloud Proxy Connector' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'CMGConnectionPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -561,7 +561,7 @@ Function Export-SystemRoleInformation
             }
             'SMS State Migration Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'StateMigrationPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -571,7 +571,7 @@ Function Export-SystemRoleInformation
             }
             'SMS Fallback Status Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'FallbackStatusPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -594,7 +594,7 @@ Function Export-SystemRoleInformation
             <#
             'SMS Certificate Registration Point' 
             {
-                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
                 $tmpObj.Role = 'CertificateRegistrationPoint'
                 $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
                 $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
@@ -626,11 +626,18 @@ Function Export-SystemRoleInformation
     foreach ($itemGroup in ($outObject | Group-Object -Property FullQualifiedDomainName))
     {
         $roleList = @()
+        $pullDPList = @()
         foreach ($item in $itemGroup.Group)
         {
             $roleList += $item.Role
+            if (-NOT ([string]::IsNullOrEmpty($item.PullDistributionPointToSource)))
+            {
+                $pullDPList += $item.PullDistributionPointToSource
+            }
         }
-       
+        [array]$roleList = $roleList | Select-Object -Unique
+        [array]$pullDPList = $pullDPList | Select-Object -Unique
+    
         $itemList = [ordered]@{
             FullQualifiedDomainName = $itemGroup.Name
             IPAddress = $itemGroup.Group[0].IPAddress -join ','
@@ -638,8 +645,9 @@ Function Export-SystemRoleInformation
             ParentSiteCode = $itemGroup.Group[0].ParentSiteCode
             Description = ""
             RoleList = $roleList
+            PullDistributionPointToSourceList = $pullDPList
         }
-            
+      
         [void]$systemsArrayList.Add($itemList)
     }
         
@@ -793,7 +801,6 @@ if ($ShowConfig)
 }
 
 # Validate if each system has a sitecode since we need one to determin which system belogs to which hierarchy
-####### CREATE NEW LIST OF SYSTEMS WITH SITECODE AS ARRAY TO BE ABLE To USE MULTIPLE SITECODES FOR EXTERNAL SYSTEMS
 $systemsWithoutSiteCode = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({[string]::IsNullOrEmpty($_.SiteCode) -eq $true})
 if ($systemsWithoutSiteCode)
 {
@@ -1113,7 +1120,8 @@ if ($ShowGPOCommands)
 # Create connection to GPO in order to change settings
 if ($AddRulesToGPO)
 {
-    $policyPath = '{0}}\{1}}' -f $DomainName, $GPOName    
+    $policyPath = '{0}\{1}' -f $DomainName, $GPOName
+    Write-Host "$(Get-date -Format u): Connecting to GPO `"$($policyPath)`"" -ForegroundColor Green    
     $gpoSession = Open-NetGPO -PolicyStore $policyPath
     if (-NOT ($gpoSession))
     {
@@ -1169,6 +1177,9 @@ foreach($selectedRule in $selectedFirewallRules)
         {
             try
             {
+                # Making sure we have an array of ports to be able to set the rule locally in case multiple ports are specified
+                $paramSplatting.LocalPort = $paramSplatting.LocalPort -split ','
+
                 Write-Host "$(Get-date -Format u): New-NetFirewallRule -> `"$($selectedRule.DisplayName)`"" -ForegroundColor Green
                 $retval = New-NetFirewallRule @paramSplatting -ErrorAction Stop
             }
@@ -1184,11 +1195,11 @@ foreach($selectedRule in $selectedFirewallRules)
             $RuleString = 'New-NetFirewallRule'
             $paramSplatting.GetEnumerator() | ForEach-Object {
 
-                If ($_.Name -eq 'RemoteAddress')
+                If (($_.Name -eq 'RemoteAddress') -or ($_.Name -eq 'LocalAddress'))
                 {
-                    if($_.Value -eq 'Any' -or $_.Value -eq 'Internet')
+                    if(($_.Value -eq 'Any') -or ($_.Value -eq 'Internet'))
                     {
-                        $RuleString = "{0} -{1} {2}" -f $RuleString, $_.Name, $_.Value
+                        $RuleString = '{0} -{1} {2}' -f $RuleString, $_.Name, $_.Value
                     }
                     else
                     {
@@ -1202,6 +1213,11 @@ foreach($selectedRule in $selectedFirewallRules)
                 {
                     # We need to add the GPO session variable to the string
                     $RuleString = '{0} -{1} $gpoSession' -f $RuleString, $_.Name
+                }
+                elseif ($_.Name -eq 'LocalPort')
+                {
+                    # Localport does not work as string
+                    $RuleString = '{0} -{1} {2}' -f $RuleString, $_.Name, $_.Value    
                 }
                 else
                 {
