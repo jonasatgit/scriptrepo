@@ -16,70 +16,93 @@
 
 <#
 .SYNOPSIS
-Script to create Windows Firewall Rules based in a JSON definition file
+Script to create Windows Firewall Rules based in a JSON definition file for ConfigMgr environments
 
 .DESCRIPTION
-Lorem Ipsum
+Script to create Windows Firewall Rules based in a JSON definition file for ConfigMgr environments.
+The script can export ConfigMgr environment information with parameter "ExportConfigMgrSystemRoleInformation"
+and will merge the exported data with data from its default config file "Default-FirewallConfig.json".
+The file can then be used to either show the required rules and PowerShell commands, set the rules locally or 
+add the rules to an existing group policy object. 
+It has six main operational modes via parameters:
+    #1 Export ConfigMgr site and hierarchy information and create a new JSON file
+        (-Export ConfigMgrSystemRoleInformation)
+    #2 Show exported or example configuration from JSON file
+        (-ShowConfig)
+    #3 Show PowerShell commands to set firewall rules 
+        (-ShowCommands) <-- Default parameter if started without parameters
+    #4 Show PowerShell commands to import firewall rules into a group policy 
+        (-ShowGPOCommands)
+    #5 Add firewall rules locally 
+        (-AddRulesLocally)
+    #6 Add firewall rules to group policy 
+        (-AddRulesToGPO)
 
 .INPUTS
-Lorem Ipsum
+JSON file can be selected via grid view prompt
 
 .OUTPUTS
-Lorem Ipsum
+Grid view
 
 .EXAMPLE
 Lorem Ipsum
 
 .PARAMETER DestinationSystemFQDN
-Lorem Ipsum
+Optional: Can be used to generate rules for a specific system. Fqdn format: name.domain.suffix 
+If not used, a grid view will open from which a systen can be choosen
 
 .PARAMETER DefinitionFilePath
-Lorem Ipsum
+Optional: Path to a JSON definition file. 
+If not used, a grid view will open from which a file can be choosen
 
 .PARAMETER GroupSuffix
-Lorem Ipsum
+Optional: Suffix to a firewall group. The group name is part of the JSON definition file
 
 .PARAMETER UseAnyAsLocalAddress
-Lorem Ipsum
+Optional: Will set the local address to ANY instead of the actual local IP address of a system
+Helpful if a firewall GPO should work for multiple systems instead of just for one with a specific IP address 
 
 .PARAMETER ValidRulesOnly
-Lorem Ipsum
+Optional: Will only show rules with status OK
 
 .PARAMETER MergeSimilarRules
-Lorem Ipsum
+Optional: Will merge similar rules based on direction, protocol, port and program
 
 .PARAMETER IPType
-Lorem Ipsum
+Optional: Can be used the either export IPv4, IPv6 or both types of IP addresses
 
 .PARAMETER ShowConfig
-Lorem Ipsum
+Optional: Will only show the contents of a JSON definition file and not rules for a specific system
 
 .PARAMETER ShowCommands
-Lorem Ipsum
+Optional: Will output rules and PowerShell commands for a selected target system in a grid view. 
+The PowerShell commands can be copied
 
 .PARAMETER ShowGPOCommands
-Lorem Ipsum
+Optional: The same as with "ShowCommands" but with the parameters to import the rules into a GPO
+Requires: "DomainName" and "GPOName" to be set. (GPO must exist)
 
 .PARAMETER AddRulesLocally
-Lorem Ipsum
+Optional: Will set selected rules locally
 
 .PARAMETER AddRulesToGPO
-Lorem Ipsum
+Optional: Wll add rules to a GPO
 
 .PARAMETER DomainName
-Lorem Ipsum
+Optional: Name of a domain a GPO exists in 
 
 .PARAMETER GPOName
-Lorem Ipsum
+Optional: Name of a GPO which exists in a domain
 
 .PARAMETER ExportConfigMgrSystemRoleInformation
-Lorem Ipsum
+Optional: Will export ConfigMgr environment information into a new JSON configuration file
+Requires: "ProviderMachineName" and "SiteCode"
 
 .PARAMETER ProviderMachineName
-Lorem Ipsum
+Optional: ConfigMgr SMS Provider machine name to be able to export data from ConfigMgr
 
 .PARAMETER SiteCode
-Lorem Ipsum
+Optional: Site code of ConfigMgr site
 
 .LINK
 https://github.com/jonasatgit/scriptrepo
