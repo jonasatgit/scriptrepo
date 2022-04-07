@@ -37,11 +37,11 @@
     ProfileID="{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}"; # DO NOT CHANGE
     BatchSize = 100;
     ControlUsage=$true;
-    OnAC_PercentageOfTimeoutToWait = 10;
-    OnAC_EvaluationPeriodLengthSec = 20;
-    OnAC_IdlePeriodLengthSec = 30;
+    OnAC_PercentageOfTimeoutToWait = 50;
+    OnAC_EvaluationPeriodLengthSec = 60;
+    OnAC_IdlePeriodLengthSec = 120;
     OnAC_MinIdleDiskPercentage = 30;
-    OnAC_ConsiderUserInputAsActivity = $false;
+    OnAC_ConsiderUserInputAsActivity = $true;
     OnBattery_BehaviorType=1; # DO NOT CHANGE
     OnLowBattery_BehaviorType =0;# DO NOT CHANGE
     }
@@ -54,7 +54,8 @@
 $SINVCUSTOMProfileSettingsCustomObject = New-Object psobject -Property $SINVCUSTOMProfileSettings
 
 # get sq inv profiles
-$SINVProfilesActualConfig = Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig" -query "select * from CCM_Service_ResourceProfileInformation where ProfileID = '{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}'" 
+$ProfileID = $SINVCUSTOMProfileSettings.ProfileID
+$SINVProfilesActualConfig = Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig" -query "select * from CCM_Service_ResourceProfileInformation where ProfileID = '$ProfileID'"
 
 #endregion
 
