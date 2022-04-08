@@ -938,7 +938,7 @@
             "Action": "Allow",
             "Profile": "Any",
             "Group": "MECM",
-            "Description": "Pull-Distribution Point to Pull-Source-Distribution Point",
+            "Description": "Might not be required if specific ports are open for all clients. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsPullDP-DPSource",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",

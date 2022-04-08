@@ -913,6 +913,13 @@ foreach ($firewallRule in $requiredRules)
 
     Write-Verbose "$(Get-date -Format u): Getting data for rule: $($firewallRule.RuleName)"
 
+    # Ignoring client communication to CAS
+    if (($firewallRule.RuleName -like 'MECM Client*') -and ($destinationSystemObject.RoleList -contains 'CentralAdministrationSite'))
+    {
+        $status = "NOT OK"
+        $statusDescription = 'Clients to CAS not allowed'
+    }
+
     # Making sure we look for the right role based on outbound or inbound rule
     if ($firewallRule.Direction -eq 'Inbound')
     {
@@ -935,11 +942,17 @@ foreach ($firewallRule in $requiredRules)
             # We need to look up to a parent site and down to a child side to find the correct systems in a hierarchy
             $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString})
         }
+        elseif ($firewallRule.RuleName -like '*Pull-Distribution Point to Pull-Source*')
+        {
+
+            # PullDP to source DP is special, because this is an extra many to one relationship
+            # Looking for all PullDPs in Systemlist for a specific Pull DP source
+            $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.FullQualiFiedDomainName -in $destinationSystemObject.PullDistributionPointToSourceList})
+        }
         else 
         {
             # We are looking for a role for a specific sitecode. A Distribution Point of a Primary Site for example
-            $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString -and $_.SiteCode -eq $destinationSystemObject.SiteCode})   
-
+            $SourceSystems = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.RoleList -eq $searchString -and $_.SiteCode -eq $destinationSystemObject.SiteCode})             
         }
     }
 
