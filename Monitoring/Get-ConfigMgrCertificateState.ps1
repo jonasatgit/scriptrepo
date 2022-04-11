@@ -14,11 +14,11 @@
 
 <#
 .Synopsis
-    Script to monitor ConfigMgr related certificates based on a specific template name
-    Version: 2022-04-06
+    Script to monitor ConfigMgr related certificates based on a specific template name. Will also connect to SMS provider for DP certificates.
+    Version: 2022-04-11
     
 .DESCRIPTION
-    Script to monitor ConfigMgr related certificates based on a specific template name
+    Script to monitor ConfigMgr related certificates based on a specific template name. Will also connect to SMS provider for DP certificates.
     Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER GridViewOutput
@@ -29,10 +29,10 @@
     Valid template names are:
         '*Custom-ConfigMgrDPCertificate*'
         '*Custom-ConfigMgrIISCertificate*'
-        '*Custom-Test-ConfigMgrDPCertificate*'
-        '*Custom-Test-ConfigMgrIISCertificate*'
+        '*Custom-QS-ConfigMgrDPCertificate*'
+        '*Custom-QS-ConfigMgrIISCertificate*'
         OR
-        '*Custom*ConfigMgr*Certificate*' to include all possible values
+        '*ConfigMgr*Certificate*' to include all possible values
 
 .PARAMETER MinValidDays
     Value in days before certificate expiration
@@ -44,13 +44,13 @@
     Get-ConfigMgrCertificateState.ps1 -GridViewOutput
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -TemplateSearchString '*Custom*ConfigMgr*Certificate*' -MinValidDays 60
+    Get-ConfigMgrCertificateState.ps1 -TemplateSearchString '*Custom*ConfigMgr*Certificate*' -MinValidDays 30
 
 .INPUTS
    None
 
 .OUTPUTS
-   Compressed JSON string or grid view
+   Compressed JSON string 
     
 #>
 [CmdletBinding()]
@@ -59,10 +59,67 @@ param
     [Parameter(Mandatory=$false)]
     [Switch]$GridViewOutput,
     [Parameter(Mandatory=$false)]
-    [string]$TemplateSearchString = '*Custom*ConfigMgr*Certificate*',
+    [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
     [Parameter(Mandatory=$false)]
     [int]$MinValidDays = 30
 )
+
+
+<#
+.Synopsis
+   function Test-ConfigMgrActiveSiteSystemNode 
+
+.DESCRIPTION
+   Test if a given FQDN is the active ConfigMgr Site System node
+   Function to read from HKLM:\SOFTWARE\Microsoft\SMS\Identification' 'Site Servers' and determine the active site server node
+   Possible values could be: 
+        1;server1.contoso.local;
+       1;server1.contoso.local;0;server2.contoso.local;
+        0;server1.contoso.local;1;server2.contoso.local;
+
+.PARAMETER SiteSystemFQDN
+   FQDN of site system
+
+.EXAMPLE
+   Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN 'server1.contoso.local'
+#>
+function Test-ConfigMgrActiveSiteSystemNode
+{
+    param
+    (
+        [string]$SiteSystemFQDN
+    )
+
+    $siteServers = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Servers' -ErrorAction SilentlyContinue
+    if ($siteServers)
+    {
+        # Extract site system values from registry property 
+        $siteSystemHashTable = @{}
+        $siteSystems = [regex]::Matches(($siteServers.'Site Servers'),'(\d;[a-zA-Z0-9._-]+)')
+        if($siteSystems.Count -gt 1)
+        {
+            # HA site systems found
+            foreach ($SiteSystemNode in $siteSystems)
+            {
+                $tmpArray = $SiteSystemNode.value -split ';'
+                $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+            }
+        }
+        else
+        {
+            # single site system found
+            $tmpArray = $siteSystems.value -split ';'
+            $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+        }
+        
+        return $siteSystemHashTable[($SiteSystemFQDN).ToLower()]
+    }
+    else
+    {
+        return $null
+    }
+}
+
 
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
@@ -78,42 +135,100 @@ else
 $resultsObject = New-Object System.Collections.ArrayList
 [bool]$badResult = $false
 
-# Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
-$configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
-    $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
-}
-
-if ($configMgrCerts)
+# Going the extra mile and checking DP and or BootStick certificates via SMS Provider call, but just if we are on the active site server
+# Mainly to prevent multiple alerts for one certificate coming from multiple systems
+if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
 {
-    foreach ($certificate in $configMgrCerts)
+    # Active node found. Let's check DP certificates via SMS Provider
+    $SMSProviderLocation = Get-WmiObject -Namespace root\sms -Query "SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($SMSProviderLocation)
     {
-        $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
-
-        if ($expireDays -le $minValidDays)
+        [array]$ConfigMgrOSDCertificates = Get-WmiObject -Namespace "root\sms\Site_$($SMSProviderLocation.SiteCode)" -ComputerName ($SMSProviderLocation.Machine) -Query 'SELECT * FROM SMS_Certificate where Type in (1,2) and IsBlocked = 0'
+        if ($ConfigMgrOSDCertificates)
+        {
+            foreach ($OSDCertificate in $ConfigMgrOSDCertificates)
+            {
+                $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
+                if ($expireDays -le $minValidDays)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $systemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 1
+                    $tmpResultObject.ShortDescription = 'Warning: DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject)
+                    $badResult = $true     
+                }
+            }
+        }
+        else
         {
             $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
             $tmpResultObject.Name = $systemName
             $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 1
-            $tmpResultObject.ShortDescription = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
+            $tmpResultObject.ShortDescription = 'Warning: No DP or Boot certificate found!'
             $tmpResultObject.Debug = ''
             [void]$resultsObject.Add($tmpResultObject)
-            $badResult = $true           
-        }
+            $badResult = $true        
+        }   
+    }
+    else
+    {
+        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject.Name = $systemName
+        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+        $tmpResultObject.Status = 1
+        $tmpResultObject.ShortDescription = 'Warning: Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
+        $tmpResultObject.Debug = ''
+        [void]$resultsObject.Add($tmpResultObject)
+        $badResult = $true
+    }
+
+}
+
+# Looking for certificates in personal store of current system if a webserver is installed
+# Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
+if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
+{
+    $configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
+        $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
+    }
+
+    if ($configMgrCerts)
+    {
+        foreach ($certificate in $configMgrCerts)
+        {
+            $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
+
+            if ($expireDays -le $minValidDays)
+            {
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $systemName
+                $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = 1
+                $tmpResultObject.ShortDescription = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+                $badResult = $true
+                $configMgrCertificateFound = $true         
+            }
         
+        }
+    }
+    else
+    {
+        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject.Name = $systemName
+        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+        $tmpResultObject.Status = 1
+        $tmpResultObject.ShortDescription = 'Warning: No ConfigMgr Certificate found on system!'
+        $tmpResultObject.Debug = ''
+        [void]$resultsObject.Add($tmpResultObject)
+        $badResult = $true   
     }
 }
-else
-{
-    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-    $tmpResultObject.Name = $systemName
-    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-    $tmpResultObject.Status = 1
-    $tmpResultObject.ShortDescription = 'Warning: No ConfigMgr Certificate found on system!'
-    $tmpResultObject.Debug = ''
-    [void]$resultsObject.Add($tmpResultObject)
-    $badResult = $true   
-} 
 
 
 # used as a temp object for JSON output
