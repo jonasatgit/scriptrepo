@@ -88,7 +88,7 @@ if ($WebhookData)
 # First, lets see if we are running within Azure Automation or as a standalone script
 # That step is helpful to be able to run the script locally (in VisualStudio Code for example) without a startstring
 # We do that by testing for the Azure Automation command: Get-AutomationVariable
-[bool]$inAzureAutomationEnvironment = if (Get-Command -Name Get-AutomationVariable){$true}else{$false}
+[bool]$inAzureAutomationEnvironment = if (Get-Command -Name Get-AutomationVariable -ErrorAction SilentlyContinue){$true}else{$false}
 
 if ($inAzureAutomationEnvironment)
 {
