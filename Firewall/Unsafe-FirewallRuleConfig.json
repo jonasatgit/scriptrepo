@@ -1,0 +1,323 @@
+﻿{"FirewallRuleDefinition": {
+    "SystemAndRoleList": 
+    [
+        {
+            "FullQualifiedDomainName":  "CAS.contoso.local",
+            "IPAddress":  "10.11.12.13",
+            "SiteCode":  "CAS",
+            "ParentSiteCode":  "CAS",
+            "Description":  "",
+            "RoleList":  [
+                             "CASSQLServerRole",
+                             "SQLServerRole",
+                             "CentralAdministrationSite",
+                             "SMSProvider",
+                             "PrimarySoftwareUpdatePoint",
+                             "CentralSoftwareUpdatePoint",
+                             "SoftwareUpdatePoint",
+                             "EndpointProtectionPoint"
+                         ]
+        },
+        {
+            "FullQualifiedDomainName": "cm01.contoso.local",
+            "IPAddress": "10.10.10.15",
+            "SiteCode":  "P01", 
+            "ParentSiteCode":  "CAS",                       
+            "Description": "Main Primary Site without MP and DP",
+            "RoleList": [
+                            "PrimarySite",
+                            "SMSProvider",
+                            "PRISQLServerRole",
+                            "SQLServerRole",
+                            "SoftwareUpdatePoint",
+                            "PrimarySoftwareUpdatePoint",
+                            "ServiceConnectionPoint",
+                            "MECMConsole"
+                        ]
+        },        
+        {
+            "FullQualifiedDomainName": "cm02.contoso.local",
+            "IPAddress": "10.10.10.16",
+            "SiteCode":  "P01",
+            "ParentSiteCode":  "CAS",            
+            "Description": "MP,DP 1",
+            "RoleList": [
+                            "ManagementPoint",
+                            "DistributionPoint"
+                        ]
+        },        
+        {
+            "FullQualifiedDomainName": "cm03.contoso.local",
+            "IPAddress": "10.10.10.17",
+            "SiteCode":  "P01",
+            "ParentSiteCode":  "CAS",            
+            "Description": "MP,DP 2",
+            "RoleList": [
+                            "ManagementPoint",
+                            "DistributionPoint"
+                        ]
+        },        
+        {
+            "FullQualifiedDomainName": "cm04.contoso.local",
+            "IPAddress": "10.10.10.18",
+            "SiteCode":  "P01", 
+            "ParentSiteCode":  "CAS",                       
+            "Description": "SUP 1",
+            "RoleList": [
+                            "PrimarySoftwareUpdatePoint",
+                            "SoftwareUpdatePoint"
+                        ]
+        },        
+        {
+            "FullQualifiedDomainName": "cm05.contoso.local",
+            "IPAddress": "10.10.10.19",
+            "Description": "SUP 2",
+            "SiteCode":  "P01",             
+            "ParentSiteCode":  "CAS",            
+            "RoleList": [
+                            "SoftwareUpdatePoint"
+                        ]
+        },
+        {
+            "FullQualifiedDomainName": "ts01.contoso.local",
+            "IPAddress": "10.10.11.12",
+            "SiteCode":  "P01",
+            "ParentSiteCode":  "",            
+            "Description": "Terminal Server 1",
+            "RoleList": [
+                            "RDP",
+                            "MECMConsole"
+                        ]
+        },
+        {
+            "FullQualifiedDomainName": "CMDB.contoso.local",
+            "IPAddress": "10.10.12.30",
+            "SiteCode":  "P01",
+            "ParentSiteCode":  "",              
+            "Description": "Main CMDB",
+            "RoleList": [
+                            "ExternalSQLConnection"
+                        ]
+        }
+    ],
+   "RuleDefinition": 
+    [
+        {
+            "RuleName": "Block unsafe connections outbound",
+            "Source": "Any",
+            "Destination": "Any",
+            "Direction": "Outbound",
+            "Action": "Block",
+            "Profile": "Any",
+            "Group": "SecurityCustom",
+            "Description": "Rule will block unsafe process outbound",
+            "IgnoreSiteCode": "",
+            "Services": [
+                          "CScript32Bit",
+                          "CScript64Bit",
+                          "Regsvr32Bit",
+                          "Regsvr64Bit",
+                          "Rundll32Bit",
+                          "Rundll64Bit",
+                          "Wscript32Bit",
+                          "Wscript64Bit"
+                       ]
+      },
+      {
+            "RuleName": "Block unsafe Powershell internet connections outbound",
+            "Source": "Any",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Block",
+            "Profile": "Any",
+            "Group": "SecurityCustom",
+            "Description": "Rule will block PowerShell process outbound",
+            "IgnoreSiteCode": "",
+            "Services": [
+                          "PowershellISE32Bit",
+                          "PowershellISE64Bit",
+                          "Powershell32Bit",
+                          "Powershell64Bit"
+                        ]
+      }
+      ],
+      "ServiceDefinition": 
+      [
+        {
+            "Name": "RPC",
+            "Protocol": "TCP",
+            "Port": "RPCEPMAP",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Endpoint Mapper"
+        },
+        {
+            "Name": "RPCUDP",
+            "Protocol": "UDP",
+            "Port": "135",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Endpoint Mapper"
+        },
+        {
+            "Name": "RPCDynamic",
+            "Protocol": "TCP",
+            "Port": "RPC",
+            "Program": "%systemroot%\\system32\\svchost.exe",
+            "Description": "RPC Dynamic Ports"
+        },
+        {
+            "Name": "SQLEndpoint",
+            "Protocol": "TCP",
+            "Port": "1433",
+            "Program": "",
+            "Description": "SQL Server Endpoint"    
+        },
+        {
+            "Name": "SQLBroker",
+            "Protocol": "TCP",
+            "Port": "4022",
+            "Program": "",
+            "Description": "SQL Broker"    
+        },
+        {
+            "Name": "RDP",
+            "Protocol": "TCP",
+            "Port": "3389",
+            "Program": "",
+            "Description": "RDP"    
+        },
+        {
+            "Name": "HTTP",
+            "Protocol": "TCP",
+            "Port": "80",
+            "Program": "",
+            "Description": "HTTP"    
+        },
+        {
+            "Name": "HTTPS",
+            "Protocol": "TCP",
+            "Port": "443",
+            "Program": "",
+            "Description": "HTTPS"    
+        },
+        {
+            "Name": "FastChannel",
+            "Protocol": "TCP",
+            "Port": "10123",
+            "Program": "",
+            "Description": "FastChannel"    
+        },
+        {
+            "Name": "MPDefault",
+            "Protocol": "TCP",
+            "Port": "80,443,10123",
+            "Program": "",
+            "Description": "All MP default ports"    
+        },
+        {
+            "Name": "WSUSCustom",
+            "Protocol": "TCP",
+            "Port": "8530-8531",
+            "Program": "",
+            "Description": "WSUSCustom"    
+        },
+        {
+            "Name": "SMB",
+            "Protocol": "TCP",
+            "Port": "445",
+            "Program": "",
+            "Description": "WSUSCustom"    
+        },
+        {
+            "Name": "PXE",
+            "Protocol": "UDP",
+            "Port": "67,68,69,4011",
+            "Program": "",
+            "Description": "PXE boot"    
+        },
+        {
+            "Name": "CScript32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\cscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "CScript64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\system32\\cscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "PowershellISE32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
+            "Description": "Powershell_ISE process 32bit"    
+        },
+        {
+            "Name": "PowershellISE64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell_ise.exe",
+            "Description": "Powershell_ISE process 64bit"    
+        },
+        {
+            "Name": "Powershell32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "Description": "Powershell process 32bit"    
+        },
+        {
+            "Name": "Powershell64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "Description": "Powershell process 64bit"    
+        },
+        {
+            "Name": "Regsvr32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\regsvr32.exe",
+            "Description": "Regsvr32 process 32bit"    
+        },
+        {
+            "Name": "Regsvr64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\regsvr32.exe",
+            "Description": "Regsvr32 process 64bit"    
+        },
+        {
+            "Name": "Rundll32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\rundll32.exe",
+            "Description": "Rundll32 process 32bit"    
+        },
+        {
+            "Name": "Rundll64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\rundll32.exe",
+            "Description": "Rundll32 process 64bit"    
+        },
+        {
+            "Name": "Wscript32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\wscript.exe",
+            "Description": "Cscript process 32bit"    
+        },
+        {
+            "Name": "Wscript64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\wscript.exe",
+            "Description": "Cscript process 64bit"    
+        }      
+      ]
+    }
+}

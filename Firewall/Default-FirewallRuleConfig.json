@@ -2,49 +2,79 @@
     "DOCUMENTATION":
     [
         {
-            "SystemAndRoleList": 
+            "SystemAndRoleList-Documentation": 
             [
                 {
                     "FullQualifiedDomainName": "REQUIRED: FQDN of system. Example: cm01.contoso.local",
-                    "IPAddress:": "OPTIONAL: One or more IP adresses of the FullQualifiedDomainName seperated via comma. The script will run a DNS lookup in case this field was left blank",
+                    "IPAddress:": "REQUIRED: One or more IP addresses of the FullQualifiedDomainName separated via comma. The script will run a DNS lookup in case this field was left blank",
                     "Description": "OPTIONAL: A description for the server to make it easier to identify any system in this config file",
+                    "SiteCode":  "SiteCode of the system. Used to match roles to the correct site. To prevent a DP of Site A to connect to Site B for example",
+                    "ParentSiteCode":  "SiteCode of the parent site system. Could be a CAS in case of a Primary Site or a Primary Site on case of a Secondary Site",
                     "RoleList": [
                                     "REQUIRED: List of roles. A role defines what firewallrules will be applied to a system.",
                                     "A role could be 'Webserver' for example to be able to define port 80 or 443 in a firewall rule",
-                                    "Define your own rules if neccessary and use them in a 'RuleDefinition' (Explained further down)",
+                                    "Define your own rules if necessary and use them in a 'RuleDefinition' (Explained further down)",
                                     "Possible default values are:",
-                                    "MECMConsole",
-                                    "CentralAdministrationSite",
-                                    "PrimarySite",
-                                    "SecondarySite",
-                                    "SiteServer",
-                                    "SMSProvider",
-                                    "ManagementPoint",
-                                    "DistributionPoint",
-                                    "EndpointProtectionPointdress",
-                                    "PullDistributionPoint",
-                                    "PullDistributionPointSource",
-                                    "PrimarySoftwareUpdatePoint",
-                                    "SoftwareUpdatePoint",
-                                    "ReportingServicePoint",
-                                    "SQLServerRole",
-                                    "CASSQLServerRole",
-                                    "PRISQLServerRole",
-                                    "CASSQLServerRole",
-                                    "SUPSQLServerRole",
-                                    "CMGConnectionPoint",
-                                    "ServiceConnectionPoint",
-                                    "FallbackStatusPoint",
-                                    "StateMigrationPoint",
-                                    "DataWarehouseServicePoint",
-                                    "CertificateRegistrationPoint",
-                                    "ContentLibraryServer",
-                                    "ContentSourceServer",
-                                    "ExternalSQLConnection",
-                                    "RDPSystem",
-                                    "SMBSystem"
+                                    "MECMConsole = Systems running the ConfigMgr console",
+                                    "CentralAdministrationSite = CAS",
+                                    "PrimarySite = Primary Site",
+                                    "SecondarySite = Secondary Site",
+                                    "SiteServer = Site Server wether CAS, PRI or SEC site",
+                                    "SMSProvider = System with SMS Provider role installed",
+                                    "ManagementPoint = System with Management Point role installed",
+                                    "DistributionPoint = System with Distribution Point role installed",
+                                    "EndpointProtectionPoint = System with Endpoint Protection Point role installed",
+                                    "PullDistributionPoint = DP configured as  Pull-DP",
+                                    "PullDistributionPointSource = A Pull-DP source DP",
+                                    "PrimarySoftwareUpdatePoint = The first Software Update Point all other SUPs use",
+                                    "SoftwareUpdatePoint = System with Software Update Point role installed",
+                                    "ReportingServicePoint = System with Reporting Service Point role installed",
+                                    "SQLServerRole = SQL Server",
+                                    "CASSQLServerRole = SQL Server of CAS",
+                                    "PRISQLServerRole = SQL Server of Primary Site",
+                                    "SUPSQLServerRole = SQL Server of Software Update Point",
+                                    "CMGConnectionPoint = System with CMG Connection Point role installed",
+                                    "ServiceConnectionPoint = System with Service Connection Point role installed",
+                                    "FallbackStatusPoint = System with Fallback Status Point role installed",
+                                    "StateMigrationPoint = System with State Migration Point role installed",
+                                    "DataWarehouseServicePoint = System with Data Warehouse Service Point role installed",
+                                    "CertificateRegistrationPoint = System with Certificate Registration Point role installed",
+                                    "ContentLibraryServer = System where a remote Content Library is stored",
+                                    "ContentSourceServer = System used as the content source server",
+                                    "ExternalSQLConnection = External system to ConfigMgr with the need to connect to SQL server",
+                                    "RDPSystem = System with the need to connect via RDP to ConfigMgr systems",
+                                    "SMBSystem = System with the need to connect via SMB to ConfigMgr systems"
                                 ]
                 }
+            ],
+            "RuleDefinition-Documentation": 
+            [
+                {
+                    "RuleName": "Name of firewall rule",
+                    "Source": "Source role name from the RoleList of systems. Could be MECMConsole or PrimarySite for example",
+                    "Destination": "Destination role name from the RoleList of systems. Could be MECMConsole or PrimarySite for example",
+                    "Direction": "Rule direction. Either Inbound or Outbound",
+                    "Action": "Either Allow or Block",
+                    "Profile": "Either Domain, Private, Public or Any",
+                    "Group": "Name if the firewall rule group to be able to group rules together",
+                    "Description": "Description of rule",
+                    "IgnoreSiteCode": "If set to True the rule will not stick to the sitecode. Can be used to allow a rule for all Distribution Points instead of just the ones of a specific site for example",
+                    "Services": [
+                                    "List fo services from the ServiceDefinition of this file. Example:",
+                                    "HTTP",
+                                    "HTTPS"
+                                ]
+                }
+            ],
+            "ServiceDefinition-Documentation": 
+            [
+              {
+                  "Name": "Name of a service. Used in the services list of a firewall rule.",
+                  "Protocol": "Either TCP or UDP",
+                  "Port": "Port or system defined name like RPC, RPCUDP or RPCDynamic",
+                  "Program": "Path to a program the rule applies to. Double backslash in path required. Example: %systemroot%\\system32\\svchost.exe",
+                  "Description": "Description of the service. Not used in the rule, for for the config file"
+              }
             ]
         }       
 
@@ -153,7 +183,7 @@
    "RuleDefinition": 
     [
         {
-            "RuleName": "MECM Clients to Distribution Point ",
+            "RuleName": "MECM Clients to Distribution Point",
             "Source": "Any",
             "Destination": "DistributionPoint",
             "Direction": "Inbound",
@@ -1028,45 +1058,7 @@
             "Services": [
                             "RDP"
                         ]
-        }, 
-        {
-            "RuleName": "Block unsafe connections outbound",
-            "Source": "Any",
-            "Destination": "Any",
-            "Direction": "Outbound",
-            "Action": "Block",
-            "Profile": "Any",
-            "Group": "SecurityCustom",
-            "Description": "Rule will block unsafe process outbound",
-            "IgnoreSiteCode": "",
-            "Services": [
-                          "CScript32Bit",
-                          "CScript64Bit",
-                          "Regsvr32Bit",
-                          "Regsvr64Bit",
-                          "Rundll32Bit",
-                          "Rundll64Bit",
-                          "Wscript32Bit",
-                          "Wscript64Bit"
-                       ]
-      },
-      {
-            "RuleName": "Block unsafe Powershell internet connections outbound",
-            "Source": "Any",
-            "Destination": "Internet",
-            "Direction": "Outbound",
-            "Action": "Block",
-            "Profile": "Any",
-            "Group": "SecurityCustom",
-            "Description": "Rule will block PowerShell process outbound",
-            "IgnoreSiteCode": "",
-            "Services": [
-                          "PowershellISE32Bit",
-                          "PowershellISE64Bit",
-                          "Powershell32Bit",
-                          "Powershell64Bit"
-                        ]
-      }
+        }
       ],
       "ServiceDefinition": 
       [

@@ -45,15 +45,21 @@ JSON file can be selected via grid view prompt
 Grid view
 
 .EXAMPLE
-Lorem Ipsum
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ExportConfigMgrSystemRoleInformation -ProviderMachineName cm02.contoso.local -SiteCode P02
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -MergeSimilarRules
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1
 
 .PARAMETER DestinationSystemFQDN
 Optional: Can be used to generate rules for a specific system. Fqdn format: name.domain.suffix 
-If not used, a grid view will open from which a systen can be choosen
+If not used, a grid view will open from which a system can be chosen
 
 .PARAMETER DefinitionFilePath
 Optional: Path to a JSON definition file. 
-If not used, a grid view will open from which a file can be choosen
+If not used, a grid view will open from which a file can be chosen
 
 .PARAMETER GroupSuffix
 Optional: Suffix to a firewall group. The group name is part of the JSON definition file
@@ -103,6 +109,9 @@ Optional: ConfigMgr SMS Provider machine name to be able to export data from Con
 
 .PARAMETER SiteCode
 Optional: Site code of ConfigMgr site
+
+.PARAMETER CreateOutboundRuleForeachInboundRule
+Optional: To create outbound rule for each calculated inbound rule. Not quite tested and more experimental
 
 .LINK
 https://github.com/jonasatgit/scriptrepo
