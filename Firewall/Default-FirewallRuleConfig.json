@@ -95,7 +95,8 @@
                              "PrimarySoftwareUpdatePoint",
                              "CentralSoftwareUpdatePoint",
                              "SoftwareUpdatePoint",
-                             "EndpointProtectionPoint"
+                             "EndpointProtectionPoint",
+                             "ServiceConnectionPoint"                             
                          ]
         },
         {
@@ -111,7 +112,6 @@
                             "SQLServerRole",
                             "SoftwareUpdatePoint",
                             "PrimarySoftwareUpdatePoint",
-                            "ServiceConnectionPoint",
                             "MECMConsole"
                         ]
         },        
@@ -455,7 +455,7 @@
             "Action": "Allow",
             "Profile": "Any",
             "Group": "MECM",
-            "Description": "Note: From DP to Site Server is not a requirement. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
+            "Description": "Note: From DP to Site Server is not a requirement. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-DP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
