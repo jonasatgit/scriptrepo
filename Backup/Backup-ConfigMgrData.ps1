@@ -770,7 +770,7 @@ Param(
 
 
             # create zip file       
-            Write-CMTraceLog -Message "Zipping folder: `"$folderName`"" -Component ($MyInvocation.MyCommand.Name)
+            Write-CMTraceLog -Message "Will compress folder: `"$folderName`"" -Component ($MyInvocation.MyCommand.Name)
             try
             {
                 Add-Type -Assembly System.IO.Compression.FileSystem -ErrorAction Stop
@@ -779,12 +779,12 @@ Param(
             }
             Catch
             {
-                Write-CMTraceLog -Message "Zipping folder failed!" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog 
+                Write-CMTraceLog -Message "Folder compression failed!" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog 
                 Write-CMTraceLog -Message "$($error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -Type Error
                 Write-CMTraceLog -Message "Stopping script!" -WriteToEventLog -Component ($MyInvocation.MyCommand.Name)
                 exit 2
             }
-            Write-CMTraceLog -Message "Zipping folder done!" -Component ($MyInvocation.MyCommand.Name)
+            Write-CMTraceLog -Message "Compression of folder done!" -Component ($MyInvocation.MyCommand.Name)
         }
      }
      
@@ -801,7 +801,7 @@ Param(
         Catch
         {
             Write-CMTraceLog "Error: $($error[0].Exception)" -WriteToEventLog -EventID 30 -Type Error
-            Write-CMTraceLog -Message "Script wird beendet!" -WriteToEventLog
+            Write-CMTraceLog -Message "Script end!" -WriteToEventLog
             exit 2
         }
 
