@@ -1791,6 +1791,10 @@ try
 
     'Site Server Name:' | Out-File -FilePath $recoveryFile01 -Append
     'A potential new system needs to have the exact same name as the old one!' | Out-File -FilePath $recoveryFile01 -Append
+    'The system also needs to have the same rights and AD group memberships as before.' | Out-File -FilePath $recoveryFile01 -Append
+    '(Below is a list with AD groups if the system is/was a member of some)' | Out-File -FilePath $recoveryFile01 -Append
+    'The new system also needs rights in AD for AD publishing. Full control for folder and subfolder of the "System Management" conteiner' | Out-File -FilePath $recoveryFile01 -Append
+    'More can be found here: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/network/extend-the-active-directory-schema#step-2-the-system-management-container' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     $siteInfo.SiteServerName | Out-File -FilePath $recoveryFile01 -Append
     "  " | Out-File -FilePath $recoveryFile01 -Append
