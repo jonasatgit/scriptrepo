@@ -49,6 +49,12 @@ param
 # exclude specific components if needed
 $excludedComponents = ('')
 
+#Ensure that the Script is running with elevated permissions
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
+    return 
+}
 <#
 .Synopsis
    function Test-ConfigMgrActiveSiteSystemNode 

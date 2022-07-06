@@ -46,7 +46,12 @@ param
     [Parameter(Mandatory=$false)]
     [Switch]$GridViewOutput
 )
-
+#Ensure that the Script is running with elevated permissions
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
+    return 
+}
 # Get the full list of available inbox perf counter via the following command:
 # Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
 

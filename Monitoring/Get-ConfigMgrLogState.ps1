@@ -80,6 +80,12 @@ param
 )
 $VerbosePreference = "SilentlyContinue"
 
+#Ensure that the Script is running with elevated permissions
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
+    return 
+}
 $logEntryList = New-Object System.Collections.ArrayList
 ########## Paste new entries here ##########
 
@@ -441,7 +447,7 @@ foreach ($logEntryItem in $logEntryList)
         {
             # Check if we are only allowed to run the test on an active ConfigMgr site server
             # Or if we are allowed regardless the any active passive node
-            if ((($logEntryItem.RunOnActiveNodeOnly) -and (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false)
+            if ((($logEntryItem.RunOnActiveNodeOnly) -and ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false)
             {
                 if ($timeSpanObject.StartTime)
                 {
