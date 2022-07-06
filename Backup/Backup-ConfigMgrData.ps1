@@ -30,7 +30,7 @@
             Step-01-Setup-machine.txt                   -> General recovery instructions and basic OS and ConfigMgr data.
             Step-02-Install-Roles.txt                   -> Instructions to install required roles and features.	
             Step-02-Install-Roles.txt.ps1               -> Script to install required roles and features.
-            Step-03-Install-SQLServer.txt               -> Instructions to install SQL in the case SQL failed. Contains SQL version and port configuration.  
+            Step-03-Install-SQLServer.txt               -> Instructions to install SQL in the case SQL failed. Contains SQL version and port configuration. As well as a list of SQL backups and their location
             Step-04-Install-ADK.txt                     -> Instructions to install ADK and version info
             Step-05-ConfigureWSUS.txt                   -> Instructions to configure WSUS for the recovery process. Only if WSUS failed as well. 
             Step-06-CopyCustomFiles.txt                 -> Instructions to recover custom files and folders. 	
