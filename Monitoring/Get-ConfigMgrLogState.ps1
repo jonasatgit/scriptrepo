@@ -35,6 +35,7 @@
         TimespanMinutes = 60 # Minutes added to the intervalltime before and after. This is the timeframe we will look for the SuccessString in the log
         IgnorePreviousEntries = $true or $false. If set to true and if we are probing before the time we would expect a log entry, we should not look one day, week or month back and test the last result instead
         RunOnActiveNodeOnly = $true or $false. If set to true the test will only run on an active ConfigMgr site server.  
+        RunOnSystemList = Comma seperated list of system fqdns the check should be performed. If empty, the test will be performed on any system																																				
     }
     $logEntryObj = New-Object PSCustomObject -Property $logEntry
     [void]$logEntryList.add($logEntryObj)
@@ -102,6 +103,7 @@ $logEntry = @{
     TimespanMinutes = 60
     IgnorePreviousEntries = $true
     RunOnActiveNodeOnly = $true
+	RunOnSystemList = ""
 }
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
@@ -118,6 +120,7 @@ $logEntry = @{
     TimespanMinutes = 60
     IgnorePreviousEntries = $false
     RunOnActiveNodeOnly = $false
+	RunOnSystemList = ""
 }
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
@@ -135,6 +138,7 @@ $logEntry = @{
     TimespanMinutes = 60
     IgnorePreviousEntries = $true
     RunOnActiveNodeOnly = $false
+	RunOnSystemList = ""
 }
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
@@ -152,6 +156,7 @@ $logEntry = @{
     TimespanMinutes = 60
     IgnorePreviousEntries = $true
     RunOnActiveNodeOnly = $false
+	RunOnSystemList = ""
 }
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
@@ -169,6 +174,7 @@ $logEntry = @{
     TimespanMinutes = 120
     IgnorePreviousEntries = $false
     RunOnActiveNodeOnly = $false
+	RunOnSystemList = ""
 }
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
@@ -446,8 +452,23 @@ foreach ($logEntryItem in $logEntryList)
         else 
         {
             # Check if we are only allowed to run the test on an active ConfigMgr site server
-            # Or if we are allowed regardless the any active passive node
-            if ((($logEntryItem.RunOnActiveNodeOnly) -and ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false)
+            # Or if we are allowed regardless of any active passive node
+            # And only if RunOnSystemList either contains no entry or the correct servername
+            $allowedToRun = $false
+            if ([string]::IsNullOrEmpty($logEntryItem.RunOnSystemList))
+            {
+                $allowedToRun = $true      
+            }
+            else
+            {
+                if (($logEntryItem.RunOnSystemList) -match $systemName)
+                {
+                    $allowedToRun = $true   
+                }
+            }
+            
+            # Simpler representation: -> If (((RunOnActiveNodeOnly = $true -and IsActiveNode = $true) -or RunOnActiveNodeOnly = $false) -and $allowedToRun)
+            if (((($logEntryItem.RunOnActiveNodeOnly) -and ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false) -and $allowedToRun)
             {
                 if ($timeSpanObject.StartTime)
                 {
@@ -566,10 +587,10 @@ foreach ($logEntryItem in $logEntryList)
             else 
             {
                 $tmpLogEntryObject.State = "OK"
-                $tmpLogEntryObject.StateDescription = "Test only allowed to run on active node. Current node is passive."
+                $tmpLogEntryObject.StateDescription = "Test only allowed to run on active node or specific system."
                 [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                 Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"                
-            }
+            } # end Test-ConfigMgrActiveSiteSystemNode
         }
     } # end if (-NOT(Test-Path -Path $logEntryItem.LogPath))
 
