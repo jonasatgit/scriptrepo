@@ -621,6 +621,6 @@ else
     }
 
     $outObject.Results = $resultsObject
-    $outObject | ConvertTo-Json #-Compress # output object as compressed json
+    $outObject | ConvertTo-Json -Compress # output object as compressed json
 }
 #endregion
