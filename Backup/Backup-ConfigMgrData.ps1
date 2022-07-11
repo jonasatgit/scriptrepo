@@ -60,7 +60,7 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20220701'
+$scriptVersion = '20220711'
 
 # Base variables
 [string]$scriptPath = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
@@ -1531,10 +1531,19 @@ Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Event source:", $eventSource)"
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Checking folder existence..."
 
-if ($standBybackupPath -eq $sccmBackupPath)
+if ($copyToStandByServer -eq 'Yes')
 {
-    Write-CMTraceLog -Type Error -Message "ERROR: SCCM backup path cannot be the same as StandBy backup path"
-    exit 1
+    if ($standBybackupPath -eq $sccmBackupPath)
+    {
+        Write-CMTraceLog -Type Error -Message "ERROR: SCCM backup path cannot be the same as StandBy backup path"
+        exit 1
+    }
+
+    if ($standBybackupPath -eq $contentLibraryPathBackup)
+    {
+        Write-CMTraceLog -Type Error -Message "ERROR: StandBy backup path cannot be the same as ContentLibrary backup path"
+        exit 1
+    }
 }
 
 $customFoldersToBackup | ForEach-Object {
@@ -1545,17 +1554,14 @@ $customFoldersToBackup | ForEach-Object {
     }
 }
 
-if ($standBybackupPath -eq $contentLibraryPathBackup)
-{
-    Write-CMTraceLog -Type Error -Message "ERROR: StandBy backup path cannot be the same as ContentLibrary backup path"
-    exit 1
-}
 
+<#
 if (($standBybackupPath -like "$sccmBackupPath*") -or ($contentLibraryPathBackup -like "$sccmBackupPath*"))
 {
     Write-CMTraceLog -Type Error -Message "ERROR: StandBy backup path and or ContentLibrary backup path cannot be a sub-folder withing the normal backup path!"
     exit 1
 }
+#>
 
 # Put folders together to check them all at once
 $pathToCheck = $customFoldersToBackup
