@@ -35,13 +35,13 @@
     PolicyRuleID = 1; # DO NOT CHANGE
     PolicySource = "Local"; # DO NOT CHANGE
     ProfileID="{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}"; # DO NOT CHANGE
-    BatchSize = 100;
-    ControlUsage=$true;
-    OnAC_PercentageOfTimeoutToWait = 50;
-    OnAC_EvaluationPeriodLengthSec = 60;
-    OnAC_IdlePeriodLengthSec = 120;
-    OnAC_MinIdleDiskPercentage = 30;
-    OnAC_ConsiderUserInputAsActivity = $true;
+    BatchSize = 100; # Default value=100
+    ControlUsage=$true; # Default value=$true
+    OnAC_PercentageOfTimeoutToWait = 50; # Default value=50, possible test value=10
+    OnAC_EvaluationPeriodLengthSec = 60; # Default value=60, possible test value=20
+    OnAC_IdlePeriodLengthSec = 120; # Default value=120, possible test value=30
+    OnAC_MinIdleDiskPercentage = 30; # Default value=30, possible test value=30
+    OnAC_ConsiderUserInputAsActivity = $true; # Default value=$true, possible test value=$false
     OnBattery_BehaviorType=1; # DO NOT CHANGE
     OnLowBattery_BehaviorType =0;# DO NOT CHANGE
     }
