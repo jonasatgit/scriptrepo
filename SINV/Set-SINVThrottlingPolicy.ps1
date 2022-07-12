@@ -14,10 +14,28 @@
 #************************************************************************************************************
 <#
 .Synopsis
-   This Script will check and or remediate Software Inventory Profile Settings for ProfileID {58E2FE09-07BB-4adb-8A93-E49C5BF2301F} and is design to run as a ConfigMgr configuration item
+   This Script will check and or remediate Software Inventory Profile Settings for one of the three possible throttle profiles
+   It can either run manully or as part of a ConfigMgr configuration item. Hence no parameters and instead simple variables
 .DESCRIPTION
-   This Script will check and or remediate Software Inventory Profile Settings for ProfileID {58E2FE09-07BB-4adb-8A93-E49C5BF2301F} and is design to run as a ConfigMgr configuration item
+   This Script will check and or remediate Software Inventory Profile Settings for a given ProfileID and is designed to run as a ConfigMgr configuration item
    Use the same script as the detection and as the remediation script and just change the variable $Remediate accordingly
+
+   Software Inventory can run three different tasks and each task has it own throttle profile. 
+   Look for one of the following IDs in InventoryAgent.log. The ID represents the currently active throttle profile. 
+
+   If you want to test differnt settings for one of the throttle profiles change the variable $ThrottleProfileID and the values of $SINVCUSTOMProfileSettings accordingly
+   
+   POSSIBLE VALUES FOR $ThrottleProfileID:
+        // File system query task - actual filesystem crawl for SINV/FILECOLL
+        $ThrottleProfileID = "{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}"
+
+        // File System Collection Task - processing SINV WMI instances
+        $ThrottleProfileID = "{C0ED66AD-8194-49fd-9826-D0DD38AB7DAA}"
+
+        // File Collection Task - processing FILECOLL WMI instances
+        $ThrottleProfileID = "{CE22C5BA-165D-4b93-BC73-926CE1BD9279}"
+
+
    Source: https://github.com/jonasatgit/scriptrepo/tree/master/SINV
 .EXAMPLE
    $Remediate = $false => The script will just check the settings, but will not set them
@@ -25,16 +43,16 @@
 #>
 #region variables
 [bool]$Remediate = $false
+[string]$ThrottleProfileID = "{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}"
 #endregion
 
-#region CUSTOM Settings Profile {58E2FE09-07BB-4adb-8A93-E49C5BF2301F} for file system query task - actual filesystem crawl for SINV/FILECOLL
-# Custom settings
+#region CUSTOM Settings Profile 
 [hashtable]$SINVCUSTOMProfileSettings = [ordered]@{
     PolicyID = "CustomThrottlingProfile"; # DO NOT CHANGE
     PolicyVersion = 1; # DO NOT CHANGE
     PolicyRuleID = 1; # DO NOT CHANGE
     PolicySource = "Local"; # DO NOT CHANGE
-    ProfileID="{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}"; # DO NOT CHANGE
+    ProfileID = $ThrottleProfileID; # Can be changed to either one of the above ProfileIDs depending on the throttling behaviour of ConfigMgr clients
     BatchSize = 100; # Default value=100
     ControlUsage=$true; # Default value=$true
     OnAC_PercentageOfTimeoutToWait = 50; # Default value=50, possible test value=10
@@ -49,14 +67,17 @@
 
 
 #region pre-work
-
+# Removeing BatchSize in case we are not changing the filesystem crawl profile
+if ($SINVCUSTOMProfileSettings.ProfileID -ne "{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}")
+{
+    $SINVCUSTOMProfileSettings.Remove('BatchSize')
+}
 # convert hastable to custom object
 $SINVCUSTOMProfileSettingsCustomObject = New-Object psobject -Property $SINVCUSTOMProfileSettings
 
 # get sq inv profiles
 $ProfileID = $SINVCUSTOMProfileSettings.ProfileID
 $SINVProfilesActualConfig = Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig" -query "select * from CCM_Service_ResourceProfileInformation where ProfileID = '$ProfileID'"
-
 #endregion
 
 
