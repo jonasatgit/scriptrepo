@@ -14,9 +14,9 @@
 #************************************************************************************************************
 <#
 .Synopsis
-   This Script will check and or delete the custom policy set via Set-SINVThrottlingPolicy.ps1 and is design to run as a ConfigMgr configuration item
+   This Script will check and or delete the custom policy set via Set-SINVThrottlingPolicy.ps1 and is designed to run as a ConfigMgr configuration item
 .DESCRIPTION
-   This Script will check and or delete the custom policy set via Set-SINVThrottlingPolicy.ps1 and is design to run as a ConfigMgr configuration item
+   This Script will check and or delete the custom policy set via Set-SINVThrottlingPolicy.ps1 and is designed to run as a ConfigMgr configuration item
    Use the same script as the detection and as the remediation script and just change the variable $Remediate accordingly
    Source: https://github.com/jonasatgit/scriptrepo/tree/master/SINV
 .EXAMPLE
@@ -27,7 +27,7 @@
 $Remediate = $false
 
 # get sq inv profiles
-$SINVProfilesActualConfig = Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig" -query "select * from CCM_Service_ResourceProfileInformation where ProfileID = '{58E2FE09-07BB-4adb-8A93-E49C5BF2301F}' and PolicyID = 'CustomThrottlingProfile'" 
+$SINVProfilesActualConfig = Get-WmiObject -Namespace "ROOT\ccm\Policy\Machine\RequestedConfig" -query "select * from CCM_Service_ResourceProfileInformation where PolicyID = 'CustomThrottlingProfile'" 
 if($SINVProfilesActualConfig)
 {
     if($Remediate)
