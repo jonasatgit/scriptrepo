@@ -5,7 +5,6 @@
           {
             "CollectionName": "Name of the collection", 
             "LimitingCollectionName": "Name of the limiting collection. The limiting collection needs to be created first and should come before the limited collection in the list.",
-            "CollectionDescription": "Custom Server Collection",
             "CollectionFolder": "IMPORTANT use double \\ in folder path. Folder path to where the collection should be moved after creation",
             "CollectionType": "'Device' is the only supported type at the moment.",
             "WQLQuerys":  
@@ -19,7 +18,7 @@
                               "Query": "select * from SMS_R_System Where SMS_R_System.ResourceId  = '16555599'"
                             }                              
                           ],
-            "IncludeCollections":  
+           "IncludeCollections":  
                           [
                             "A list of collection names to be added as include collections",
                             "Windows 10 21H1",
@@ -55,13 +54,15 @@
                               "Name": "Every second Tuesday at 10AM for three hours. Any deployment type",
                               "ScheduleString": "01545CC018231400",
                               "ApplyTo": "Any",
-                              "IsUTC": false   
+                             "IsUTC": false   
                             }                              
-                          ]
+                          ],
+            "CollectionDescription": "Custom Server Collection"
           },
           {
               "Maintenance Windows example schedules":"",
               "Once at at a specific day from 10AM to 1PM         ": "New-CMSchedule -Start '2021-05-20 10:00' -End '2021-05-20 13:00' -Nonrecurring -ScheduleString",
+              "Every Monday from 02AM to 04AM                     ": "New-CMSchedule -Start '2021-05-20 02:00' -End '2021-05-20 04:00' -DayOfWeek Monday -ScheduleString",
               "Every second day from 10AM to 1PM                  ": "New-CMSchedule -Start '2021-05-20 10:00' -End '2021-05-20 13:00' -RecurInterval Days -RecurCount 2 -ScheduleString",
               "Occurs every 3 weeks on Thursday from 10AM to 1PM  ": "New-CMSchedule -Start '2021-05-20 10:00' -End '2021-05-20 13:00' -DayOfWeek Thursday -RecurCount 3 -ScheduleString",
               "Every second Tuesday from 10AM to 1PM              ": "New-CMSchedule -Start '2021-05-20 10:00' -End '2021-05-20 13:00' -DayOfWeek Tuesday -WeekOrder Second -ScheduleString",
@@ -81,11 +82,41 @@
       ],
       "Collections":
       [
+
           {
-            "CollectionName": "All Clients", 
+            "CollectionName": "All Systems Custom", 
             "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "Custom Client Root Collection",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "All Systems",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Continuous",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Client Root Collection"
+          },
+          {
+            "CollectionName": "All Clients Custom", 
+            "LimitingCollectionName": "All Systems",
+            "CollectionFolder": "",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -109,1033 +140,17 @@
             "ServiceWindows": 
                           [
                               
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_0", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 0 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_0",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%0'"
-                            }
                           ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_1", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 1 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_1",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%1'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_2", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 2 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_2",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%2'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_3", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 3 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_3",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%3'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_4", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 4 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_4",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%4'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_5", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 5 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_5",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%5'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
+            "CollectionDescription": "Custom Client Root Collection"
           },
 
 
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_6", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 6 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_6",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%6'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_7", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 7 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_7",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%7'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_8", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 8 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_8",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%8'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllClients_ResourceID_9", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients with ResourceID 9 as last digit",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "ResourceID_9",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.ResourceId like '%9'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllWindows10_21H1", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 20H2",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_21H1",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.19043'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_20H2", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 20H2",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_20H2",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.19042'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllWindows10_2004", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 2004",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_2004",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.19041'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1909", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1909",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1909",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.18363'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1903", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1903",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1903",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.18362'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1809", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1809",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1809",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.17763'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1803", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1803",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1803",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.17134'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1709", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1709",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1709",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.16299'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1703", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1703",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1703",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.15063'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "ORG_CL_AllWindows10_1607", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1607",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1607",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.14393'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-         {
-            "CollectionName": "ORG_CL_AllWindows10_1511", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "All clients Windows 10 1511",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                            {
-                              "QueryName": "Windows10_1511",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.OperatingSystemNameandVersion like 'Microsoft Windows NT Workstation%' and SMS_R_System.Build = '10.0.10586'"
-                            }
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Both",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "All Clients | SW Clients", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "Custom Collection for production Software Deployments",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "15:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "All Clients | SW Clients Test", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "Custom Collection for test Software Deployments",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "15:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },            
-
-          {
-            "CollectionName": "All Clients | EP und SUM Clients", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "Custom Collection for Defender/SCEP and Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "15:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },  
 
 
           {
-            "CollectionName": "All Clients | SUM Clients", 
-            "LimitingCollectionName": "All Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "15:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },  
-
-
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_0", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_0"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_1", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_1"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_2", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_2"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_3", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_3"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_4", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_4"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_5", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_5"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_6", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_6"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_7", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_7"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_8", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_8"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "SUM_Clients_Pilot-ResourceID_9", 
-            "LimitingCollectionName": "All Clients | SUM Clients",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-				"ORG_CL_AllClients_ResourceID_9"
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Continuous",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "",
-            "RefreshRecurInterval": "",
-            "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "All Servers", 
+            "CollectionName": "All Servers Custom", 
             "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "Custom Server Root Collection with blocker maintenance windows",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1153,7 +168,7 @@
             "RefreshType": "Both",
             "RefreshStartDate": "",
             "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
+            "RefreshRecurInterval": "Days",
             "RefreshRecurCount": "1",
             "RefreshScheduleString": "",              
             "ServiceWindows": 
@@ -1170,14 +185,209 @@
                               "ApplyTo": "SoftwareUpdatesOnly",
                               "IsUTC": false   
                             }                                 
-                          ]
+                          ],
+            "CollectionDescription": "Custom Server Root Collection with blocker maintenance windows"
+          },  
+
+
+
+          {
+            "CollectionName": "All Servers Custom | Defender", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for production software deployments"
+          },  
+ 
+          {
+            "CollectionName": "All Servers Custom | Defender", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender clients"
           },  
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID0", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers Custom | Defender disabled", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender clients"
+          }, 
+ 
+          {
+            "CollectionName": "All Servers Custom | Defender | Exclusions IIS", 
+            "LimitingCollectionName": "All Servers Custom | Defender",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers with IIS"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender exclusions"
+          },  
+ 
+          {
+            "CollectionName": "All Servers Custom | Defender | Exclusions MECM", 
+            "LimitingCollectionName": "All Servers Custom | Defender",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                                "All MECM Primary Sites"
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender exclusions"
+          },  
+ 
+          {
+            "CollectionName": "All Servers Custom | Defender | Exclusions SQL", 
+            "LimitingCollectionName": "All Servers Custom | Defender",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender exclusions"
+          },  
+ 
+          {
+            "CollectionName": "All Servers Custom | Defender | Exclusions WSUS", 
+            "LimitingCollectionName": "All Servers Custom | Defender",
+            "CollectionFolder": "Servers\\Defender",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All WSUS Servers"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:00",
+            "RefreshRecurInterval": "Days",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ],
+            "CollectionDescription": "Custom Server collection for Defender exclusions"
+          },  
+ 
+          {
+            "CollectionName": "All Servers ResourceID0", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 0 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1192,7 +402,7 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Both",
+          "RefreshType": "Both",
             "RefreshStartDate": "",
             "RefreshStartTime": "12:00",
             "RefreshRecurInterval": "Days",
@@ -1205,10 +415,10 @@
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID1", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID1", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 1 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1236,10 +446,10 @@
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID2", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID2", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 2 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1266,10 +476,10 @@
                           ]
           },
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID3", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID3", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 3 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1284,7 +494,7 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Both",
+           "RefreshType": "Both",
             "RefreshStartDate": "",
             "RefreshStartTime": "12:00",
             "RefreshRecurInterval": "Days",
@@ -1297,10 +507,10 @@
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID4", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID4", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 4 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1327,10 +537,10 @@
                           ]
           },
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID5", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID5", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 5 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1357,12 +567,11 @@
                           ]
           },
 
-
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID6", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID6", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 6 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1389,10 +598,10 @@
                           ]
           },
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID7", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID7", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 7 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1419,10 +628,10 @@
                           ]
           },
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID8", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID8", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 8 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1449,10 +658,10 @@
                           ]
           },
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_ResourceID9", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers ResourceID9", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Servers with ResourceID 9 as last digit",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1473,17 +682,17 @@
             "RefreshRecurInterval": "Days",
             "RefreshRecurCount": "1",
             "RefreshScheduleString": "",
-            "ServiceWindows": 
+            "ServiceWindows":  
                           [
                               
                           ]
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_2008R2", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers 2008R2", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Server 2008R2 systems",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1498,25 +707,25 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Both",
+            "RefreshType": "Periodic",
             "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
+            "RefreshStartTime": "14:20",
+            "RefreshRecurInterval": "Day",
             "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
                           [
                               
                           ]
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_2012R2", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers 2012R2", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Server 2012R2 systems",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
-            "WQLQuerys":  
+           "WQLQuerys":  
                           [
                             {
                               "QueryName": "Server_2012R2",                              
@@ -1529,23 +738,23 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Both",
+            "RefreshType": "Periodic",
             "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
+            "RefreshStartTime": "14:15",
+            "RefreshRecurInterval": "Day",
             "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
                           [
                               
                           ]
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_2016", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers 2016", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Server 2016 systems",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1560,23 +769,23 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Both",
+            "RefreshType": "Periodic",
             "RefreshStartDate": "",
-            "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
+            "RefreshStartTime": "14:10",
+            "RefreshRecurInterval": "Day",
             "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
                           [
                               
                           ]
           },
 
           {
-            "CollectionName": "ORG_SRV_AllWindowsServer_2019", 
-            "LimitingCollectionName": "All Servers",
+            "CollectionName": "All Servers 2019", 
+            "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All Server 2019 systems",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionFolder": "Servers\\Inventory",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1591,89 +800,406 @@
             "ExcludeCollections":  
                           [
                           ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "14:05",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+
+          {
+            "CollectionName": "Microsoft SQL Server 2019", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2019",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2019",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2019')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "14:00",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "Microsoft SQL Server 2017", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2017",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2017",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2017')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:55",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "Microsoft SQL Server 2016", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2016",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2016",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2016')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:50",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "Microsoft SQL Server 2014", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2014",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2014",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2014')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:45",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "Microsoft SQL Server 2012", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2012",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2012",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2012')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:40",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "Microsoft SQL Server 2008 R2", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2008 R2",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2008R2",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2008 R2')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:35",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "Microsoft SQL Server 2008", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2008",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2008",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2008')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:30",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "Microsoft SQL Server 2005", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2005",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL_Server_2005",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2005')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:25",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "All Servers with Office 2010", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All Servers with Office 2010",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "Office 2010",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_ADD_REMOVE_PROGRAMS on SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceId = SMS_R_System.ResourceId where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName like 'Microsoft Office% 2010%'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:20",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "All Servers with Office 2013", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All Servers with Office 2013",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "Office 2013",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_ADD_REMOVE_PROGRAMS on SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceId = SMS_R_System.ResourceId where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName like 'Microsoft Office% 2013%'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:15",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "All Servers with Office 2016", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All Servers with Office 2016",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "Office 2016",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_ADD_REMOVE_PROGRAMS on SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceId = SMS_R_System.ResourceId where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName like 'Microsoft Office% 2016%'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:10",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "All Servers with IIS", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All Servers with IIS",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "IIS Service Installed",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_SERVICE on SMS_G_System_SERVICE.ResourceId = SMS_R_System.ResourceId where SMS_G_System_SERVICE.Name = 'W3SVC'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Both",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "13:05",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+
+       {
+            "CollectionName": "All Domain Controllers", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All Domain Controllers",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "All Domain Controllers",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_COMPUTER_SYSTEM on SMS_G_System_COMPUTER_SYSTEM.ResourceId = SMS_R_System.ResourceId where SMS_G_System_COMPUTER_SYSTEM.Roles like '%Domain_Controller%'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
             "RefreshType": "Both",
             "RefreshStartDate": "",
             "RefreshStartTime": "12:00",
-            "RefreshRecurInterval": "Days",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-          {
-            "CollectionName": "All Servers | SW Server", 
-            "LimitingCollectionName": "All Servers",
-            "CollectionDescription": "Custom Server collection for production software deployments",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },  
-
-         {
-            "CollectionName": "All Servers | SW Server Test", 
-            "LimitingCollectionName": "All Servers",
-            "CollectionDescription": "Custom Server collection for test software deployments",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },  
-
-          {
-            "CollectionName": "All Servers | SW Server | Adobe Reader", 
-            "LimitingCollectionName": "All Servers | SW Server",
-            "CollectionDescription": "Deploy Adobe Reader to servers",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
             "RefreshRecurInterval": "Day",
             "RefreshRecurCount": "1",
             "RefreshScheduleString": "",              
@@ -1682,14 +1208,102 @@
                               
                           ]
           },
+       {
+            "CollectionName": "All WSUS Servers", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All WSUS Servers",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "All WSUS Servers",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System inner join SMS_G_System_OPERATING_SYSTEM on SMS_G_System_OPERATING_SYSTEM.ResourceID = SMS_R_System.ResourceId inner join SMS_G_System_SERVER_FEATURE on SMS_G_System_SERVER_FEATURE.ResourceID = SMS_R_System.ResourceId inner join SMS_G_System_SERVICE on SMS_G_System_SERVICE.ResourceId = SMS_R_System.ResourceId where (SMS_G_System_OPERATING_SYSTEM.ProductType = 2 or SMS_G_System_OPERATING_SYSTEM.ProductType = 3) and SMS_G_System_SERVICE.Name = 'WsusService'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Both",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "12:05",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "All MECM Primary Sites", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All MECM Primary Sites",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "MECMSERVER01",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.Name = ' MECMSERVER01'"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "12:05",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "7",
+            "RefreshScheduleString": "",              
+            "ServiceWindows": 
+                          [
+                              
+                          ]
+          },
 
-
-
-          {
-            "CollectionName": "All Servers | SW Server | Oracle Client", 
-            "LimitingCollectionName": "All Servers | SW Server",
-            "CollectionDescription": "Deploy Oracle Client to servers",
-            "CollectionFolder": "MS Test Structure",
+       {
+            "CollectionName": "All Servers Custom | Patch", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "Root patch collection",
+            "CollectionFolder": "Servers\\Patch",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "All Systems",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID, SMS_R_SYSTEM.ResourceType, SMS_R_SYSTEM.Name, SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_System.OperatingSystemNameandVersion,SMS_R_SYSTEM.ResourceDomainORWorkgroup, SMS_R_SYSTEM.Client from SMS_R_System"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Continuous",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [
+                              
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | ADR Dummy", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Dummy collection for ADR deployments",
+            "CollectionFolder": "Servers\\Patch",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1700,86 +1314,30 @@
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Periodic",
+            "RefreshType": "None",
             "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
                           [
-                          ]   
+                              
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | Patchgroup Critical", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "List of systems which needs to be patched manually",
+            "CollectionFolder": "Servers\\Patch",
+            "CollectionType": "Device",
+            "WQLQuerys":  
                           
-          },
-
-
-
-          {
-            "CollectionName": "All Servers | EP und SUM Server", 
-            "LimitingCollectionName": "All Servers",
-            "CollectionDescription": "Custom Collection for Defender/SCEP and Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
                           [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },  
-
-
-
-          {
-            "CollectionName": "All Servers | SUM Server", 
-            "LimitingCollectionName": "All Servers",
-            "CollectionDescription": "Custom Collection for Software Updates",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
-                          ],
-            "IncludeCollections":  
-                          [
-                          ],
-            "ExcludeCollections":  
-                          [
-                          ],
-            "RefreshType": "Periodic",
-            "RefreshStartDate": "",
-            "RefreshStartTime": "13:00",
-            "RefreshRecurInterval": "Day",
-            "RefreshRecurCount": "1",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [
-                              
-                          ]
-          },
-
-
-
-          {
-            "CollectionName": "OSD Server 2019", 
-            "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
-            "CollectionType": "Device",
-            "WQLQuerys":  
-                          [
+                            {
+                              "QueryName": "mecm_nmt_wsus_srv_critical",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.SystemGroupName = 'DOMAIN\\mecm_nmt_wsus_srv_critical'"
+                            }
                           ],
             "IncludeCollections":  
                           [
@@ -1792,20 +1350,36 @@
             "RefreshStartTime": "",
             "RefreshRecurInterval": "",
             "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
                           [
-                              
+                            {  
+                              "Name": "Blocker MW 2021-05-20 any type",
+                              "ScheduleString": "01545CC008080000",
+                              "ApplyTo": "Any",
+                              "IsUTC": false   
+                            },
+                            {  
+                              "Name": "Blocker MW 2021-05-20 any type",
+                              "ScheduleString": "01545CC008080000",
+                              "ApplyTo": "SoftwareUpdatesOnly",
+                              "IsUTC": false   
+                            }                                 
                           ]
           },
-          {
-            "CollectionName": "OSD Server 2019 Test", 
-            "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+       {
+            "CollectionName": "All Servers Custom | Patch | Patchgroup Low", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "List of systems with daily maintenance window",
+            "CollectionFolder": "Servers\\Patch",
             "CollectionType": "Device",
             "WQLQuerys":  
+                          
                           [
+                            {
+                              "QueryName": "mecm_nmt_wsus_srv_low",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.SystemGroupName = 'DOMAIN\\mecm_nmt_wsus_srv_low'"
+                            }
                           ],
             "IncludeCollections":  
                           [
@@ -1818,21 +1392,30 @@
             "RefreshStartTime": "",
             "RefreshRecurInterval": "",
             "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
                           [
-                              
+                            {  
+                              "Name": "MW_EveryDay_0000_0200",
+                              "ScheduleString": "00145D0010100008",
+                              "ApplyTo": "Any",
+                              "IsUTC": false   
+                            }                                 
                           ]
           },
-
-          {
-            "CollectionName": "OSD Server 2016", 
-            "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+       {
+            "CollectionName": "All Servers Custom | Patch | Patchgroup Medium Monday", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "List of systems with maintenance window each Monday",
+            "CollectionFolder": "Servers\\Patch",
             "CollectionType": "Device",
             "WQLQuerys":  
+                          
                           [
+                            {
+                              "QueryName": "mecm_nmt_wsus_srv_med_monday",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.SystemGroupName = 'DOMAIN\\mecm_nmt_wsus_srv_med_monday'"
+                            }
                           ],
             "IncludeCollections":  
                           [
@@ -1845,21 +1428,30 @@
             "RefreshStartTime": "",
             "RefreshRecurInterval": "",
             "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
-                          [  
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [
+                            {  
+                              "Name": "MW_Tuesday_0200_0400",
+                              "ScheduleString": "004EAC40101B2000",
+                              "ApplyTo": "Any",
+                              "IsUTC": false   
+                            }                                 
                           ]
-          },
-
-
-          {
-            "CollectionName": "OSD Windows 10 21H1", 
-            "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+         },
+       {
+            "CollectionName": "All Servers Custom | Patch | Patchgroup Medium Wednesday", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "List of systems with maintenance window each Wednesday",
+            "CollectionFolder": "Servers\\Patch",
             "CollectionType": "Device",
             "WQLQuerys":  
+                          
                           [
+                            {
+                              "QueryName": "mecm_nmt_wsus_srv_med_wednesday",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System where SMS_R_System.SystemGroupName = 'DOMAIN\\mecm_nmt_wsus_srv_med_wednesday'"
+                            }
                           ],
             "IncludeCollections":  
                           [
@@ -1872,46 +1464,385 @@
             "RefreshStartTime": "",
             "RefreshRecurInterval": "",
             "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
                           [
-                              
+                            {  
+                              "Name": "MW_Thursday_0200_0400",
+                              "ScheduleString": "00545CC0101D2000",
+                              "ApplyTo": "Any",
+                              "IsUTC": false   
+                            }                                 
                           ]
           },
-
-          {
-            "CollectionName": "OSD Windows 10 21H1 Test", 
-            "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+       {
+            "CollectionName": "All Servers Custom | Patch | Patchgroup MECM", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "MECM systems with daily maintenance window",
+            "CollectionFolder": "Servers\\Patch",
             "CollectionType": "Device",
             "WQLQuerys":  
+                          
                           [
                           ],
             "IncludeCollections":  
                           [
+                            "All MECM Primary Sites"
                           ],
             "ExcludeCollections":  
                           [
                           ],
-            "RefreshType": "Continuous",
+            "RefreshType": "None",
             "RefreshStartDate": "",
             "RefreshStartTime": "",
             "RefreshRecurInterval": "",
             "RefreshRecurCount": "",
-            "RefreshScheduleString": "",              
-            "ServiceWindows": 
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
                           [
-                              
+                            {  
+                              "Name": "MW_EveryDay_0400_0600",
+                              "ScheduleString": "00945D0010100008",
+                              "ApplyTo": "Any",
+                              "IsUTC": false   
+                            }                                 
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | Systems not in patchgroup", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "All Systems not part of a patch group",
+            "CollectionFolder": "Servers\\Patch",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                            "All Servers Custom | Patch"
+                          ],
+            "ExcludeCollections":  
+                          [
+                            "All Servers Custom | Patch | Patchgroup MECM",
+                            "All Servers Custom | Patch | Patchgroup Medium Wednesday",
+                            "All Servers Custom | Patch | Patchgroup Medium Monday",
+                            "All Servers Custom | Patch | Patchgroup Low"
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline cab download", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for tasksequence to download the WSUS offline scan CAB file",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All MECM Primary Sites"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
                           ]
           },
 
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 18:00", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID0"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 18:30", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID1"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 19:00", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID2"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 19:30", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID3"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 20:00", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID4"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 20:30", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID5"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 21:00", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID6"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 21:30", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID7"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 22:00", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID8"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
+       {
+            "CollectionName": "All Servers Custom | Patch | WSUS offline scan 3rd Wed 22:30", 
+            "LimitingCollectionName": "All Servers Custom | Patch",
+            "CollectionDescription": "Collection for WSUS offline scan package",
+            "CollectionFolder": "Servers\\Patch\\WSUS Offline Scan",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          
+                          [
+                          ],
+            "IncludeCollections":  
+                          [
+                                                            "All Servers ResourceID9"
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "None",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "",
+            "RefreshRecurInterval": "",
+            "RefreshRecurCount": "",
+            "RefreshScheduleString": "",                 
+            "ServiceWindows":
+                          [                          
+                          ]
+          },
 
           {
-            "CollectionName": "OSD Windows 10 20H2", 
+            "CollectionName": "All Systems | OSD Servers", 
             "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionDescription": "OSD collection for servers",
+            "CollectionFolder": "Servers\\OSD",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
@@ -1932,13 +1863,11 @@
                           [
                           ]
           },
-
-
           {
-            "CollectionName": "OSD Windows 10 2004", 
+            "CollectionName": "All Systems | OSD Clients", 
             "LimitingCollectionName": "All Systems",
-            "CollectionDescription": "OSD collection",
-            "CollectionFolder": "MS Test Structure",
+            "CollectionDescription": "OSD collection for clients",
+            "CollectionFolder": "Clients\\OSD",
             "CollectionType": "Device",
             "WQLQuerys":  
                           [
