@@ -813,6 +813,37 @@
           },
 
           {
+            "CollectionName": "Microsoft SQL Server vNext CTP2.0", 
+            "LimitingCollectionName": "All Servers Custom",
+            "CollectionDescription": "All SQL Server 2019",
+            "CollectionFolder": "Servers\\Inventory",
+            "CollectionType": "Device",
+            "WQLQuerys":  
+                          [
+                            {
+                              "QueryName": "SQL vNext CTP2.0",                              
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQLvNextCTP2.0') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQLvNextCTP2.0')"
+                            }
+                          ],
+            "IncludeCollections":  
+                          [
+                          ],
+            "ExcludeCollections":  
+                          [
+                          ],
+            "RefreshType": "Periodic",
+            "RefreshStartDate": "",
+            "RefreshStartTime": "14:00",
+            "RefreshRecurInterval": "Day",
+            "RefreshRecurCount": "1",
+            "RefreshScheduleString": "",              
+            "ServiceWindows":  
+                          [
+                              
+                          ]
+          },
+
+          {
             "CollectionName": "Microsoft SQL Server 2019", 
             "LimitingCollectionName": "All Servers Custom",
             "CollectionDescription": "All SQL Server 2019",
@@ -822,7 +853,7 @@
                           [
                             {
                               "QueryName": "SQL_Server_2019",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2019')"
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQL2019') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQL2019')"
                             }
                           ],
             "IncludeCollections":  
@@ -853,7 +884,7 @@
                           [
                             {
                               "QueryName": "SQL_Server_2017",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2017')"
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQL2017') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQL2017')"
                             }
                           ],
             "IncludeCollections":  
@@ -884,7 +915,7 @@
                           [
                             {
                               "QueryName": "SQL_Server_2016",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2016')"
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQLServer2016') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQLServer2016')"
                             }
                           ],
             "IncludeCollections":  
@@ -915,7 +946,7 @@
                           [
                             {
                               "QueryName": "SQL_Server_2014",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2014')"
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQLServer2014') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQLServer2014')"
                             }
                           ],
             "IncludeCollections":  
@@ -945,7 +976,7 @@
                           [
                             {
                               "QueryName": "SQL_Server_2012",                              
-                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.DisplayName = 'Microsoft SQL Server 2012')"
+                              "Query": "select SMS_R_SYSTEM.ResourceID,SMS_R_SYSTEM.ResourceType,SMS_R_SYSTEM.Name,SMS_R_SYSTEM.SMSUniqueIdentifier,SMS_R_SYSTEM.ResourceDomainORWorkgroup,SMS_R_SYSTEM.Client from SMS_R_System  where SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS where SMS_G_System_ADD_REMOVE_PROGRAMS.ProdID = 'Microsoft SQL Server SQLServer2012') or SMS_R_System.ResourceId in (select distinct SMS_G_System_ADD_REMOVE_PROGRAMS_64.ResourceID  from SMS_G_System_ADD_REMOVE_PROGRAMS_64 where SMS_G_System_ADD_REMOVE_PROGRAMS_64.ProdID = 'Microsoft SQL Server SQLServer2012')"
                             }
                           ],
             "IncludeCollections":  
@@ -1055,6 +1086,7 @@
                               
                           ]
           },
+
 
        {
             "CollectionName": "All Servers with Office 2010", 
