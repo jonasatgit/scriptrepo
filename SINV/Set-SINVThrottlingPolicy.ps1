@@ -90,7 +90,7 @@ if(!$Remediate)
         [bool]$SettingsIdentical = $true
         $SINVCUSTOMProfileSettingsCustomObject.psobject.Properties | ForEach-Object {
 
-            if($SINVFILECOLLProfile.($_.name) -ne $_.value)
+            if($SINVProfilesActualConfig.($_.name) -ne $_.value)
             {
                 $SettingsIdentical = $false
             }
