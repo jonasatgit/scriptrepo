@@ -171,7 +171,7 @@ $selectObjectPropertyList = ("Exists",`
         # output to gridview
         $_
 
-    } | Select-Object -Property $selectObjectPropertyList | Out-GridView -Title 'Select Collections' -OutputMode Multiple
+    } | Select-Object -Property $selectObjectPropertyList | Out-GridView -Title 'Select Collections. IMPORTANT: They will be created in the selection order! Choose limiting collections before sub-collections' -OutputMode Multiple
 
 
 # Working with selected collections
@@ -345,20 +345,55 @@ foreach($collectionItem in $selectedCollections)
     }
 
 
-    if ($collectionItem.CollectionFolder)
+    if (-NOT ([string]::IsNullOrEmpty($collectionItem.CollectionFolder)))
     {
-        #Write-host "Folder will be ignored in this script version: `"$($collectionItem.CollectionFolder)`"" -ForegroundColor Yellow
-    
-    
-        # create collection folder if not exits and move collection
-        $collectionRootFolderPath = "{0}:\DeviceCollection\" -f $SiteCode
-        $collectionFolderPath = $collectionItem.CollectionFolder
-        New-item -Name $collectionFolderPath -Path $collectionRootFolderPath -ErrorAction SilentlyContinue # ignoring error to avoid testing for exiting folders
+        $collectionFolderPath = "DeviceCollection\{0}" -f $collectionItem.CollectionFolder
+        [array]$folderListToBeCreated = @()
+        If(-NOT(Get-CMFolder -FolderPath $collectionFolderPath))
+        {
+            Write-Host "$($collectionFolderPath)  => FOLDER NOT FOUND. Need to create." -ForegroundColor Yellow
+            $folderListToBeCreated += $collectionFolderPath
+            [array]$folderList = ($collectionFolderPath -split '\\')
+            if ($folderList.count -gt 2) # not just one folder under root, need to check further
+            {
+                $objectFound = $false
+                $i = ($folderList.Count)-2 # 1 for the array-zero and one for the last item in the array
+                do
+                {
+                    $patchToCheck = $folderList[0..$i] -join '\'
+                    Write-Host "Test folder: $($patchToCheck)" -ForegroundColor Green
+                    if(Get-CMFolder -FolderPath $patchToCheck)
+                    {
+                        $objectFound = $true
+                        Write-Host "$($patchToCheck)  => FOLDER exists" -ForegroundColor Green
+                    }
+                    else
+                    {
+                        $folderListToBeCreated += $patchToCheck
+                        Write-Host "$($patchToCheck)  => FOLDER NOT FOUND. Need to create." -ForegroundColor Yellow
+                    }
+                    $i--
+            
+                }
+                until ($objectFound -or ($i -le 2))
+
+                foreach ($newFolderPath in ($folderListToBeCreated | Sort-Object))
+                {
+                    Write-Host "$($newFolderPath)  => WILL CREATE FOLDER" -ForegroundColor Green
+                    $retVal = New-CMFolder -ParentFolderPath ($newFolderPath | Split-Path -Parent) -Name ($newFolderPath | Split-Path -Leaf)    
+                }
+            }
+            else
+            {
+                Write-Host "$($folderList[0])\$($folderList[1])  => WILL CREATE FOLDER" -ForegroundColor Green
+                $retVal = New-CMFolder -ParentFolderPath $folderList[0] -Name $folderList[1]
+            }
+        }
 
         try 
         {
-            $collectionFolderPath = "{0}{1}" -f $collectionRootFolderPath, $collectionFolderPath
-            Move-CMObject -FolderPath $collectionFolderPath -InputObject ($newCollection)    
+            $movePathName = '{0}:\{1}' -f $SiteCode, $collectionFolderPath
+            Move-CMObject -FolderPath $movePathName -InputObject ($newCollection)    
         }
         catch 
         {
@@ -367,7 +402,7 @@ foreach($collectionItem in $selectedCollections)
         }
     }  
 
-}
+} 
+Write-Host "NOTE: Re-open the ConfigMgr console to be able to see new folders." -ForegroundColor Yellow
 Stop-CurrentScript -ExitCode 0
-
 
