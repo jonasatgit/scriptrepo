@@ -14,13 +14,18 @@
 
 <#
 .Synopsis
-    Script to monitor ConfigMgr component states
-    Version: 2022-03-31
+    Script to monitor ConfigMgr component, site system and alert states
     
 .DESCRIPTION
-    The script will read the available ConfigMgr components which are monitored by ConfigMgr itself. 
-    If one of those components is not in "Availability State" of 0, the script will out put the specific component in JSON format.
-    You can exclude components like this: $excludedComponents = ('SMS_WSUS_SYNC_MANAGER','SMS_WSUS_CONFIGURATION_MANAGER')
+    Script to monitor ConfigMgr component, site system and alert states based on the following WMI classes:
+    SMS_ComponentSummarizer
+    SMS_SiteSystemSummarizer
+    SMS_Alert
+    SMS_EPAlert
+    SMS_CHAlert    
+    
+    The script will always return zero errors when running on a passive ConfigMgr Site Server.
+
     Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER GridViewOutput
@@ -30,32 +35,42 @@
     Get-ConfigMgrComponentState.ps1
 
 .EXAMPLE
-    Get-ConfigMgrComponentState.ps1 -GridViewOutput
+    Get-ConfigMgrComponentState.ps1 -OutputMode GridView
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode JSON
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode JSONCompressed
 
 .INPUTS
    None
 
 .OUTPUTS
-   Compressed JSON string 
+   Either GridView, JSON formatted or JSON compressed. JSON compressed is the default mode
     
 #>
 [CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$false)]
-    [Switch]$GridViewOutput
+    [ValidateSet("GridView", "JSON", "JSONCompressed")]
+    [String]$OutputMode = "JSONCompressed"
 )
 
-# exclude specific components if needed
-$excludedComponents = ('')
 
-#Ensure that the Script is running with elevated permissions
+#region admin check 
+# Ensure that the Script is running with elevated permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
-<#
+#endregion
+
+
+#region Test-ConfigMgrActiveSiteSystemNode
+<# 
 .Synopsis
    function Test-ConfigMgrActiveSiteSystemNode 
 
@@ -109,7 +124,92 @@ function Test-ConfigMgrActiveSiteSystemNode
         return $null
     }
 }
+#endregion
 
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1    
+    }
+    Process
+    {
+        switch ($InputObject.Status) 
+        {
+            'Ok' {$outState = 0}
+            'Warning' {$outState = 1}
+            'Error' {$outState = 2}
+            Default {$outState = 3}
+        }
+
+        # Adding infos to short description field
+        [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
+        if ($InputObject.SiteCode)
+        {
+            $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+        }
+
+        if ($InputObject.Name)
+        {
+            $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
+        }
+
+        if ($InputObject.Description)
+        {
+            $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
+        }
+
+        if ($shortDescription.Length -gt 300)
+        {
+            # ShortDescription has a 300 character limit
+            $shortDescription = $shortDescription.Substring(0, 299)    
+        }
+        # Remove some chars like quotation marks
+        $shortDescription = $shortDescription -replace "\'", ""
+
+        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject.Name = $InputObject.SystemName
+        $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+        $tmpResultObject.Status = $outState
+        $tmpResultObject.ShortDescription = $shortDescription
+        $tmpResultObject.Debug = ''
+        [void]$resultsObject.Add($tmpResultObject)
+           
+    }
+    End
+    {
+        $outObject.Results = $resultsObject
+        $outObject
+    }
+
+}
+#endregion
+
+
+#region Get system fqdn
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
 if ($win32Computersystem)
@@ -120,114 +220,318 @@ else
 {
     $systemName = $env:COMPUTERNAME
 }
+#endregion
 
-# temp results object
-$resultsObject = New-Object System.Collections.ArrayList
-[bool]$badResult = $false
+
+#region Base param definition
+$outObj = New-Object System.Collections.ArrayList
+[array]$propertyList  = $null
+$propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'Name'
+$propertyList += 'SystemName'
+$propertyList += 'SiteCode'
+$propertyList += 'Status'
+$propertyList += 'Description'
+$propertyList += 'PossibleActions'
+#endregion
+
+#region Checks
 switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
 {
     1 ## ACTIVE NODE FOUND. Run checks
     {
-        $componentList = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\SMS\Operations Management\Components' 
-
-        #$listOfMonitoredComponents = New-Object System.Collections.ArrayList
-        foreach ($component in $componentList)
+        
+        #region Get provider location and site code
+        try 
         {
-            $componentName = ($component.Name | Split-Path -Leaf)
-
-            if ($excludedComponents.Contains($componentName))
-            {
-                #skip component
-            }
-            else
-            {
-                # Only test component status if component is installed
-                $componentInstallState = $component | Get-ItemProperty -Name 'Install State' -ErrorAction SilentlyContinue
-                if($componentInstallState.'Install State' -eq 3)
-                {
-                    # Only test component if component is set to be monitored otherwise we might end up with false positives
-                    $componentMonitoringType = $component | Get-ItemProperty -Name 'Site Component Manager Monitoring Type' -ErrorAction SilentlyContinue
-                    if($componentMonitoringType.'Site Component Manager Monitoring Type' -like 'Monitored*')
-                    {
-                        # Availability State needs to be zero other values indicate a problem
-                        $componentAvailabilityState = $component | Get-ItemProperty -Name 'Availability State' -ErrorAction SilentlyContinue
-                        if($componentAvailabilityState.'Availability State' -ne 0)
-                        {
-                            # Temp object for results
-                            # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                            $tmpResultObject.Name = $systemName
-                            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                            $tmpResultObject.Status = 2
-                            $tmpResultObject.ShortDescription = 'Component failed: {0}' -f $componentName
-                            $tmpResultObject.Debug = ''
-                            [void]$resultsObject.Add($tmpResultObject)
-                            $badResult = $true
-                        }
-                    }
-                }
-            }
+            $ProviderInfo = $null
+            $ProviderInfo = Get-WmiObject -Namespace "root\sms" -query "select SiteCode, Machine from SMS_ProviderLocation where ProviderForLocalSite = True" -ErrorAction Stop
+            $ProviderInfo = $ProviderInfo | Select-Object SiteCode, Machine -First 1            
+        }
+        catch 
+        {
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'ProviderLocation'
+            $tmpObj.Status = 'Error'
+            $tmpObj.Description = "$($error[0].Exception)"
+            [void]$outObj.Add($tmpObj)
         }
 
-
-        # used as a temp object for JSON output
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1
-        if ($badResult)
+        if (-NOT ($ProviderInfo))
         {
-            $outObject.Results = $resultsObject
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'ProviderLocation'
+            $tmpObj.Status = 'Error'
+            $tmpObj.Description = "Provider location could not be determined"
+            [void]$outObj.Add($tmpObj)
         }
         else
         {
-            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-            $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-            $tmpResultObject.Status = 0
-            $tmpResultObject.ShortDescription = 'ok'
-            $tmpResultObject.Debug = ''
-            [void]$resultsObject.Add($tmpResultObject)
-            $outObject.Results = $resultsObject
-        }
-    }
+        #endregion
 
+
+            #region SMS_ComponentSummarizer
+            # Trying to read SMS_ComponentSummarizer to extract component state
+            try 
+            {
+                $wqlQuery = "SELECT * FROM SMS_ComponentSummarizer WHERE TallyInterval='0001128000100008' and ComponentType like 'Monitored%' and Status <> 0"
+                [array]$listFromComponentSummarizer = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                
+                #Status: 0=OK, 1=Warning, 2=Error 
+                foreach ($componentState in $listFromComponentSummarizer)
+                {
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'ComponentState'
+                    $tmpObj.Name = $componentState.ComponentName
+                    $tmpObj.SystemName = $componentState.MachineName
+                    $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
+                    $tmpObj.SiteCode = $componentState.SiteCode
+                    $tmpObj.Description = ""
+                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\System Status\Component Status". Also, check the logfile of the corresponding component'
+                    [void]$outObj.Add($tmpObj) 
+                }
+            }
+            catch 
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'ComponentState'
+                $tmpObj.Status = 'Error'
+                $tmpObj.Description = "$($error[0].Exception)"
+                [void]$outObj.Add($tmpObj)
+            }
+            #endregion
+
+
+            #region SMS_SiteSystemSummarizer
+            # Trying to read SMS_SiteSystemSummarizer to extract site system state
+            try 
+            {
+                $wqlQuery = "SELECT * FROM SMS_SiteSystemSummarizer where Status <> 0"
+                [array]$listFromSiteSystemSummarizer = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+
+                foreach ($siteSystemState in $listFromSiteSystemSummarizer)
+                {
+                    # Extract systemname from string looking like this: ["Display=\\SEC01.contoso.local\"]MSWNET:["SMS_SITE=S01"]\\SEC01.contoso.local\
+                    $siteSystemName = $null
+                    $siteSystemName = [regex]::match($siteSystemState.SiteSystem, '(\\\\.+\\\"\])')
+                    if (-NOT($siteSystemName))
+                    {
+                        $siteSystemName = 'Name could not be determined'
+                    }
+                    else 
+                    {
+                        $siteSystemName = $siteSystemName -replace '\\', '' -replace '\"', '' -replace '\]', ''   
+                    }
+
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'SiteSystemState'
+                    $tmpObj.Name = $siteSystemState.Role
+                    $tmpObj.SystemName = $siteSystemName
+                    $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
+                    $tmpObj.SiteCode = $siteSystemState.SiteCode
+                    $tmpObj.Description = ""
+                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\System Status\Site Status". Also, check the logfile of the corresponding component'
+                    [void]$outObj.Add($tmpObj) 
+                }
+
+
+            }
+            catch 
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'SiteSystemState'
+                $tmpObj.Status = 'Error'
+                $tmpObj.Description = "$($error[0].Exception)"
+                [void]$outObj.Add($tmpObj)
+            }
+            #endregion
+
+
+            #region SMS_Alert
+            # Trying to read SMS_Alert to extract alert state
+            try 
+            {
+                $wqlQuery = "select * from SMS_Alert where AlertState = 0 and IsIgnored = 0"
+                [array]$listFromSMSAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                #$listFromSMSAlert | ogv
+                <#
+                    AlertState
+                    0	Active
+                    1	Postponed
+                    2	Canceled
+                    3	Unknown
+                    4	Disabled
+                    5	Never Triggered
+                    
+                    Severity
+                    1	Error
+                    2	Warning
+                    3	Informational
+                
+                #>
+                foreach ($alertState in $listFromSMSAlert)
+                {
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'AlertState'
+                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                    $tmpObj.SiteCode = $alertState.SourceSiteCode
+                    $tmpObj.Description = ""
+                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    [void]$outObj.Add($tmpObj) 
+                }
+            }
+            catch 
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'AlertState'
+                $tmpObj.Status = 'Error'
+                $tmpObj.Description = "$($error[0].Exception)"
+                [void]$outObj.Add($tmpObj)
+            }
+            #endregion
+
+
+            #region SMS_EPAlert
+            # Trying to read SMS_EPAlert to extract alert state
+            try 
+            {
+                $wqlQuery = "select * from SMS_EPAlert where AlertState = 0 and IsIgnored = 0"
+                [array]$listFromSMSEPAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                #$listFromSMSAlert | ogv
+                <#
+                    AlertState
+                    0	Active
+                    1	Postponed
+                    2	Canceled
+                    3	Unknown
+                    4	Disabled
+                    5	Never Triggered
+                    
+                    Severity
+                    1	Error
+                    2	Warning
+                    3	Informational
+                
+                #>
+                foreach ($alertState in $listFromSMSEPAlert)
+                {
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'EPAlertState'
+                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                    $tmpObj.SiteCode = $alertState.SourceSiteCode
+                    $tmpObj.Description = ""
+                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    [void]$outObj.Add($tmpObj) 
+                }
+            }
+            catch 
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'EPAlertState'
+                $tmpObj.Status = 'Error'
+                $tmpObj.Description = "$($error[0].Exception)"
+                [void]$outObj.Add($tmpObj)
+            }
+            #endregion
+
+
+            #region SMS_CHAlert
+            # Trying to read SMS_CHAlert to extract alert state
+            try 
+            {
+                $wqlQuery = "select * from SMS_CHAlert where AlertState = 0 and IsIgnored = 0"
+                [array]$listFromSMSCHAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                #$listFromSMSAlert | ogv
+                <#
+                    AlertState
+                    0	Active
+                    1	Postponed
+                    2	Canceled
+                    3	Unknown
+                    4	Disabled
+                    5	Never Triggered
+                    
+                    Severity
+                    1	Error
+                    2	Warning
+                    3	Informational
+                
+                #>
+                foreach ($alertState in $listFromSMSCHAlert)
+                {
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'CHAlertState'
+                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                    $tmpObj.SiteCode = $alertState.SourceSiteCode
+                    $tmpObj.Description = ""
+                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    [void]$outObj.Add($tmpObj) 
+                }
+            }
+            catch 
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'CHAlertState'
+                $tmpObj.Status = 'Error'
+                $tmpObj.Description = "$($error[0].Exception)"
+                [void]$outObj.Add($tmpObj)
+            }
+            #endregion
+        } # END If (-NOT ($ProviderInfo))
+    } # END Active NODE
+    
     0 ## PASSIVE NODE FOUND. Nothing to do.
     {
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1
-        
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-        $tmpResultObject.Status = 0
-        $tmpResultObject.ShortDescription = 'ok'
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)
-        $outObject.Results = $resultsObject       
-
+        $tmpObj = New-Object psobject | Select-Object $propertyList
+        $tmpObj.CheckType = 'Script'
+        $tmpObj.Status = 'Ok'
+        $tmpObj.Description = "Passive node found. No checks will run."
+        [void]$outObj.Add($tmpObj)     
     }
 
     Default ## NO STATE FOUND
     {
+        $tmpObj = New-Object psobject | Select-Object $propertyList
+        $tmpObj.CheckType = 'Script'
+        $tmpObj.Status = 'Error'
+        $tmpObj.Description = "Error: No ConfigMgr Site System found"
+        [void]$outObj.Add($tmpObj) 
         # No state found. Either no ConfigMgr Site System or script error
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1
-        
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-        $tmpResultObject.Status = 1
-        $tmpResultObject.ShortDescription = 'Error: No ConfigMgr Site System found'
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)
-        $outObject.Results = $resultsObject
     }
 }
 
-if ($GridViewOutput)
+if ($outObj.Count -eq 0)
 {
-    $outObject.Results | Out-GridView
+    $tmpObj = New-Object psobject | Select-Object $propertyList
+    $tmpObj.CheckType = 'Script'
+    $tmpObj.Status = 'Ok'
+    $tmpObj.Description = "No errors found!"
+    [void]$outObj.Add($tmpObj) 
 }
-else
+
+
+#endregion
+
+#region Output
+switch ($OutputMode) 
 {
-    $outObject | ConvertTo-Json -Compress
-}   
+    "GridView" 
+    {  
+        $outObj | Out-GridView -Title 'List of states'
+    }
+    "JSON" 
+    {
+        $outObj | ConvertTo-CustomMonitoringObject | ConvertTo-Json
+    }
+    "JSONCompressed"
+    {
+        $outObj | ConvertTo-CustomMonitoringObject | ConvertTo-Json -Compress
+    }
+}
+#endregion
