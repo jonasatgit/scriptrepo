@@ -28,8 +28,9 @@
 
     Source: https://github.com/jonasatgit/scriptrepo
 
-.PARAMETER GridViewOutput
-    Switch parameter to be able to output the results in a GridView instead of compressed JSON
+.PARAMETER OutputMode
+    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
@@ -43,19 +44,26 @@
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1 -OutputMode JSONCompressed
 
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode HTMLMail
+
 .INPUTS
    None
 
 .OUTPUTS
    Either GridView, JSON formatted or JSON compressed. JSON compressed is the default mode
-    
+
+.LINK
+    https://github.com/jonasatgit/scriptrepo
 #>
 [CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed")]
-    [String]$OutputMode = "JSONCompressed"
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
+    [String]$OutputMode = "HTMLMail",
+    [Parameter(Mandatory=$false)]
+    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
 )
 
 
@@ -146,7 +154,13 @@ Function ConvertTo-CustomMonitoringObject
     [CmdletBinding()]
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [object]$InputObject
+        [object]$InputObject,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
+        [string]$InputType,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [string]$SystemName
+
     )
 
     Begin
@@ -157,46 +171,99 @@ Function ConvertTo-CustomMonitoringObject
     }
     Process
     {
-        switch ($InputObject.Status) 
+
+
+        switch ($InputType)
         {
-            'Ok' {$outState = 0}
-            'Warning' {$outState = 1}
-            'Error' {$outState = 2}
-            Default {$outState = 3}
+            "ConfigMgrLogState" 
+            {
+                # Format for ConfigMgrLogState
+                if($InputObject.State -ieq 'OK')
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $SystemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 0
+                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject) 
+                }
+                else
+                {
+                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
+                    if ($shortDescription.Length -gt 300)
+                    {
+                        # ShortDescription has a 300 character limit
+                        $shortDescription = $shortDescription.Substring(0, 299)    
+                    }
+                    # Remove some chars like quotation marks
+                    $shortDescription = $shortDescription -replace "\'", ""
+                   
+                    
+                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $systemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 2
+                    $tmpResultObject.ShortDescription = $shortDescription
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject)
+                }
+
+            } 
+            "ConfigMgrComponentState" 
+            {
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
+                if ($InputObject.SiteCode)
+                {
+                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                }
+
+                if ($InputObject.Name)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
+                }
+
+                if ($InputObject.Description)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
+                }
+
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrInboxFileCount" 
+            {
+            } 
+            "ConfigMgrCertificateState" 
+            {
+            }
         }
 
-        # Adding infos to short description field
-        [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
-        if ($InputObject.SiteCode)
-        {
-            $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
-        }
 
-        if ($InputObject.Name)
-        {
-            $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
-        }
-
-        if ($InputObject.Description)
-        {
-            $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
-        }
-
-        if ($shortDescription.Length -gt 300)
-        {
-            # ShortDescription has a 300 character limit
-            $shortDescription = $shortDescription.Substring(0, 299)    
-        }
-        # Remove some chars like quotation marks
-        $shortDescription = $shortDescription -replace "\'", ""
-
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-        $tmpResultObject.Name = $InputObject.SystemName
-        $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-        $tmpResultObject.Status = $outState
-        $tmpResultObject.ShortDescription = $shortDescription
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)
            
     }
     End
@@ -527,11 +594,32 @@ switch ($OutputMode)
     }
     "JSON" 
     {
-        $outObj | ConvertTo-CustomMonitoringObject | ConvertTo-Json
+        $outObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName | ConvertTo-Json
     }
     "JSONCompressed"
     {
-        $outObj | ConvertTo-CustomMonitoringObject | ConvertTo-Json -Compress
+        $outObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName | ConvertTo-Json -Compress
+    }
+    "HTMLMail"
+    {      
+        # Reference email script
+        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+        # If there are bad results, lets change the subject of the mail
+        if($outObj.Where({$_.Status -ieq 'OK'}))
+        {
+            $mailSubjectResultString = 'OK'
+        }
+        else
+        {
+            $mailSubjectResultString = 'Failed'
+        }
+
+        $MailSubject = '{0}: Logstate from: {1}' -f $mailSubjectResultString, $systemName
+        $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
+
+        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions
+
     }
 }
 #endregion
