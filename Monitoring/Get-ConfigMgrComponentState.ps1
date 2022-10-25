@@ -609,7 +609,7 @@ switch ($OutputMode)
         .$PSScriptRoot\Send-CustomMonitoringMail.ps1
 
         # If there are bad results, lets change the subject of the mail
-        if($outObj.Where({$_.Status -ine 'OK'}))
+        if($outObj.Where({$_.Status -ine 'OK'})) ## SOMETHING WRONG HERE
         {
             $mailSubjectResultString = 'Failed'
         }
@@ -621,7 +621,7 @@ switch ($OutputMode)
         $MailSubject = '{0}: Component state from: {1}' -f $mailSubjectResultString, $systemName
         $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
 
-        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions
+        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext
 
     }
 }
