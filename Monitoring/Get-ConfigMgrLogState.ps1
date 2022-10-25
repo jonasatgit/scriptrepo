@@ -14,11 +14,13 @@
 #************************************************************************************************************
 <#
 .Synopsis
-    Get-ConfigMgrLogState is designed to monitor logfiles and output the result either in a GridView or as compressed JSON
+    Get-ConfigMgrLogState is designed to monitor logfiles and output the result in different ways
 
 .DESCRIPTION
-    Get-ConfigMgrLogState is designed to monitor logfiles and output the result either in a GridView or as compressed JSON
+    Get-ConfigMgrLogState is designed to monitor logfiles and output the result in different ways. (See parameter OutputMode for more details)
     The script will not use an external config file to avoid any dependencies. Instead the script uses an arraylist of logentries to be tested.
+    There is one dependency though when HTMLMail is used as the outputmode. "Send-CustomMonitoringMail.ps1" is required in that case. 
+    The script needs to run at least as often as the lowest interval configured in the section described next.
     For each logfile to be monitored, copy the below lines and paste them below the line: "########## Paste new entries below ##########"
     Change the values as required for the log test.
 
@@ -28,11 +30,11 @@
         Description = "Just a test" # A short description of the logfile and why a test is needed
         LogPath = "C:\Users\sccmops\Downloads\smsbkup.log" # Path and name of a logfile to be parsed
         SuccessString = "Backup completed" # String to look for in case of success. The script will try to find the string in the given timeframe
-        Intervall = "Daily" # How often we expect the success string to be written to the logfile. Valid strings: "Hourly", "Daily", "Weekly" or "Monthly
-        IntervallDay = "" # A specific day we expect the success string to be written. Only valid if "Intervall" is set to Weekly or Monthly. Valid strings: "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" 
-        IntervallWeek = 0 # A specific week we expect the success string to be written. Only valid if "Intervall" is set to Monthly
-        IntervallTime = "02:00" # Time in 24h format hh:mm. The time we expect a log entry to appear
-        TimespanMinutes = 60 # Minutes added to the intervalltime before and after. This is the timeframe we will look for the SuccessString in the log
+        Interval = "Daily" # How often we expect the success string to be written to the logfile. Valid strings: "Hourly", "Daily", "Weekly" or "Monthly
+        IntervalDay = "" # A specific day we expect the success string to be written. Only valid if "Interval" is set to Weekly or Monthly. Valid strings: "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" 
+        IntervalWeek = 0 # A specific week we expect the success string to be written. Only valid if "Interval" is set to Monthly
+        IntervalTime = "02:00" # Time in 24h format hh:mm. The time we expect a log entry to appear
+        TimespanMinutes = 60 # Minutes added to the Intervaltime before and after. This is the timeframe we will look for the SuccessString in the log
         IgnorePreviousEntries = $true or $false. If set to true and if we are probing before the time we would expect a log entry, we should not look one day, week or month back and test the last result instead
         RunOnActiveNodeOnly = $true or $false. If set to true the test will only run on an active ConfigMgr site server.
         RunOnSystemList = Comma seperated list of system fqdns the check should be performed. If empty, the test will be performed on any system
@@ -44,8 +46,9 @@
 .EXAMPLE
     .\Get-ConfigMgrLogState
 
-.PARAMETER GridViewOutput
-    Switch parameter to be able to output the results in a GridView instead of compressed JSON
+.PARAMETER OutputMode
+    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
 .PARAMETER ProbeTime 
     Datetime parameter to be able to set a specific datetime to simulate a script run in the past or future. Example value: (Get-Date('2022-06-14 01:00'))
@@ -55,7 +58,7 @@
     .\Get-ConfigMgrLogState
 
 .EXAMPLE
-    .\Get-ConfigMgrLogState -GridViewOutput
+    .\Get-ConfigMgrLogState -OutputMode 'GridView'
 
 .EXAMPLE
     .\Get-ConfigMgrLogState -ProbeTime (Get-Date('2022-06-14 01:00'))
@@ -64,7 +67,7 @@
    None
 
 .OUTPUTS
-   Compressed JSON string or GridView
+   GridView, JSON, compressed JSON or HTML mail
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -74,12 +77,15 @@
 param
 (
     [parameter(Mandatory=$false,ValueFromPipeline=$false)]
-    #[datetime]$ProbeTime = (Get-Date('2022-06-14 01:00'))
-    [datetime]$ProbeTime = (get-date),
-    [parameter(Mandatory=$false,ValueFromPipeline=$false)]
-    [switch]$GridViewOutput
+    [datetime]$ProbeTime = (get-date), # Testing (Get-Date('2022-06-14 01:00'))
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
+    [String]$OutputMode = "JSONCompressed",
+    [Parameter(Mandatory=$false)]
+    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
 )
-$VerbosePreference = "SilentlyContinue"
+
+$VerbosePreference = "silentlyContinue"
 
 #Ensure that the Script is running with elevated permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
@@ -178,6 +184,149 @@ $logEntry = @{
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
 ########## Paste new entries above ##########
+
+
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
+        [string]$InputType,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [string]$SystemName
+
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1    
+    }
+    Process
+    {
+
+
+        switch ($InputType)
+        {
+            "ConfigMgrLogState" 
+            {
+                # Format for ConfigMgrLogState
+                if($InputObject.State -ieq 'OK')
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $SystemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 0
+                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject) 
+                }
+                else
+                {
+                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
+                    if ($shortDescription.Length -gt 300)
+                    {
+                        # ShortDescription has a 300 character limit
+                        $shortDescription = $shortDescription.Substring(0, 299)    
+                    }
+                    # Remove some chars like quotation marks
+                    $shortDescription = $shortDescription -replace "\'", ""
+                   
+                    
+                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $systemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 2
+                    $tmpResultObject.ShortDescription = $shortDescription
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject)
+                }
+
+            } 
+            "ConfigMgrComponentState" 
+            {
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
+                if ($InputObject.SiteCode)
+                {
+                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                }
+
+                if ($InputObject.Name)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
+                }
+
+                if ($InputObject.Description)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
+                }
+
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrInboxFileCount" 
+            {
+            } 
+            "ConfigMgrCertificateState" 
+            {
+            }
+        }
+
+
+           
+    }
+    End
+    {
+        $outObject.Results = $resultsObject
+        $outObject
+    }
+
+}
+#endregion
+
 
 
 #region Test-ConfigMgrActiveSiteSystemNode
@@ -314,8 +463,8 @@ $propertyList += 'ProbeTime'
 $propertyList += 'StartTime'
 $propertyList += 'EndTime'
 $propertyList += 'Interval'
-$propertyList += 'IntervallDay'
-$propertyList += 'IntervallWeek'
+$propertyList += 'IntervalDay'
+$propertyList += 'IntervalWeek'
 $propertyList += 'SuccessString'
 $propertyList += 'LineNumber'
 $propertyList += 'Line'
@@ -331,7 +480,7 @@ $logEntrySearchResultList = New-Object System.Collections.ArrayList
 foreach ($logEntryItem in $logEntryList)
 {
     Write-Verbose "$("{0,-35}-> Working on: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
-   $timeSpanObject = $null
+    $timeSpanObject = $null
     $timeSpanObject = New-Object PSCustomObject | Select-Object StartTime, EndTime
     # will be set to false if we are running the script before the calculated datetime and if IgnorePreviousEntries is set to $true
     # IgnorePreviousEntries = $true means, if we are before the calculated datetime, we should not look one day, week or month back and test the last result instead
@@ -340,20 +489,31 @@ foreach ($logEntryItem in $logEntryList)
     # Tmp object to track log parse status
     $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
     $tmpLogEntryObject.Name = $logEntryItem.Name
-    $tmpLogEntryObject.ProbeTime = $ProbeTime
+    $tmpLogEntryObject.State = "" # Set to nothing to force string format
+    $tmpLogEntryObject.StateDescription = "" # Set to nothing to force string format
     $tmpLogEntryObject.LogPath = $logEntryItem.LogPath
-    $tmpLogEntryObject.Interval = $logEntryItem.Intervall
-    $tmpLogEntryObject.IntervallDay = $logEntryItem.IntervallDay
-    $tmpLogEntryObject.IntervallWeek = $logEntryItem.IntervallWeek
+    $tmpLogEntryObject.LogDateTime = [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.ProbeTime = $ProbeTime
+    $tmpLogEntryObject.StartTime = [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.EndTime = [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.Interval = $logEntryItem.Interval
+    $tmpLogEntryObject.IntervalDay = $logEntryItem.IntervalDay
+    $tmpLogEntryObject.IntervalWeek = $logEntryItem.IntervalWeek
     $tmpLogEntryObject.SuccessString = $logEntryItem.SuccessString
+    $tmpLogEntryObject.LineNumber = 0 # Set to zero to force int format
+    $tmpLogEntryObject.Line = "" # Set to nothing to force string format
+    $tmpLogEntryObject.Thread = "" # Set to nothing to force string format
+    $tmpLogEntryObject.TimeZoneOffset = "" # Set to nothing to force string format
     $tmpLogEntryObject.Description = $logEntryItem.Description
+    $tmpLogEntryObject.NodeType = "" # Set to nothing to force string format
     $tmpLogEntryObject.RunOnSystemList = $logEntryItem.RunOnSystemList
+
 
     $DateFormat = "yyyy-MM-dd"
     $TimeFormat = "HH:mm"
     # We need to calculate the log datetime based on the definition first
     # We then create a TimeSpan object in which the log event needs to happen
-    Switch ($logEntryItem.Intervall) 
+    Switch ($logEntryItem.Interval) 
     {
         "Hourly" 
         {
@@ -362,7 +522,7 @@ foreach ($logEntryItem in $logEntryList)
         "Daily" 
         {
             # Date and time the action should have happened
-            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervallTime)"
+            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
             $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
             $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
             # We need to check if we are running the script before or after the calculated time to not look at the wrong timeframe
@@ -389,17 +549,17 @@ foreach ($logEntryItem in $logEntryList)
         }
         "Weekly" 
         {
-            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervallTime)"
+            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
             # looking for the correct day in the past if we are not running on the specific day
             $calculatedDateTime = (Get-Date($calculatedDateTime))
-            while ($calculatedDateTime.DayOfWeek -ine $logEntryItem.IntervallDay)
+            while ($calculatedDateTime.DayOfWeek -ine $logEntryItem.IntervalDay)
             {
-                Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervallDay))"
+                Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
                 # looking for the exact date of a day specified in the log definition. 
                 # Like Wednesday of the current week.
                 $calculatedDateTime = $calculatedDateTime.AddDays(-1) # going one day back and test again
             }
-            Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervallDay))"
+            Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
 
             $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
             $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
@@ -428,7 +588,7 @@ foreach ($logEntryItem in $logEntryList)
         }
         "Monthly" 
         {
-            $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervallDay -Week $logEntryItem.IntervallWeek -Time $logEntryItem.IntervallTime -StartDate $ProbeTime
+            $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate $ProbeTime
             $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
             $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
                 
@@ -439,7 +599,7 @@ foreach ($logEntryItem in $logEntryList)
                 if ($logEntryItem.IgnorePreviousEntries -eq $false)
                 {
                     Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one month back." -f  $($logEntryItem.Name))"
-                    $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervallDay -Week $logEntryItem.IntervallWeek -Time $logEntryItem.IntervallTime -StartDate ((get-date($calculatedDateTime)).AddMonths(-1))
+                    $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate ((get-date($calculatedDateTime)).AddMonths(-1))
                     $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
                     $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
                 }
@@ -506,7 +666,7 @@ foreach ($logEntryItem in $logEntryList)
             }
             else 
             {
-                if ($timeSpanObject.StartTime)
+               if ($timeSpanObject.StartTime)
                 {
                     $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
                     $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
@@ -521,17 +681,19 @@ foreach ($logEntryItem in $logEntryList)
                             # Custom object per found log entry
                             $tmpLogLineObject = New-Object PSCustomObject | Select-Object $propertyList
                             $tmpLogLineObject.Name = $logEntryItem.Name
+                            $tmpLogLineObject.State = "" # Set to nothing to force string format
+                            $tmpLogLineObject.StateDescription = "" # Set to nothing to force string format
                             $tmpLogLineObject.ProbeTime = $ProbeTime
                             $tmpLogLineObject.StartTime = $timeSpanObject.StartTime
                             $tmpLogLineObject.EndTime  = $timeSpanObject.EndTime
-                            $tmpLogLineObject.Description = $logEntryItem.Description
-                            $tmpLogLineObject.Interval = $logEntryItem.Intervall
-                            $tmpLogLineObject.IntervallDay = $logEntryItem.IntervallDay
-                            $tmpLogLineObject.IntervallWeek = $logEntryItem.IntervallWeek
+                            $tmpLogLineObject.Interval = $logEntryItem.Interval
+                            $tmpLogLineObject.IntervalDay = $logEntryItem.IntervalDay
+                            $tmpLogLineObject.IntervalWeek = $logEntryItem.IntervalWeek
                             $tmpLogLineObject.LogPath = $logEntryItem.LogPath
                             $tmpLogLineObject.SuccessString = $logEntryItem.SuccessString
                             $tmpLogLineObject.Line = $resultLine.Line
                             $tmpLogLineObject.LineNumber = $resultLine.LineNumber
+                            $tmpLogLineObject.Description = $logEntryItem.Description
                             $tmpLogLineObject.NodeType = $nodeType
                             $tmpLogLineObject.RunOnSystemList = $logEntryItem.RunOnSystemList
                                                     
@@ -634,52 +796,69 @@ foreach ($logEntryItem in $logEntryList)
     } # end if ($checkRequired -eq $false)
 }
 
-if ($GridViewOutput)
+
+#region limit outputlist for some output modes
+$returnObj = New-Object System.Collections.ArrayList
+# Group the results by log name to be able to look at the overall result
+$logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
+              
+foreach ($groupItem in $logEntrySearchResultListGroups)
 {
-    $logEntrySearchResultList | Out-GridView -Title 'Log parse results'
+    # Do we have a good result?
+    #$goodResults = $null
+    #[array]$goodResults = $groupItem.group | Where-Object {$_.State -eq 'OK'}
+    If($groupItem.group | Where-Object {$_.State -eq 'OK'})
+    {
+        [void]$returnObj.Add(($groupItem.group | Where-Object {$_.State -eq 'OK'}))        
+    }
+    else
+    {
+        [void]$returnObj.Add(($groupItem.group | Select-Object -Last 1)) # pick the last bad result to limit the output
+                       
+    }
 }
-else 
+# Limit output to some properties
+$returnObj = $returnObj | Select-Object Name, State, StateDescription, LogPath, LogDateTime, Interval, IntervalDay, Intervalweek
+#endregion
+
+
+#region Output
+switch ($OutputMode) 
 {
-    # General out object
-    $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-    $outObject.InterfaceVersion = 1
-
-    # Group the results by log name to be able to look at the overall result
-    $logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
-    [array]$badResults = $logEntrySearchResultListGroups.group | Where-Object {$_.State -eq 'NOK'}
-    #[array]$goodResults = $logEntrySearchResultListGroups.group | Where-Object {$_.State -eq 'OK'}
-
-    if ($badResults.Count -eq 0)
-    {
-        # All good. Just output one result     
-        # Temp object for results
-        # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-        $tmpResultObject.Status = 0
-        $tmpResultObject.ShortDescription = 'No errors found!'
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject) 
-
+    "GridView" 
+    {  
+        # Output full list
+        $logEntrySearchResultList | Out-GridView -Title 'Full list of log parse results'
     }
-    else 
+    "JSON" 
     {
-        foreach ($badResult in $badResults)
+        $returnObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrLogState -SystemName $systemName | ConvertTo-Json
+    }
+    "JSONCompressed"
+    {
+        $returnObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrLogState -SystemName $systemName | ConvertTo-Json -Compress
+    }
+    "HTMLMail"
+    {      
+        # Reference email script
+        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+        # If there are bad results, lets change the subject of the mail
+        if($returnObj.Where({$_.State -ieq 'NOK'}))
         {
-            # Temp object for results
-            # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-            $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-            $tmpResultObject.Status = 2
-            $tmpResultObject.ShortDescription = 'FAILED: `"{0}`"  Log: {1}' -f $badResult.StateDescription, $badResult.LogPath
-            $tmpResultObject.Debug = ''
-            [void]$resultsObject.Add($tmpResultObject)
-        }   
-    }
+            $mailSubjectResultString = 'Failed'
+        }
+        else
+        {
+            $mailSubjectResultString = 'OK'
+        }
 
-    $outObject.Results = $resultsObject
-    $outObject | ConvertTo-Json -Compress # output object as compressed json
+
+        $MailSubject = '{0}: Logstate from: {1}' -f $mailSubjectResultString, $systemName
+        $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
+
+        Send-CustomMonitoringMail -MailMessageObject $returnObj  -MailSubject $MailSubject -MailInfotext $MailInfotext
+
+    }
 }
 #endregion 
