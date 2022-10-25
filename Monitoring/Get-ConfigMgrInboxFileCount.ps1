@@ -15,43 +15,62 @@
 <#
 .Synopsis
     Script to monitor ConfigMgr/MECM performance counter
-    Version: 2022-03-23
     
 .DESCRIPTION
     The script reads from an in script hashtable called "$referenceData" to validate a list of specific performance counter
     The inbox perf counter refresh intervall is 15 minutes. It therefore makes no sense to validate a counter more often. 
     Get the full list of available inbox perf counter via the following command:
     Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
-   Source: https://github.com/jonasatgit/scriptrepo
+    Source: https://github.com/jonasatgit/scriptrepo
 
-.PARAMETER GridViewOutput
-    Switch parameter to be able to output the results in a GridView instead of compressed JSON
+.PARAMETER OutputMode
+    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
 
 .EXAMPLE
-    Get-ConfigMgrInboxFileCount.ps1 -GridViewOutput
+    Get-ConfigMgrComponentState.ps1 -OutputMode GridView
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode JSON
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode JSONCompressed
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -OutputMode HTMLMail
 
 .INPUTS
    None
 
 .OUTPUTS
-   Compressed JSON string 
+   Either GridView, JSON formatted or JSON compressed.
+
+.LINK
+    https://github.com/jonasatgit/scriptrepo
     
 #>
 [CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$false)]
-    [Switch]$GridViewOutput
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
+    [String]$OutputMode = "GridView"
 )
+
+#region admin rights
 #Ensure that the Script is running with elevated permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
+#endregion
+
+
+#region reference data
 # Get the full list of available inbox perf counter via the following command:
 # Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
 
@@ -94,8 +113,10 @@ $referenceData.add('polreq.box','MaxValue=500')
 $referenceData.add('auth>statesys.box>incoming>low','MaxValue=500')                                                                                                                                                                                  
 $referenceData.add('auth>statesys.box>incoming>high','MaxValue=2000')                                                                                                                                                                                 
 #$referenceData.add('OGprocess.box','MaxValue=500')                                                                                                                                                                                                   
+#endregion
 
 
+#region system name
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
 if ($win32Computersystem)
@@ -106,9 +127,178 @@ else
 {
     $systemName = $env:COMPUTERNAME
 }
+#endregion
 
-# temp results object
+
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
+        [string]$InputType,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [string]$SystemName
+
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1    
+    }
+    Process
+    {
+
+
+        switch ($InputType)
+        {
+            "ConfigMgrLogState" 
+            {
+                # Format for ConfigMgrLogState
+                if($InputObject.State -ieq 'OK')
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $SystemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 0
+                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject) 
+                }
+                else
+                {
+                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
+                    if ($shortDescription.Length -gt 300)
+                    {
+                        # ShortDescription has a 300 character limit
+                        $shortDescription = $shortDescription.Substring(0, 299)    
+                    }
+                    # Remove some chars like quotation marks
+                    $shortDescription = $shortDescription -replace "\'", ""
+                   
+                    
+                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $systemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 2
+                    $tmpResultObject.ShortDescription = $shortDescription
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject)
+                }
+
+            } 
+            "ConfigMgrComponentState" 
+            {
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
+                if ($InputObject.SiteCode)
+                {
+                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                }
+
+                if ($InputObject.Name)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
+                }
+
+                if ($InputObject.Description)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
+                }
+
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrInboxFileCount" 
+            {
+
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrCertificateState" 
+            {
+            }
+        }
+
+
+           
+    }
+    End
+    {
+        $outObject.Results = $resultsObject
+        $outObject
+    }
+
+}
+#endregion
+
+
+#region main perf counter logic
 $resultsObject = New-Object System.Collections.ArrayList
+
+[array]$propertyList  = $null
+$propertyList += 'Name' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'Status'
+$propertyList += 'ShortDescription'
+$propertyList += 'Debug'
+
 [bool]$badResult = $false
 
 $inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
@@ -128,9 +318,8 @@ if ($inboxCounterList)
             {
                 # Temp object for results
                 # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject = New-Object psobject | Select-Object $propertyList
                 $tmpResultObject.Name = $systemName
-                $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = 1
                 $tmpResultObject.ShortDescription = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $counterMaxValue[1]
                 $tmpResultObject.Debug = ''
@@ -147,9 +336,8 @@ if ($inboxCounterList)
         {
             # Temp object for results
             # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+            $tmpResultObject = New-Object psobject | Select-Object $propertyList
             $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 1
             $tmpResultObject.ShortDescription = 'Counter: `"{0}`" not found on machine! ' -f $_.key
             $tmpResultObject.Debug = ''
@@ -157,33 +345,68 @@ if ($inboxCounterList)
             $badResult = $true 
         }
     }
-} 
-
-
-# used as a temp object for JSON output
-$outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-$outObject.InterfaceVersion = 1
-if ($badResult)
-{
-    $outObject.Results = $resultsObject
 }
-else
+else 
 {
-    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+    $tmpResultObject = New-Object psobject | Select-Object $propertyList
     $tmpResultObject.Name = $systemName
-    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+    $tmpResultObject.Status = 2
+    $tmpResultObject.ShortDescription = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
+    $tmpResultObject.Debug = ''
+    [void]$resultsObject.Add($tmpResultObject) 
+    $badResult = $true 
+} 
+#endregion
+
+
+#region prepare output
+if (-NOT ($badResult))
+{
+    $tmpResultObject = New-Object psobject | Select-Object $propertyList
+    $tmpResultObject.Name = $systemName
     $tmpResultObject.Status = 0
     $tmpResultObject.ShortDescription = 'ok'
     $tmpResultObject.Debug = ''
     [void]$resultsObject.Add($tmpResultObject)
-    $outObject.Results = $resultsObject
 }
+#endregion
 
-if ($GridViewOutput)
+
+#region Output
+switch ($OutputMode) 
 {
-    $outObject.Results | Out-GridView
+    "GridView" 
+    {  
+        $resultsObject | Out-GridView -Title 'List of states'
+    }
+    "JSON" 
+    {
+        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrInboxFileCount -SystemName $systemName | ConvertTo-Json
+    }
+    "JSONCompressed"
+    {
+        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrInboxFileCount -SystemName $systemName | ConvertTo-Json -Compress
+    }
+    "HTMLMail"
+    {      
+        # Reference email script
+        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+        # If there are bad results, lets change the subject of the mail
+        if($resultsObject.Where({$_.Status -ne 0}))
+        {
+            $mailSubjectResultString = 'OK'
+        }
+        else
+        {
+            $mailSubjectResultString = 'Failed'
+        }
+
+        $MailSubject = '{0}: FileInbox state from: {1}' -f $mailSubjectResultString, $systemName
+        $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
+
+        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions
+
+    }
 }
-else
-{
-    $outObject | ConvertTo-Json -Compress
-}
+#endregion

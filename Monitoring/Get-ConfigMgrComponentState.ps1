@@ -61,7 +61,7 @@ param
 (
     [Parameter(Mandatory=$false)]
     [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
-    [String]$OutputMode = "HTMLMail",
+    [String]$OutputMode = "GridView",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
 )
@@ -133,6 +133,7 @@ function Test-ConfigMgrActiveSiteSystemNode
     }
 }
 #endregion
+
 
 #region ConvertTo-CustomMonitoringObject
 <# 
@@ -301,6 +302,7 @@ $propertyList += 'Status'
 $propertyList += 'Description'
 $propertyList += 'PossibleActions'
 #endregion
+
 
 #region Checks
 switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
@@ -585,6 +587,7 @@ if ($outObj.Count -eq 0)
 
 #endregion
 
+
 #region Output
 switch ($OutputMode) 
 {
@@ -606,16 +609,16 @@ switch ($OutputMode)
         .$PSScriptRoot\Send-CustomMonitoringMail.ps1
 
         # If there are bad results, lets change the subject of the mail
-        if($outObj.Where({$_.Status -ieq 'OK'}))
-        {
-            $mailSubjectResultString = 'OK'
-        }
-        else
+        if($outObj.Where({$_.Status -ine 'OK'}))
         {
             $mailSubjectResultString = 'Failed'
         }
+        else
+        {
+            $mailSubjectResultString = 'OK'
+        }
 
-        $MailSubject = '{0}: Logstate from: {1}' -f $mailSubjectResultString, $systemName
+        $MailSubject = '{0}: Component state from: {1}' -f $mailSubjectResultString, $systemName
         $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
 
         Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions

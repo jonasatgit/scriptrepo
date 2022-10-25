@@ -15,7 +15,6 @@
 <#
 .Synopsis
     Script to monitor ConfigMgr related certificates based on a specific template name. Will also connect to SMS provider for DP certificates.
-    Version: 2022-04-11
     
 .DESCRIPTION
     Script to monitor ConfigMgr related certificates based on a specific template name. Will also connect to SMS provider for DP certificates.
@@ -41,7 +40,16 @@
     Get-ConfigMgrCertificateState.ps1
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -GridViewOutput
+    Get-ConfigMgrCertificateState.ps1 -OutputMode GridView
+
+.EXAMPLE
+    Get-ConfigMgrCertificateState.ps1 -OutputMode JSON
+
+.EXAMPLE
+    Get-ConfigMgrCertificateState.ps1 -OutputMode JSONCompressed
+
+.EXAMPLE
+    Get-ConfigMgrCertificateState.ps1 -OutputMode HTMLMail
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1 -TemplateSearchString '*Custom*ConfigMgr*Certificate*' -MinValidDays 30
@@ -50,27 +58,34 @@
    None
 
 .OUTPUTS
-   Compressed JSON string 
-    
+   Either GridView, JSON formatted or JSON compressed.
+
+.LINK
+    https://github.com/jonasatgit/scriptrepo  
 #>
 [CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$false)]
-    [Switch]$GridViewOutput,
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
+    [String]$OutputMode = "GridView",
     [Parameter(Mandatory=$false)]
     [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
     [Parameter(Mandatory=$false)]
     [int]$MinValidDays = 30
 )
 
+#region admin rights
 #Ensure that the Script is running with elevated permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
+#endregion
 
+
+#region Test-ConfigMgrActiveSiteSystemNode
 <#
 .Synopsis
    function Test-ConfigMgrActiveSiteSystemNode 
@@ -125,8 +140,10 @@ function Test-ConfigMgrActiveSiteSystemNode
         return $null
     }
 }
+#endregion
 
 
+#region systemname
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
 if ($win32Computersystem)
@@ -137,8 +154,194 @@ else
 {
     $systemName = $env:COMPUTERNAME
 }
+#endregion
 
+
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
+        [string]$InputType,
+        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [string]$SystemName
+
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+        $outObject.InterfaceVersion = 1    
+    }
+    Process
+    {
+
+
+        switch ($InputType)
+        {
+            "ConfigMgrLogState" 
+            {
+                # Format for ConfigMgrLogState
+                if($InputObject.State -ieq 'OK')
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $SystemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 0
+                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject) 
+                }
+                else
+                {
+                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
+                    if ($shortDescription.Length -gt 300)
+                    {
+                        # ShortDescription has a 300 character limit
+                        $shortDescription = $shortDescription.Substring(0, 299)    
+                    }
+                    # Remove some chars like quotation marks
+                    $shortDescription = $shortDescription -replace "\'", ""
+                   
+                    
+                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
+                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject.Name = $systemName
+                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                    $tmpResultObject.Status = 2
+                    $tmpResultObject.ShortDescription = $shortDescription
+                    $tmpResultObject.Debug = ''
+                    [void]$resultsObject.Add($tmpResultObject)
+                }
+
+            } 
+            "ConfigMgrComponentState" 
+            {
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
+                if ($InputObject.SiteCode)
+                {
+                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                }
+
+                if ($InputObject.Name)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
+                }
+
+                if ($InputObject.Description)
+                {
+                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
+                }
+
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrInboxFileCount" 
+            {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)
+            } 
+            "ConfigMgrCertificateState" 
+            {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)                
+            }
+        }
+
+
+           
+    }
+    End
+    {
+        $outObject.Results = $resultsObject
+        $outObject
+    }
+
+}
+#endregion
+
+
+#region main certificate logic
 $resultsObject = New-Object System.Collections.ArrayList
+
+[array]$propertyList  = $null
+$propertyList += 'Name' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'Status'
+$propertyList += 'ShortDescription'
+$propertyList += 'Debug'
+
 [bool]$badResult = $false
 
 # Going the extra mile and checking DP and or BootStick certificates via SMS Provider call, but just if we are on the active site server
@@ -157,9 +360,8 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
                 $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
                 if ($expireDays -le $minValidDays)
                 {
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                    $tmpResultObject = New-Object psobject | Select-Object $propertyList
                     $tmpResultObject.Name = $systemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                     $tmpResultObject.Status = 1
                     $tmpResultObject.ShortDescription = 'Warning: DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
                     $tmpResultObject.Debug = ''
@@ -170,9 +372,8 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
         }
         else
         {
-            $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+            $tmpResultObject = New-Object psobject | Select-Object $propertyList
             $tmpResultObject.Name = $systemName
-            $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
             $tmpResultObject.Status = 1
             $tmpResultObject.ShortDescription = 'Warning: No DP or Boot certificate found!'
             $tmpResultObject.Debug = ''
@@ -182,9 +383,8 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
     }
     else
     {
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject = New-Object psobject | Select-Object $propertyList
         $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
         $tmpResultObject.Status = 1
         $tmpResultObject.ShortDescription = 'Warning: Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
         $tmpResultObject.Debug = ''
@@ -210,24 +410,21 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
 
             if ($expireDays -le $minValidDays)
             {
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject = New-Object psobject | Select-Object $propertyList
                 $tmpResultObject.Name = $systemName
-                $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = 1
                 $tmpResultObject.ShortDescription = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
                 $tmpResultObject.Debug = ''
                 [void]$resultsObject.Add($tmpResultObject)
-                $badResult = $true
-                $configMgrCertificateFound = $true         
+                $badResult = $true     
             }
         
         }
     }
     else
     {
-        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+        $tmpResultObject = New-Object psobject | Select-Object $propertyList
         $tmpResultObject.Name = $systemName
-        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
         $tmpResultObject.Status = 1
         $tmpResultObject.ShortDescription = 'Warning: No ConfigMgr Certificate found on system!'
         $tmpResultObject.Debug = ''
@@ -235,33 +432,57 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
         $badResult = $true   
     }
 }
+#endregion
 
 
-# used as a temp object for JSON output
-$outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-$outObject.InterfaceVersion = 1
-if ($badResult)
+#region prepare output
+if (-NOT ($badResult))
 {
-    $outObject.Results = $resultsObject
-}
-else
-{
-    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+    $tmpResultObject = New-Object psobject | Select-Object $propertyList
     $tmpResultObject.Name = $systemName
-    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
     $tmpResultObject.Status = 0
     $tmpResultObject.ShortDescription = 'ok'
     $tmpResultObject.Debug = ''
     [void]$resultsObject.Add($tmpResultObject)
-    $outObject.Results = $resultsObject
 }
+#endregion
 
 
-if ($GridViewOutput)
+#region Output
+switch ($OutputMode) 
 {
-    $outObject.Results | Out-GridView
+    "GridView" 
+    {  
+        $resultsObject | Out-GridView -Title 'List of states'
+    }
+    "JSON" 
+    {
+        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json
+    }
+    "JSONCompressed"
+    {
+        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json -Compress
+    }
+    "HTMLMail"
+    {      
+        # Reference email script
+        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+        # If there are bad results, lets change the subject of the mail
+        if($resultsObject.Where({$_.Status -ne 0}))
+        {
+            $mailSubjectResultString = 'OK'
+        }
+        else
+        {
+            $mailSubjectResultString = 'Failed'
+        }
+
+        $MailSubject = '{0}: Certificate state from: {1}' -f $mailSubjectResultString, $systemName
+        $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
+
+        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions
+
+    }
 }
-else
-{
-    $outObject | ConvertTo-Json -Compress
-}  
+#endregion

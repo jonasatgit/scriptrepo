@@ -80,20 +80,24 @@ param
     [datetime]$ProbeTime = (get-date), # Testing (Get-Date('2022-06-14 01:00'))
     [Parameter(Mandatory=$false)]
     [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
-    [String]$OutputMode = "JSONCompressed",
+    [String]$OutputMode = "GridView",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
 )
 
 $VerbosePreference = "silentlyContinue"
 
+#region admin check
 #Ensure that the Script is running with elevated permissions
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
 }
+#endregion
 
+
+#region log entry list
 $logEntryList = New-Object System.Collections.ArrayList
 ########## Paste new entries below ##########
 $logEntry = @{
@@ -184,6 +188,7 @@ $logEntry = @{
 $logEntryObj = New-Object PSCustomObject -Property $logEntry
 [void]$logEntryList.add($logEntryObj)
 ########## Paste new entries above ##########
+#endregion
 
 
 #region ConvertTo-CustomMonitoringObject
@@ -328,7 +333,6 @@ Function ConvertTo-CustomMonitoringObject
 #endregion
 
 
-
 #region Test-ConfigMgrActiveSiteSystemNode
 <#
 .Synopsis
@@ -386,6 +390,7 @@ function Test-ConfigMgrActiveSiteSystemNode
 }
 #endregion
 
+
 #region Find-DayOfWeek
 <#
 .Synopsis
@@ -436,9 +441,7 @@ function Find-DayOfWeek
 #endregion 
 
 
-
-#region main script
-
+#region system name
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
 if ($win32Computersystem)
@@ -449,10 +452,10 @@ else
 {
     $systemName = $env:COMPUTERNAME
 }
+#endregion
 
-# Log object defintion
 
-
+#region main log logic
 # temp results object and corresponding property list
 [array]$propertyList = 'Name'
 $propertyList += 'State'
@@ -510,7 +513,6 @@ foreach ($logEntryItem in $logEntryList)
 
 
     $DateFormat = "yyyy-MM-dd"
-    $TimeFormat = "HH:mm"
     # We need to calculate the log datetime based on the definition first
     # We then create a TimeSpan object in which the log event needs to happen
     Switch ($logEntryItem.Interval) 
@@ -795,6 +797,7 @@ foreach ($logEntryItem in $logEntryList)
         
     } # end if ($checkRequired -eq $false)
 }
+#endregion
 
 
 #region limit outputlist for some output modes
