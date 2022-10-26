@@ -228,8 +228,6 @@ Function ConvertTo-CustomMonitoringObject
     }
     Process
     {
-
-
         switch ($InputType)
         {
             "ConfigMgrLogState" 
@@ -266,7 +264,6 @@ Function ConvertTo-CustomMonitoringObject
                     $tmpResultObject.Debug = ''
                     [void]$resultsObject.Add($tmpResultObject)
                 }
-
             } 
             "ConfigMgrComponentState" 
             {
@@ -314,14 +311,45 @@ Function ConvertTo-CustomMonitoringObject
             } 
             "ConfigMgrInboxFileCount" 
             {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)
             } 
             "ConfigMgrCertificateState" 
             {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)                
             }
-        }
-
-
-           
+        }          
     }
     End
     {

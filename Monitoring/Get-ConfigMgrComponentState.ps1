@@ -63,7 +63,11 @@ param
     [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
     [String]$OutputMode = "GridView",
     [Parameter(Mandatory=$false)]
-    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
+    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
+    [Parameter(Mandatory=$false)]
+    [bool]$CacheState = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$CachePath 
 )
 
 
@@ -172,8 +176,6 @@ Function ConvertTo-CustomMonitoringObject
     }
     Process
     {
-
-
         switch ($InputType)
         {
             "ConfigMgrLogState" 
@@ -210,35 +212,17 @@ Function ConvertTo-CustomMonitoringObject
                     $tmpResultObject.Debug = ''
                     [void]$resultsObject.Add($tmpResultObject)
                 }
-
             } 
             "ConfigMgrComponentState" 
             {
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
-                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
-                if ($InputObject.SiteCode)
-                {
-                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
-                }
-
-                if ($InputObject.Name)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
-                }
-
-                if ($InputObject.Description)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
-                }
-
+                [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
                 if ($shortDescription.Length -gt 300)
                 {
                     # ShortDescription has a 300 character limit
                     $shortDescription = $shortDescription.Substring(0, 299)    
                 }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""
 
                 switch ($InputObject.Status) 
                 {
@@ -249,7 +233,7 @@ Function ConvertTo-CustomMonitoringObject
                 }
 
                 $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", ""
                 $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = $outState
                 $tmpResultObject.ShortDescription = $shortDescription
@@ -258,14 +242,48 @@ Function ConvertTo-CustomMonitoringObject
             } 
             "ConfigMgrInboxFileCount" 
             {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)
             } 
             "ConfigMgrCertificateState" 
             {
+                $shortDescription = $InputObject.ShortDescription
+                
+                if ($shortDescription.Length -gt 300)
+                {
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
+                # Remove some chars like quotation marks
+                $shortDescription = $shortDescription -replace "\'", ""                
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $InputObject.Status
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = $InputObject.Debug
+                [void]$resultsObject.Add($tmpResultObject)                
             }
-        }
+        }          
 
 
-           
+		   
     }
     End
     {
@@ -295,13 +313,28 @@ else
 $outObj = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
 $propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
-$propertyList += 'Name'
+$propertyList += 'Name' # Has to be a unique check name. Something like the system fqdn and the check itself
 $propertyList += 'SystemName'
 $propertyList += 'SiteCode'
 $propertyList += 'Status'
 $propertyList += 'Description'
 $propertyList += 'PossibleActions'
+
+if (-NOT($CachePath))
+{
+    $CachePath = $PSScriptRoot
+}
 #endregion
+
+#region Generic Script state object
+# We always need a generic script state object. Especially if we have no errors
+$tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
+$tmpScriptStateObj.Name = '{0} - Script' -f $systemName 
+$tmpScriptStateObj.CheckType = 'Script'
+$tmpScriptStateObj.Status = 'Ok'
+$tmpScriptStateObj.Description = "Overall state of script"
+#endregion
+
 
 
 #region Checks
@@ -319,20 +352,14 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
         }
         catch 
         {
-            $tmpObj = New-Object psobject | Select-Object $propertyList
-            $tmpObj.CheckType = 'ProviderLocation'
-            $tmpObj.Status = 'Error'
-            $tmpObj.Description = "$($error[0].Exception)"
-            [void]$outObj.Add($tmpObj)
+            $tmpScriptStateObj.Status = 'Error'
+            $tmpScriptStateObj.Description = "$($error[0].Exception)"
         }
 
         if (-NOT ($ProviderInfo))
         {
-            $tmpObj = New-Object psobject | Select-Object $propertyList
-            $tmpObj.CheckType = 'ProviderLocation'
-            $tmpObj.Status = 'Error'
-            $tmpObj.Description = "Provider location could not be determined"
-            [void]$outObj.Add($tmpObj)
+            $tmpScriptStateObj.Status = 'Error'
+            $tmpScriptStateObj.Description = "Provider location could not be determined"
         }
         else
         {
@@ -351,22 +378,19 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                 {
                     $tmpObj = New-Object psobject | Select-Object $propertyList
                     $tmpObj.CheckType = 'ComponentState'
-                    $tmpObj.Name = $componentState.ComponentName
+                    $tmpObj.Name = '{0} - {1} - {2}' -f $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
                     $tmpObj.SystemName = $componentState.MachineName
                     $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
                     $tmpObj.SiteCode = $componentState.SiteCode
                     $tmpObj.Description = ""
-                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\System Status\Component Status". Also, check the logfile of the corresponding component'
+                    $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Component Status". Also, check the logfile of the corresponding component'
                     [void]$outObj.Add($tmpObj) 
                 }
             }
             catch 
             {
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'ComponentState'
-                $tmpObj.Status = 'Error'
-                $tmpObj.Description = "$($error[0].Exception)"
-                [void]$outObj.Add($tmpObj)
+                $tmpScriptStateObj.Status = 'Error'
+                $tmpScriptStateObj.Description = "$($error[0].Exception)"
             }
             #endregion
 
@@ -394,12 +418,12 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
 
                     $tmpObj = New-Object psobject | Select-Object $propertyList
                     $tmpObj.CheckType = 'SiteSystemState'
-                    $tmpObj.Name = $siteSystemState.Role
+                    $tmpObj.Name = '{0} - {1} - {2}' -f $siteSystemName ,$siteSystemState.Role, $siteSystemState.SiteCode
                     $tmpObj.SystemName = $siteSystemName
                     $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
                     $tmpObj.SiteCode = $siteSystemState.SiteCode
                     $tmpObj.Description = ""
-                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\System Status\Site Status". Also, check the logfile of the corresponding component'
+                    $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Site Status". Also, check the logfile of the corresponding component'
                     [void]$outObj.Add($tmpObj) 
                 }
 
@@ -407,11 +431,8 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
             }
             catch 
             {
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'SiteSystemState'
-                $tmpObj.Status = 'Error'
-                $tmpObj.Description = "$($error[0].Exception)"
-                [void]$outObj.Add($tmpObj)
+                $tmpScriptStateObj.Status = 'Error'
+                $tmpScriptStateObj.Description = "$($error[0].Exception)"
             }
             #endregion
 
@@ -440,24 +461,30 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                 #>
                 foreach ($alertState in $listFromSMSAlert)
                 {
+                    if($alertState.SourceSiteCode)
+                    {
+                        $sourceSiteCode = $alertState.SourceSiteCode
+                    }
+                    else
+                    {
+                        $sourceSiteCode = $siteCode
+                    }
+
                     $tmpObj = New-Object psobject | Select-Object $propertyList
                     $tmpObj.CheckType = 'AlertState'
-                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertState.Name, $sourceSiteCode
                     $tmpObj.SystemName = $systemName
                     $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                     $tmpObj.SiteCode = $alertState.SourceSiteCode
                     $tmpObj.Description = ""
-                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
                     [void]$outObj.Add($tmpObj) 
                 }
             }
             catch 
             {
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'AlertState'
-                $tmpObj.Status = 'Error'
-                $tmpObj.Description = "$($error[0].Exception)"
-                [void]$outObj.Add($tmpObj)
+                $tmpScriptStateObj.Status = 'Error'
+                $tmpScriptStateObj.Description = "$($error[0].Exception)"
             }
             #endregion
 
@@ -486,24 +513,30 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                 #>
                 foreach ($alertState in $listFromSMSEPAlert)
                 {
+                    if($alertState.SourceSiteCode)
+                    {
+                        $sourceSiteCode = $alertState.SourceSiteCode
+                    }
+                    else
+                    {
+                        $sourceSiteCode = $siteCode
+                    }
+
                     $tmpObj = New-Object psobject | Select-Object $propertyList
                     $tmpObj.CheckType = 'EPAlertState'
-                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertState.Name, $sourceSiteCode
                     $tmpObj.SystemName = $systemName
                     $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                     $tmpObj.SiteCode = $alertState.SourceSiteCode
                     $tmpObj.Description = ""
-                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
                     [void]$outObj.Add($tmpObj) 
                 }
             }
             catch 
             {
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'EPAlertState'
-                $tmpObj.Status = 'Error'
-                $tmpObj.Description = "$($error[0].Exception)"
-                [void]$outObj.Add($tmpObj)
+                $tmpScriptStateObj.Status = 'Error'
+                $tmpScriptStateObj.Description = "$($error[0].Exception)"
             }
             #endregion
 
@@ -532,24 +565,29 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
                 #>
                 foreach ($alertState in $listFromSMSCHAlert)
                 {
+                    if($alertState.SourceSiteCode)
+                    {
+                        $sourceSiteCode = $alertState.SourceSiteCode
+                    }
+                    else
+                    {
+                        $sourceSiteCode = $siteCode
+                    }
                     $tmpObj = New-Object psobject | Select-Object $propertyList
                     $tmpObj.CheckType = 'CHAlertState'
-                    $tmpObj.Name = $alertState.Name
+                    $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertState.Name, $sourceSiteCode
                     $tmpObj.SystemName = $systemName
                     $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                     $tmpObj.SiteCode = $alertState.SourceSiteCode
                     $tmpObj.Description = ""
-                    $tmpObj.PossibleActions = 'Open the ConfigMgr console and go to: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                    $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
                     [void]$outObj.Add($tmpObj) 
                 }
             }
             catch 
             {
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'CHAlertState'
-                $tmpObj.Status = 'Error'
-                $tmpObj.Description = "$($error[0].Exception)"
-                [void]$outObj.Add($tmpObj)
+                $tmpScriptStateObj.Status = 'Error'
+                $tmpScriptStateObj.Description = "$($error[0].Exception)"
             }
             #endregion
         } # END If (-NOT ($ProviderInfo))
@@ -557,36 +595,51 @@ switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
     
     0 ## PASSIVE NODE FOUND. Nothing to do.
     {
-        $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = 'Script'
-        $tmpObj.Status = 'Ok'
-        $tmpObj.Description = "Passive node found. No checks will run."
-        [void]$outObj.Add($tmpObj)     
+        $tmpScriptStateObj.Description = "Passive node found. No checks will run."
     }
 
     Default ## NO STATE FOUND
     {
-        $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = 'Script'
-        $tmpObj.Status = 'Error'
-        $tmpObj.Description = "Error: No ConfigMgr Site System found"
-        [void]$outObj.Add($tmpObj) 
-        # No state found. Either no ConfigMgr Site System or script error
+        $tmpScriptStateObj.Status = 'Error'
+        $tmpScriptStateObj.Description = "Error: No ConfigMgr Site System found"
     }
 }
 
-if ($outObj.Count -eq 0)
-{
-    $tmpObj = New-Object psobject | Select-Object $propertyList
-    $tmpObj.CheckType = 'Script'
-    $tmpObj.Status = 'Ok'
-    $tmpObj.Description = "No errors found!"
-    [void]$outObj.Add($tmpObj) 
-}
-
-
+# Adding overall script state to list
+[void]$outObj.Add($tmpScriptStateObj)
 #endregion
 
+#region cache state
+# In case we need to know witch components are already in error state
+if ($CacheState)
+{
+    # Get cache file
+    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    if (Test-Path $cacheFileName)
+    {
+        # Found a file lets load it
+        $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
+
+        foreach ($cacheItem in $cacheFileObject)
+        {
+            if(-NOT($outObj.Where({$_.Name -eq $cacheItem.Name})))
+            {
+                Write-Host '----'
+                $cacheItem.Name
+                # Item not in the list of active errors anymore
+                # Lets copy the item and chnage the state to OK
+                $cacheItem.Status = 'Ok'
+                [void]$outObj.add($cacheItem)
+            }
+        }
+    }
+
+    # Lets output the current state for future runtimes 
+    # BUT only error states
+    $outObj | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
+    
+}
+#endregion
 
 #region Output
 switch ($OutputMode) 
@@ -609,7 +662,7 @@ switch ($OutputMode)
         .$PSScriptRoot\Send-CustomMonitoringMail.ps1
 
         # If there are bad results, lets change the subject of the mail
-        if($outObj.Where({$_.Status -ine 'OK'})) ## SOMETHING WRONG HERE
+        if($outObj.Where({$_.Status -ine 'OK'})) 
         {
             $mailSubjectResultString = 'Failed'
         }

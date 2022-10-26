@@ -194,8 +194,6 @@ Function ConvertTo-CustomMonitoringObject
     }
     Process
     {
-
-
         switch ($InputType)
         {
             "ConfigMgrLogState" 
@@ -232,7 +230,6 @@ Function ConvertTo-CustomMonitoringObject
                     $tmpResultObject.Debug = ''
                     [void]$resultsObject.Add($tmpResultObject)
                 }
-
             } 
             "ConfigMgrComponentState" 
             {
@@ -318,10 +315,7 @@ Function ConvertTo-CustomMonitoringObject
                 $tmpResultObject.Debug = $InputObject.Debug
                 [void]$resultsObject.Add($tmpResultObject)                
             }
-        }
-
-
-           
+        }          
     }
     End
     {
