@@ -1144,7 +1144,7 @@
             "Protocol": "TCP",
             "Port": "445",
             "Program": "",
-            "Description": "WSUSCustom"    
+            "Description": "SMB"    
         },
         {
             "Name": "PXE",
