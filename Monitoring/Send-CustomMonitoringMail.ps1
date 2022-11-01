@@ -94,7 +94,7 @@ Function Send-CustomMonitoringMail
 
     If([string]::IsNullOrEmpty($LogPath))
     {
-        $LogPath = '{0}\{1}.log' -f ($PSScriptRoot), ($MyInvocation.MyCommand)
+        $LogPath = '{0}\{1}.log' -f $PSScriptRoot, $MyInvocation.MyCommand.Name
     }
 
 $cssForHTMLMail = @'

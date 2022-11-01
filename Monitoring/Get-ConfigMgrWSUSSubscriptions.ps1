@@ -103,7 +103,7 @@ param
 
 #region Initializing
 $scriptPath = $PSScriptRoot
-$scriptName = ($MyInvocation.MyCommand)
+$scriptName = $MyInvocation.MyCommand.Name
 $jsonFileName = '{0}\{1}_{2}.json' -f $scriptPath,(Get-Date -Format 'yyyyMMdd-hhmm'), $scriptName
 #endregion
 

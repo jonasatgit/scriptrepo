@@ -15,6 +15,7 @@
 <#
 .Synopsis
     Backup-ConfigMgrData is designed to backup additional ConfigMgr data
+
 .DESCRIPTION
     Backup-ConfigMgrData is designed to backup additional ConfigMgr data.
     It can either run after the ConfigMgr backup task or standalone with the backup task disabled.
@@ -56,135 +57,132 @@
     
 .EXAMPLE
     .\Backup-ConfigMgrData.ps1
+    
 .LINK
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20220711'
+$scriptVersion = '20221101'
 
 # Base variables
-[string]$scriptPath = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
+[string]$scriptPath = $PSScriptRoot
 
-[string]$configXMLFileName = "$($MyInvocation.MyCommand.Name).xml"
-[string]$configXMLFilePath = "$scriptPath\$configXMLFileName"
+[string]$configXMLFileName = "{0}.xml" -f ($MyInvocation.MyCommand.Name)
+[string]$configXMLFilePath = "{0}\{1}" -f $scriptPath, $configXMLFileName
 
-[string]$scriptLogFileName = "$($MyInvocation.MyCommand.Name).log"
-[string]$global:logFile = "$scriptPath\$scriptLogFileName"
+[string]$global:logFile = "{0}\{1}.log" -f $scriptPath, ($MyInvocation.MyCommand.Name)
 [string]$global:scriptName = $MyInvocation.MyCommand.Name
+[string]$logFilePath = $PSScriptRoot
 
 
 
 #region Write-CMTraceLog
 <#
 .Synopsis
-    Will write cmtrace readable log files. Can either just write to the console, just to the logfile or write to both. 
+    Will write cmtrace readable log files. 
 .EXAMPLE
-    Write-CMTraceLog -Message "Starting script" -Path "C:\temp\logfile.log"
+    Write-CMTraceLog -Message "Starting script" -LogFile "C:\temp\logfile.log"
 .EXAMPLE
-    Write-CMTraceLog -Message "Starting script" -Path "C:\temp\logfile.log" -OutputType ConsoleOnly
+    Write-CMTraceLog -Message "Starting script" -LogFile "C:\temp\logfile.log" -OutputType ConsoleOnly
 .EXAMPLE
-    Write-CMTraceLog -Message "Script has failed" -Path "C:\temp\logfile.log" -Type Error
+    Write-CMTraceLog -Message "Script has failed" -LogFile "C:\temp\logfile.log" -EventID 30 -EventlogName "Application" -WriteToEventLog
 .PARAMETER Message
     Text to be logged
 .PARAMETER Type
     The type of message to be logged. Either Info, Warning or Error
-.PARAMETER Path
+.PARAMETER LogFile
     Path to the logfile
 .PARAMETER Component
     The name of the component logging the message
-.PARAMETER OutputType
-    Either "LogOnly", "ConsoleOnly" or "LogAndConsole" to write the message to the console, the log or both
-.PARAMETER FilesizeMB
-    Maximum filesize for the log, befor a new logfile will be created
+.PARAMETER EventlogName
+    Either "Application" or "System". Application is default. 
+.PARAMETER EventID
+    Event ID
+.PARAMETER WriteToEventLog
+    Switch parameter to write messages to the eventlog
 #>
 Function Write-CMTraceLog
 {
-        [CmdletBinding()]
-        Param
-        (
-            [Parameter(HelpMessage="Please enter a Message to Display", Mandatory=$true)]
-            [string]$Message,
-            [ValidateSet("Information", "Warning", "Error")]
-            [string]$Type = "Information",
-            [Parameter(HelpMessage="Please enter a valid Log-Path")]
-            [string]$Path = $global:logFile,
-            [string]$Component = $global:scriptName,
-            [ValidateSet("LogOnly", "ConsoleOnly", "LogAndConsole")]
-            [string]$OutputType = "LogAndConsole",
-            [uInt32]$FilesizeMB = 5,
-            [switch]$WriteToEventLog,
-            [uInt32]$EventID = 10,
-            [ValidateSet("Application","System")]
-            [String]$EventlogName="Application"
-        )
 
-        $tmpLocation = (Get-Location).Path
-        Set-Location 'C:'
-        Switch($Type)
+    #Define and validate parameters
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile = $global:LogFile,
+
+        #The information to log
+        [parameter(Mandatory=$True)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component = $global:Component,
+
+        #The severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes is variable in string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity = 'Information',
+
+        #The Eventlog Name
+        [parameter(Mandatory=$False)]
+        [ValidateSet("Application","System")]
+        [String]$EventlogName="Application",
+
+        #EventID
+        [parameter(Mandatory=$false)]
+        [Single]$EventID=1,
+
+        #Write to eventlog
+        [parameter(Mandatory=$false)]
+        [Switch]$WriteToEventLog
+    )
+
+    if ($WriteToEventLog)
+    {
+        # check if eventsource exists otherwise create eventsource
+        if ([System.Diagnostics.EventLog]::SourceExists($Component) -eq $false)
         {
-            "Information"    {$severity = 1;$color = [ConsoleColor]::Green;  break}
-            "Warning" {$severity = 2;$color = [ConsoleColor]::Yellow; break}
-            "Error"   {$severity = 3;$color = [ConsoleColor]::Red}
+            try
+            {
+                [System.Diagnostics.EventLog]::CreateEventSource($Component, $EventlogName )
+            }
+            catch
+            {
+                exit 2
+            }
+         }
+        Write-EventLog -LogName $EventlogName -Source $Component -EntryType $Severity -EventID $EventID -Message $Message
+    }
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity) 
+        { 
+            "Information" {$cmSeverity=1} 
+            "Warning" {$cmSeverity=2} 
+            "Error" {$cmSeverity=3} 
         }
 
-        if ($WriteToEventLog)
-        {
-            if (-NOT ($global:EventSourceExists))
-            {
-                # check if eventsource exists otherwise create eventsource
-                if(-NOT ([System.Diagnostics.EventLog]::SourceExists($Component)))
-                {
-                    try
-                    {
-                        [System.Diagnostics.EventLog]::CreateEventSource($Component, $EventlogName)
-                    }
-                    catch
-                    {
-                        exit 2
-                    }
-                    $global:EventSourceExists = $true
-                }
-                else 
-                {
-                    $global:EventSourceExists = $true
-                }
-            }
-            else 
-            {
-          
-                Write-EventLog -LogName $EventlogName -Source $Component -EntryType $Type -EventID $EventID -Message $Message -ErrorAction SilentlyContinue
-            }
-        }
+    #Obtain UTC offset
+    $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime 
+    $DateTime.SetVarDate($(Get-Date))
+    $UtcValue = $DateTime.Value
+    $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
 
-        $LogTime = (Get-Date -Format HH:mm:ss.fff).ToString()
-        $LogDate = (Get-Date -Format MM-dd-yyyy).ToString()
-        $LogTimeZoneBias = [System.TimeZone]::CurrentTimeZone.GetUtcOffset([datetime]::Now).TotalMinutes
-        $LogTimePlusBias = "{0}{1}" -f $LogTime,$LogTimeZoneBias
-        $output = "<![LOG[$Message]LOG]!>" + "<time=`"$LogTimePlusBias`" "+ "date=`"$LogDate`" " + "component=`"$Component`" " + "context=`"`" " +"type=`"$severity`" " + "thread=`"$PID`" " + "file=`"$(Split-Path $PSCommandPath -Leaf)`">"
-        $consoleOutput = "{0} - {1} : {2}" -f (Get-Date -Format "MM.dd.yyyy HH:mm:ss"), $Type.ToUpper(),$Message
-        
-        If (($OutputType -eq "ConsoleOnly") -or ($OutputType -eq "LogAndConsole"))
-        {
-            Write-Host $ConsoleOutPut -ForegroundColor $color
-        }
-        
-        If (($OutputType -eq "LogOnly") -or ($OutputType -eq "LogAndConsole"))
-        {
-            If (Test-Path $Path)
-            {
-                If ((Get-Item -Path $Path).Length -ge $FilesizeMB * 1MB)
-                {
-                    $newName = $Path -replace ".log" , "_$(Get-date -Format "yyyy_MM_dd").log"
-                    If(Test-Path $newName)
-                    {
-                        Remove-Item -Path $newName
-                    }
-                    Rename-Item -Path $Path -NewName $newName 
-                }
-            }
-            $output | Out-File  -FilePath $Path -Encoding utf8 -Append -NoClobber
-        }
-        Set-Location $tmpLocation
+    #Create the line to be logged
+    $LogLine =  "<![LOG[$Message]LOG]!>" +
+                "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +
+                "date=`"$(Get-Date -Format M-d-yyyy)`" " +
+                "component=`"$Component`" " +
+                "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +
+                "type=`"$cmSeverity`" " +
+                "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " +
+                "file=`"`">"
+
+    #Write the line to the passed log file
+    $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
 }
 #endregion
 
@@ -678,7 +676,21 @@ function Get-ConfigMgrSiteInfo
 
 
 #region Rollover-Logfile
-#-----------------------------------------
+<# 
+.Synopsis
+    Function Rollover-Logfile
+
+.DESCRIPTION
+    Will rename a logfile from ".log" to ".lo_". 
+    Old ".lo_" files will be deleted
+
+.PARAMETER MaxFileSizeKB
+    Maximum file size in KB in order to determine if a logfile needs to be rolled over or not.
+    Default value is 1024 KB.
+
+.EXAMPLE
+    Rollover-Logfile -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
+#>
 Function Rollover-Logfile
 {
 #Validate path and write log or eventlog
@@ -689,28 +701,34 @@ Param(
       [string]$Logfile,
       
       #max Size in KB
-      [parameter(Mandatory=$True)]
+      [parameter(Mandatory=$False)]
       [int]$MaxFileSizeKB = 1024
     )
 
     if (Test-Path $Logfile)
     {
         $getLogfile = Get-Item $Logfile
-        $logfileSize = $getLogfile.Length/1024
-        $newName = "{0}.lo_" -f $getLogfile.BaseName
-        $newLogFile = "{0}\{1}" -f $getLogfile.Directory, $newName
-
-        if ($logfileSize -gt $MaxFileSizeKB)
+        if ($getLogfile.PSIsContainer)
         {
-            if(Test-Path $newLogFile)
+            # Just a folder. Skip actions
+        }
+        else 
+        {
+            $logfileSize = $getLogfile.Length/1024
+            $newName = "{0}.lo_" -f $getLogfile.BaseName
+            $newLogFile = "{0}\{1}" -f ($getLogfile.FullName | Split-Path -Parent), $newName
+
+            if ($logfileSize -gt $MaxFileSizeKB)
             {
-                #need to delete old file first
-                Remove-Item -Path $newLogFile -Force -ErrorAction SilentlyContinue
+                if(Test-Path $newLogFile)
+                {
+                    #need to delete old file first
+                    Remove-Item -Path $newLogFile -Force -ErrorAction SilentlyContinue
+                }
+                Rename-Item -Path ($getLogfile.FullName) -NewName $newName -Force -ErrorAction SilentlyContinue
             }
-            Rename-Item -Path $LogfilePath -NewName $newName -Force -ErrorAction SilentlyContinue
         }
     }
-
 }
 #-----------------------------------------
 #endregion
@@ -1417,8 +1435,6 @@ try
     [string[]]$customFoldersToBackup = $xmlConfig.sccmbackup.CustomFoldersToBackup.Folder
     [string]$custombackupFolderName = $xmlConfig.sccmbackup.CustomFolderBackupName
     [string]$global:eventSource = $xmlConfig.sccmbackup.EventSource
-    #[string]$logFilePath = $xmlConfig.sccmbackup.LogFilePath
-    #[string]$global:logFile = "$logFilePath\$scriptLogFileName"
     [string]$CheckSQLFiles = $xmlConfig.sccmbackup.CheckSQLFiles
     [string]$zipCustomBackup = $xmlConfig.sccmbackup.ZipCustomBackup
     [string]$tempZipFileFolder = $xmlConfig.sccmbackup.TempZipFileFolder
@@ -1445,13 +1461,11 @@ catch
 #region Step 2
 #-----------------------------------------
 # Rollover Logfile and Start Logging in File
-
-$global:logFile = "{0}\{1}.log" -f $PSScriptRoot, $MyInvocation.MyCommand
-$logFilePath = $PSScriptRoot
-Write-Host '-----------'
-$global:logFile
-Write-Host '-----------'
-Rollover-Logfile -Logfile $logFile -MaxFileSizeKB $maxLogFileSizeKB
+if (-NOT($maxLogFileSizeKB))
+{
+    $maxLogFileSizeKB = 2048
+}
+Rollover-Logfile -Logfile $global:logFile -MaxFileSizeKB $maxLogFileSizeKB
 
 
 #$scriptVersion

@@ -790,7 +790,7 @@ if (-NOT ($ShowConfig -or $ShowCommands -or $ShowGPOCommands -or $AddRulesLocall
     $ShowCommands = $true    
 }
 
-[string]$scriptName = $MyInvocation.MyCommand -replace '.ps1', ''
+[string]$scriptName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
 [string]$exportFileName = '{0}\{1}-Config-{2}.json' -f $PSScriptRoot, $scriptName, ((Get-Date -Format u) -replace '-|:|Z' -replace ' ', '_')
 
 if ($ExportConfigMgrSystemRoleInformation)
