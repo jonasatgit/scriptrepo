@@ -57,7 +57,7 @@
     
 .EXAMPLE
     .\Backup-ConfigMgrData.ps1
-    
+
 .LINK
     https://github.com/jonasatgit/scriptrepo
 
@@ -72,6 +72,7 @@ $scriptVersion = '20221101'
 
 [string]$global:logFile = "{0}\{1}.log" -f $scriptPath, ($MyInvocation.MyCommand.Name)
 [string]$global:scriptName = $MyInvocation.MyCommand.Name
+[string]$global:Component = "ConfigMgrBackupScript"
 [string]$logFilePath = $PSScriptRoot
 
 
@@ -123,7 +124,7 @@ Function Write-CMTraceLog
         #The severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes is variable in string
         [parameter(Mandatory=$false)]
         [ValidateSet("Information","Warning","Error")]
-        [String]$Severity = 'Information',
+        [String]$Type = 'Information',
 
         #The Eventlog Name
         [parameter(Mandatory=$False)]
@@ -153,12 +154,12 @@ Function Write-CMTraceLog
                 exit 2
             }
          }
-        Write-EventLog -LogName $EventlogName -Source $Component -EntryType $Severity -EventID $EventID -Message $Message
+        Write-EventLog -LogName $EventlogName -Source $Component -EntryType $Type -EventID $EventID -Message $Message
     }
 
     # save severity in single for cmtrace severity
     [single]$cmSeverity=1
-    switch ($Severity) 
+    switch ($Type) 
         { 
             "Information" {$cmSeverity=1} 
             "Warning" {$cmSeverity=2} 
