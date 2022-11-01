@@ -133,7 +133,7 @@ Function Write-CMTraceLog
 
         #EventID
         [parameter(Mandatory=$false)]
-        [Single]$EventID=1,
+        [Single]$EventID=10,
 
         #Write to eventlog
         [parameter(Mandatory=$false)]
@@ -456,7 +456,7 @@ process
                         Write-CMTraceLog -Message "Stop script!" -WriteToEventLog
                         exit 2
                     }
-                    Write-CMTraceLog -Message "Delete successful! `"$($folderName.Fullname)`"" -EventlogName Application -EventID 10 -WriteToEventLog
+                    Write-CMTraceLog -Message "Delete successful! `"$($folderName.Fullname)`"" -WriteToEventLog
                 }            
             }
         }
