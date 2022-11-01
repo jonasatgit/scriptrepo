@@ -499,13 +499,12 @@ $propertyList += 'IntervalWeek'
 $propertyList += 'SuccessString'
 $propertyList += 'LineNumber'
 $propertyList += 'Line'
-$propertyList += 'Thread'
+#$propertyList += 'Thread'
 $propertyList += 'TimeZoneOffset'
 $propertyList += 'Description'
 $propertyList += 'NodeType'
 $propertyList += 'RunOnSystemList'
 
-$resultsObject = New-Object System.Collections.ArrayList
 $logEntrySearchResultList = New-Object System.Collections.ArrayList
 
 foreach ($logEntryItem in $logEntryList)
@@ -533,7 +532,7 @@ foreach ($logEntryItem in $logEntryList)
     $tmpLogEntryObject.SuccessString = $logEntryItem.SuccessString
     $tmpLogEntryObject.LineNumber = 0 # Set to zero to force int format
     $tmpLogEntryObject.Line = "" # Set to nothing to force string format
-    $tmpLogEntryObject.Thread = "" # Set to nothing to force string format
+    #$tmpLogEntryObject.Thread = "" # Set to nothing to force string format
     $tmpLogEntryObject.TimeZoneOffset = "" # Set to nothing to force string format
     $tmpLogEntryObject.Description = $logEntryItem.Description
     $tmpLogEntryObject.NodeType = "" # Set to nothing to force string format
@@ -730,13 +729,13 @@ foreach ($logEntryItem in $logEntryList)
                             # Parsing log line mainly to extract datetime by looking for different datetime strings
                         
                             # Log line example: 
-                            # <04-04-2022 02:16:54.419+420><thread=20216"
+                            # <04-04-2022 02:16:54.419+420>"
                             $Matches = $null # resetting matches
-                            $null = $resultLine.Line -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<thread>thread=\d*)"
+                            $null = $resultLine.Line -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*)"
                             if ($Matches)
                             {
                                 Write-Verbose "$("{0,-35}-> DateTime extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
-                                $tmpLogLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
+                                #$tmpLogLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
                             
                                 # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
                                 $datetimeSplit = (($Matches.datetime) -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
@@ -746,24 +745,38 @@ foreach ($logEntryItem in $logEntryList)
                                 $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $datetimeSplit[1], $datetimeSplit[2]
                             }
                             
-                            if (-NOT ($tmpLogLineObject.DateTime))
+                            if (-NOT ($tmpLogLineObject.LogDateTime))
                             {
                                 # Log line example:
                                 # "<time="05:37:21.726-420" date="06-14-2022" component="Backup-ConfigMgrData.ps1" context="" type="1" thread="2316" file="Backup-ConfigMgrData.ps1">"
                                 $Matches = $null # resetting matches
-                                $null = $resultLine.Line -match '(?<time>time="\d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<date>date="\d{2}-\d{2}-\d{4}).*(?<thread>thread="\d*)'
+                                $null = $resultLine.Line -match '(?<time>time="\d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<date>date="\d{1,2}-\d{1,2}-\d{4})'
                                 if ($Matches)
                                 {
                                     Write-Verbose "$("{0,-35}-> Date and Time seperatly extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
-                                    $tmpLogLineObject.Thread = (($Matches.thread) -replace '(thread=")', '')
+                                    #$tmpLogLineObject.Thread = (($Matches.thread) -replace '(thread=")', '')
                                 
                                     # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
                                     $timeSplit = (($Matches.time -replace '(Time=")', '') -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
                                     $datetimeString = "{0} {1}" -f ($Matches.date -replace '(Date=")', ''), $timeSplit[0]
-                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
-                                    
+                                    if ($datetimeString -match '\d{1}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}')
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-dd-yyyy HH:mm:ss', $null)
+                                    }
+                                    elseif ($datetimeString -match '\d{2}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}') 
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-d-yyyy HH:mm:ss', $null)
+                                    }
+                                    elseif ($datetimeString -match '\d{1}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}') 
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-d-yyyy HH:mm:ss', $null)
+                                    }
+                                    elseif ($datetimeString -match '\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}') 
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
+                                    }
                                     # adding timezoneoffset $timeSplit[1] = "+ or -", $timeSplit[2] = minutes
-                                    $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $timeSplit[1], $timeSplit[2]
+                                    $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $timeSplit[2], $timeSplit[3]
                                 }
                             }
 
