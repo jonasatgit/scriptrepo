@@ -901,14 +901,14 @@ switch ($OutputMode)
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
 
-            Send-CustomMonitoringMail @$paramsplatting -HTMLFileOnly -HighPrio            
+            Send-CustomMonitoringMail @$paramsplatting -HighPrio            
         }
         else 
         {
             $MailSubject = 'OK: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
 
-            Send-CustomMonitoringMail @$paramsplatting -HTMLFileOnly
+            Send-CustomMonitoringMail @$paramsplatting
         }
     }
 }
