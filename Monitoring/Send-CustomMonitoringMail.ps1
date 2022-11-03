@@ -89,7 +89,10 @@ Function Send-CustomMonitoringMail
         [Parameter(Mandatory=$false)]
         [switch]$HTMLFileOnly,
         [Parameter(Mandatory=$false)]
-        [switch]$LogActions       
+        [switch]$LogActions,
+        [Parameter(Mandatory=$false)]
+        [switch]$HighPrio          
+
     )
 
     If([string]::IsNullOrEmpty($LogPath))
@@ -211,6 +214,11 @@ span {
             if ($MailCCList)
             {
                 $paramsplatting.add("Cc", $MailCCList)
+            }
+
+            if ($HighPrio)
+            {
+                $paramsplatting.add("Priority", "High")
             }
 
             Send-MailMessage @paramsplatting -BodyAsHtml -ErrorAction Stop

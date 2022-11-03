@@ -462,21 +462,29 @@ switch ($OutputMode)
         # Reference email script
         .$PSScriptRoot\Send-CustomMonitoringMail.ps1
 
+        # Adding the scriptname to the subject
+        $subjectTypeName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
+
+        $paramsplatting = @{
+            MailMessageObject = $resultsObject
+            MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
+        }  
+        
         # If there are bad results, lets change the subject of the mail
-        if($resultsObject.Where({$_.Status -ne 0}))
+        if ($resultsObject.Where({$_.Status -ne 0}))
         {
-            $mailSubjectResultString = 'OK'
+            $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
+            $paramsplatting.add("MailSubject", $MailSubject)
+
+            Send-CustomMonitoringMail @$paramsplatting -HTMLFileOnly -HighPrio            
         }
-        else
+        else 
         {
-            $mailSubjectResultString = 'Failed'
+            $MailSubject = 'OK: {0} state from: {1}' -f $subjectTypeName, $systemName
+            $paramsplatting.add("MailSubject", $MailSubject)
+
+            Send-CustomMonitoringMail @$paramsplatting -HTMLFileOnly
         }
-
-        $MailSubject = '{0}: Certificate state from: {1}' -f $mailSubjectResultString, $systemName
-        $MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
-
-        Send-CustomMonitoringMail -MailMessageObject $outObj -MailSubject $MailSubject -MailInfotext $MailInfotext -HTMLFileOnly -LogActions
-
     }
 }
 #endregion
