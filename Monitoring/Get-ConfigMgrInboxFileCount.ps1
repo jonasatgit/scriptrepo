@@ -66,7 +66,9 @@ param
 (
     [Parameter(Mandatory=$false)]
     [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
-    [String]$OutputMode = "PSObject"
+    [String]$OutputMode = "PSObject",
+    [Parameter(Mandatory=$false)]
+    [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!'
 )
 
 #region admin rights

@@ -82,7 +82,9 @@ param
     [Parameter(Mandatory=$false)]
     [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
     [Parameter(Mandatory=$false)]
-    [int]$MinValidDays = 30
+    [int]$MinValidDays = 30,
+    [Parameter(Mandatory=$false)]
+    [String]$MailInfotext = 'Status about monitored certificates. This email is sent every day!'
 )
 
 #region admin rights

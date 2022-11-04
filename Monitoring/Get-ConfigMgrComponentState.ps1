@@ -72,7 +72,7 @@ param
     [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
     [String]$OutputMode = "PRTGString",
     [Parameter(Mandatory=$false)]
-    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
+    [String]$MailInfotext = 'Status about monitored ConfigMgr components. This email is sent every day!',
     [Parameter(Mandatory=$false)]
     [bool]$CacheState = $false,
     [Parameter(Mandatory=$false)]
