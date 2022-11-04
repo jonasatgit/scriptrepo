@@ -29,8 +29,17 @@
     Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER OutputMode
-    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    Parameter to be able to output the results in a GridView, special JSON format, special JSONCompressed format,
+    a simple PowerShell objekt PSObject or via HTMLMail.
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
+
+.PARAMETER CacheState
+    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+    The file will be stored next to the script or a path set via parameter "CachePath"
+    The filename will look like this: CACHE_[name-of-script.ps1].json
+
+.PARAMETER CachePath
+    Path to store the JSON cache file. Default value is root path of script. 
 
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
@@ -60,8 +69,8 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
-    [String]$OutputMode = "GridView",
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
+    [String]$OutputMode = "PRTGString",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
     [Parameter(Mandatory=$false)]
@@ -670,7 +679,7 @@ switch ($OutputMode)
         }  
         
         # If there are bad results, lets change the subject of the mail
-        f($outObj.Where({$_.Status -ine 'OK'})) 
+        if ($outObj.Where({$_.Status -ine 'OK'})) 
         {
             $MailSubject = 'FAILED: {0} from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -683,6 +692,23 @@ switch ($OutputMode)
             $paramsplatting.add("MailSubject", $MailSubject)
 
             Send-CustomMonitoringMail @$paramsplatting
+        }
+    }
+    "PSObject"
+    {
+        $outObj
+    }
+    "PRTGString"
+    {
+        $badResults = $outObj.Where({$_.Status -ine 'OK'}) 
+        if ($badResults)
+        {
+            $resultString = '{0}:ConfigMgr Components in failure state' -f $badResults.count
+            Write-Output $resultString
+        }
+        else
+        {
+            Write-Output "0:No active ConfigMgr component alerts"
         }
     }
 }

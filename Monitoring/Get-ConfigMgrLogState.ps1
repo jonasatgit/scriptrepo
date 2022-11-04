@@ -47,8 +47,17 @@
     .\Get-ConfigMgrLogState
 
 .PARAMETER OutputMode
-    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    Parameter to be able to output the results in a GridView, special JSON format, special JSONCompressed format,
+    a simple PowerShell objekt PSObject or via HTMLMail.
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
+
+.PARAMETER CacheState
+    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+    The file will be stored next to the script or a path set via parameter "CachePath"
+    The filename will look like this: CACHE_[name-of-script.ps1].json
+
+.PARAMETER CachePath
+    Path to store the JSON cache file. Default value is root path of script. 
 
 .PARAMETER ProbeTime 
     Datetime parameter to be able to set a specific datetime to simulate a script run in the past or future. Example value: (Get-Date('2022-06-14 01:00'))
@@ -79,8 +88,8 @@ param
     [parameter(Mandatory=$false,ValueFromPipeline=$false)]
     [datetime]$ProbeTime = (get-date), # Testing (Get-Date('2022-06-14 01:00'))
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
-    [String]$OutputMode = "GridView",
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
+    [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
 )
@@ -909,6 +918,23 @@ switch ($OutputMode)
             $paramsplatting.add("MailSubject", $MailSubject)
 
             Send-CustomMonitoringMail @$paramsplatting
+        }
+    }
+    "PSObject"
+    {
+        $returnObj   
+    }
+    "PRTGString"
+    {
+        $badResults = $returnObj.Where({$_.State -ieq 'NOK'})
+        if ($badResults)
+        {
+            $resultString = '{0}:ConfigMgr log monitor failures' -f $badResults.count
+            Write-Output $resultString
+        }
+        else
+        {
+            Write-Output "0:No ConfigMgr log monitor failures"
         }
     }
 }

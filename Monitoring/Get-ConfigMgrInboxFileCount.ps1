@@ -24,8 +24,17 @@
     Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER OutputMode
-    Parameter to be able to output the results in a GridView, JSON, JSONCompressed or via HTMLMail.
+    Parameter to be able to output the results in a GridView, special JSON format, special JSONCompressed format,
+    a simple PowerShell objekt PSObject or via HTMLMail.
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
+
+.PARAMETER CacheState
+    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+    The file will be stored next to the script or a path set via parameter "CachePath"
+    The filename will look like this: CACHE_[name-of-script.ps1].json
+
+.PARAMETER CachePath
+    Path to store the JSON cache file. Default value is root path of script. 
 
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
@@ -56,8 +65,8 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail")]
-    [String]$OutputMode = "GridView"
+    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
+    [String]$OutputMode = "PSObject"
 )
 
 #region admin rights
@@ -424,6 +433,23 @@ switch ($OutputMode)
             $paramsplatting.add("MailSubject", $MailSubject)
 
             Send-CustomMonitoringMail @$paramsplatting
+        }
+    }
+    "PSObject"
+    {
+        $resultsObject
+    }
+    "PRTGString"
+    {
+        $badResults = $resultsObject.Where({$_.Status -ne 0})
+        if ($badResults)
+        {
+            $resultString = '{0}:ConfigMgr file inbox limit reached' -f $badResults.count
+            Write-Output $resultString
+        }
+        else
+        {
+            Write-Output "0:No ConfigMgr file inboxes are fine"
         }
     }
 }
