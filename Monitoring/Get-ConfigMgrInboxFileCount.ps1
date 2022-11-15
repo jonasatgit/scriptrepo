@@ -17,10 +17,12 @@
     Script to monitor ConfigMgr/MECM performance counter
     
 .DESCRIPTION
-    The script reads from an in script hashtable called "$referenceData" to validate a list of specific performance counter
+    The script reads from an in script JSON file called $referenceDataJSON to validate a list of specific performance counter
     The inbox perf counter refresh intervall is 15 minutes. It therefore makes no sense to validate a counter more often. 
     Get the full list of available inbox perf counter via the following command:
+    
     Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
+    
     Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER OutputMode
