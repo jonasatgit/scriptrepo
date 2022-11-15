@@ -65,10 +65,17 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
-    [String]$OutputMode = "PSObject",
+    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [String]$OutputMode = "LeutekJSON",
     [Parameter(Mandatory=$false)]
-    [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!'
+    [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!',
+    [Parameter(Mandatory=$false)]
+    [bool]$CacheState = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(0,60)]
+    [int]$OutputTestData=1
 )
 
 #region admin rights
@@ -84,46 +91,176 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 #region reference data
 # Get the full list of available inbox perf counter via the following command:
 # Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
+# Usinh here string and embedded JSON to not have an external dependency
+# Could also easily be moved outside the script and stored next to it as JSON
+$referenceDataJSON = @'
+{
+    "SMSInboxPerfData": [
+            {
+                "CounterName": "hman.box>ForwardingMsg",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "schedule.box>requests",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "dataldr.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "sinv.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "despoolr.box>receive",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "replmgr.box>incoming",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "ddm.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "rcm.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "bgb.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },      
+            {
+                "CounterName": "bgb.box>bad",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "COLLEVAL.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "COLLEVAL.box>RETRY",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "offermgr.box>INCOMING",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },       
+            {
+                "CounterName": "auth>ddm.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>ddm.box>userddrsonly",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>ddm.box>regreq",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>sinv.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>dataldr.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "statmgr.box>statmsgs",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "swmproc.box>usage",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "distmgr.box>incoming",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>statesys.box>incoming",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "polreq.box",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>statesys.box>incoming>low",
+                "MaxValue": 500,
+                "SkipCheck": false
+            },
+            {
+                "CounterName": "auth>statesys.box>incoming>high",
+                "MaxValue": 2000,
+                "SkipCheck": false
+            },   
+            {
+                "CounterName": "OGprocess.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },   
+            {
+                "CounterName": "businessappprocess.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },   
+            {
+                "CounterName": "objmgr.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },   
+            {
+                "CounterName": "notictrl.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },             
+            {
+                "CounterName": "aikbmgr.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },
+            {
+                "CounterName": "AIKbMgr.box>RETRY",
+                "MaxValue": 500,
+                "SkipCheck": true
+            },   
+            {
+                "CounterName": "schedule.box>outboxes>LAN",
+                "MaxValue": 500,
+                "SkipCheck": true
+            } 
+    ]
+}
+'@
 
-# String "MaxValue=" just for readability. Will be removed later.
-$referenceData = @{}                                                                                                                                                                                                           
-$referenceData.add('hman.box>ForwardingMsg','MaxValue=500')                                                                                                                                                                                         
-#$referenceData.add('schedule.box>outboxes>LAN ','MaxValue=500')                                                                                                                                                                                      
-$referenceData.add('schedule.box>requests','MaxValue=500')                                                                                                                                                                                         
-$referenceData.add('dataldr.box','MaxValue=500')                                                                                                                                                                                                      
-$referenceData.add('sinv.box','MaxValue=500')                                                                                                                                                                                                         
-$referenceData.add('despoolr.box>receive','MaxValue=500')                                                                                                                                                                                             
-$referenceData.add('replmgr.box>incoming','MaxValue=500')                                                                                                                                                                                             
-$referenceData.add('ddm.box','MaxValue=500')                                                                                                                                                                                                          
-$referenceData.add('rcm.box','MaxValue=500')                                                                                                                                                                                                          
-$referenceData.add('bgb.box','MaxValue=500')                                                                                                                                                                                                          
-$referenceData.add('bgb.box>bad','MaxValue=500')                                                                                                                                                                                                      
-#$referenceData.add('notictrl.box','MaxValue=500')                                                                                                                                                                                                     
-#$referenceData.add('AIKbMgr.box>RETRY','MaxValue=500')                                                                                                                                                                                                
-$referenceData.add('COLLEVAL.box','MaxValue=500')                                                                                                                                                                                                     
-#$referenceData.add('amtproxymgr.box>disc.box','MaxValue=500')                                                                                                                                                                                         
-#$referenceData.add('amtproxymgr.box>om.box','MaxValue=500')                                                                                                                                                                                           
-#$referenceData.add('amtproxymgr.box>wol.box','MaxValue=500')                                                                                                                                                                                          
-#$referenceData.add('amtproxymgr.box>prov.box','MaxValue=500')                                                                                                                                                                                         
-$referenceData.add('COLLEVAL.box>RETRY','MaxValue=500')                                                                                                                                                                                               
-#$referenceData.add('amtproxymgr.box>BAD','MaxValue=500')
-#$referenceData.add('amtproxymgr.box>mtn.box','MaxValue=500')                                                                                                                                                                                         
-$referenceData.add('offermgr.box>INCOMING','MaxValue=500')                                                                                                                                                                                           
-#$referenceData.add('amtproxymgr.box','MaxValue=500')                                                                                                                                                                                                 
-#$referenceData.add('aikbmgr.box','MaxValue=500')                                                                                                                                                                                                     
-$referenceData.add('auth>ddm.box','MaxValue=500')                                                                                                                                                                                                    
-$referenceData.add('auth>ddm.box>userddrsonly','MaxValue=500')                                                                                                                                                                                       
-$referenceData.add('auth>ddm.box>regreq','MaxValue=500')                                                                                                                                                                                             
-$referenceData.add('auth>sinv.box','MaxValue=500')                                                                                                                                                                                                   
-$referenceData.add('auth>dataldr.box','MaxValue=500')                                                                                                                                                                                                
-$referenceData.add('statmgr.box>statmsgs','MaxValue=500')                                                                                                                                                                                            
-$referenceData.add('swmproc.box>usage','MaxValue=500')                                                                                                                                                                                               
-$referenceData.add('distmgr.box>incoming','MaxValue=500')                                                                                                                                                                                            
-$referenceData.add('auth>statesys.box>incoming','MaxValue=500')                                                                                                                                                                                      
-$referenceData.add('polreq.box','MaxValue=500')                                                                                                                                                                                                      
-$referenceData.add('auth>statesys.box>incoming>low','MaxValue=500')                                                                                                                                                                                  
-$referenceData.add('auth>statesys.box>incoming>high','MaxValue=2000')                                                                                                                                                                                 
-#$referenceData.add('OGprocess.box','MaxValue=500')                                                                                                                                                                                                   
+$referenceDataObject = $referenceDataJSON | ConvertFrom-Json
 #endregion
 
 
@@ -162,86 +299,56 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
-        [string]$InputType,
-        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
-        [string]$SystemName
-
+        [ValidateSet("LeutekObject", "PrtgObject")]
+        [string]$OutputType
     )
 
     Begin
     {
         $resultsObject = New-Object System.Collections.ArrayList
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1    
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+                $outObject.InterfaceVersion = 1  
+            }
+            'PrtgObject'
+            {
+                $outObject = New-Object psobject | Select-Object prtg
+            }
+        }  
     }
     Process
     {
-        switch ($InputType)
+        switch ($OutputType) 
         {
-            "ConfigMgrLogState" 
-            {
-                # Format for ConfigMgrLogState
-                if($InputObject.State -ieq 'OK')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $SystemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 0
-                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject) 
-                }
-                else
-                {
-                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-                    # Remove some chars like quotation marks
-                    $shortDescription = $shortDescription -replace "\'", ""
-                   
-                    
-                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $systemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 2
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject)
-                }
-            } 
-            "ConfigMgrComponentState" 
-            {
+            'LeutekObject' 
+            {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
-                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
-                if ($InputObject.SiteCode)
+                Switch ($InputObject.CheckType)
                 {
-                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Inbox'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                    }
                 }
 
-                if ($InputObject.Name)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
-                }
-
-                if ($InputObject.Description)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
-                }
-
+                # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
                 {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
 
                 switch ($InputObject.Status) 
                 {
@@ -252,143 +359,186 @@ Function ConvertTo-CustomMonitoringObject
                 }
 
                 $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
                 $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = $outState
                 $tmpResultObject.ShortDescription = $shortDescription
                 $tmpResultObject.Debug = ''
                 [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrInboxFileCount" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrCertificateState" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)                
             }
-        }          
+            'PrtgObject'
+            {
+                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
+                $tmpResultObject.Value = 0
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Warning = 0
+                }
+                else
+                {
+                    $tmpResultObject.Warning = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
+            }
+        }                  
     }
     End
     {
-        $outObject.Results = $resultsObject
-        $outObject
-    }
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject.Results = $resultsObject
+                $outObject
+            }
+            'PrtgObject'
+            {
+                $tmpPrtgResultObject = New-Object psobject | Select-Object result
+                $tmpPrtgResultObject.result = $resultsObject
+                $outObject.prtg = $tmpPrtgResultObject
+                $outObject
+            }
+        }  
 
+    }
 }
 #endregion
 
 
 #region main perf counter logic
-$resultsObject = New-Object System.Collections.ArrayList
-
+$resultObject = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
-$propertyList += 'Name' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'Name' # Has to be a unique check name. Something like the system fqdn and the check itself
+$propertyList += 'SystemName'
+$propertyList += 'SiteCode'
 $propertyList += 'Status'
-$propertyList += 'ShortDescription'
-$propertyList += 'Debug'
+$propertyList += 'Description'
+$propertyList += 'PossibleActions'
 
-[bool]$badResult = $false
-
-$inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
-if ($inboxCounterList)
+if (-NOT($CachePath))
 {
-    
-    foreach ($inboxCounter in $inboxCounterList)
-    {
-        $counterValue = $null
-        $counterValue = $referenceData[($inboxCounter.Name)]
-        if ($counterValue)
-        {
-            # split "MaxValue=500"
-            [array]$counterMaxValue = $counterValue -split '='
+    $CachePath = $PSScriptRoot
+}
+#endregion
 
-            if ($inboxCounter.FileCurrentCount -gt $counterMaxValue[1])
-            {
-                # Temp object for results
-                # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                $tmpResultObject = New-Object psobject | Select-Object $propertyList
-                $tmpResultObject.Name = $systemName
-                $tmpResultObject.Status = 1
-                $tmpResultObject.ShortDescription = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $counterMaxValue[1]
-                $tmpResultObject.Debug = ''
-                [void]$resultsObject.Add($tmpResultObject)
-                $badResult = $true      
-            }
-        }
+#region Generic Script state object
+# We always need a generic script state object. Especially if we have no errors
+$tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
+$tmpScriptStateObj.Name = 'Script:{0}' -f $systemName 
+$tmpScriptStateObj.SystemName = $systemName
+$tmpScriptStateObj.CheckType = 'Script'
+$tmpScriptStateObj.Status = 'Ok'
+$tmpScriptStateObj.Description = "Overall state of script"
+#endregion
+if ($OutputTestData)
+{
+    # create dummy entries using the $referenceDataObject
+    $inboxCounterList = $referenceDataObject.SMSInboxPerfData | ForEach-Object {
+        $tmpObj = New-Object psobject | Select-Object Name, FileCurrentCount
+        $tmpObj.Name = $_.CounterName
+        $tmpObj.FileCurrentCount = (Get-Random -Minimum ($_.MaxValue+10) -Maximum 5000)
+        $tmpObj
     }
 
-    # validate script reference data by looking for counter in actual local counter list
-    $referenceData.GetEnumerator() | ForEach-Object {
+    $inboxCounterList = $inboxCounterList | Get-Random -Count $OutputTestData
+}
+else
+{
+    $inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
+} 
         
-        if ($inboxCounterList.name -notcontains $_.Key)
+if ($inboxCounterList)
+{
+    foreach ($inboxCounter in $inboxCounterList)
+    {
+        # Lets see if we have a definition for the counter
+        $referenceCounterObject = $referenceDataObject.SMSInboxPerfData.Where({$_.CounterName -eq $inboxCounter.Name})
+        if ($referenceCounterObject)
         {
-            # Temp object for results
-            # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-            $tmpResultObject = New-Object psobject | Select-Object $propertyList
-            $tmpResultObject.Name = $systemName
-            $tmpResultObject.Status = 1
-            $tmpResultObject.ShortDescription = 'Counter: `"{0}`" not found on machine! ' -f $_.key
-            $tmpResultObject.Debug = ''
-            [void]$resultsObject.Add($tmpResultObject) 
-            $badResult = $true 
+            if ($referenceCounterObject.SkipCheck -eq $false)
+            {
+                if ($inboxCounter.FileCurrentCount -gt $referenceCounterObject.MaxValue)
+                {
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'Inbox'
+                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = 'Warning'
+                    $tmpObj.SiteCode = ""
+                    $tmpObj.Description = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $referenceCounterObject.MaxValue
+                    $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
+                    [void]$resultObject.Add($tmpObj) 
+                }
+            }
+            else 
+            {
+                #Object is set to be skipped
+            }
+        }
+        else 
+        {
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'Inbox'
+            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
+            $tmpObj.SystemName = $systemName
+            $tmpObj.Status = 'Warning'
+            $tmpObj.SiteCode = ""
+            $tmpObj.Description = 'Local counter {0} not found in definition' -f $inboxCounter.Name
+            $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
+            [void]$resultObject.Add($tmpObj) 
         }
     }
 }
 else 
 {
-    $tmpResultObject = New-Object psobject | Select-Object $propertyList
-    $tmpResultObject.Name = $systemName
-    $tmpResultObject.Status = 2
-    $tmpResultObject.ShortDescription = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
-    $tmpResultObject.Debug = ''
-    [void]$resultsObject.Add($tmpResultObject) 
-    $badResult = $true 
+    $tmpObj = New-Object psobject | Select-Object $propertyList
+    $tmpObj.CheckType = 'Inbox'
+    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox'
+    $tmpObj.SystemName = $systemName
+    $tmpObj.Status = 'Warning'
+    $tmpObj.SiteCode = ""
+    $tmpObj.Description = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
+    $tmpObj.PossibleActions = 'Check locally or debug script'
+    [void]$resultObject.Add($tmpObj) 
 } 
+
 #endregion
 
 
-#region prepare output
-if (-NOT ($badResult))
+# Adding overall script state to list
+[void]$resultObject.Add($tmpScriptStateObj)
+#endregion
+
+#region cache state
+# In case we need to know witch components are already in error state
+if ($CacheState)
 {
-    $tmpResultObject = New-Object psobject | Select-Object $propertyList
-    $tmpResultObject.Name = $systemName
-    $tmpResultObject.Status = 0
-    $tmpResultObject.ShortDescription = 'ok'
-    $tmpResultObject.Debug = ''
-    [void]$resultsObject.Add($tmpResultObject)
+    # Get cache file
+    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    if (Test-Path $cacheFileName)
+    {
+        # Found a file lets load it
+        $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
+
+        foreach ($cacheItem in $cacheFileObject)
+        {
+            if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
+            {
+                # Item not in the list of active errors anymore
+                # Lets copy the item and change the state to OK
+                $cacheItem.Status = 'Ok'
+                $cacheItem.Description = ""
+                [void]$resultObject.add($cacheItem)
+            }
+        }
+    }
+
+    # Lets output the current state for future runtimes 
+    # BUT only error states
+    $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
+    
 }
 #endregion
 
@@ -398,15 +548,15 @@ switch ($OutputMode)
 {
     "GridView" 
     {  
-        $resultsObject | Out-GridView -Title 'List of states'
+        $resultObject | Out-GridView -Title 'List of states'
     }
-    "JSON" 
+    "LeutekJSON" 
     {
-        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrInboxFileCount -SystemName $systemName | ConvertTo-Json
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2
     }
-    "JSONCompressed"
+    "LeutekJSONCompressed"
     {
-        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrInboxFileCount -SystemName $systemName | ConvertTo-Json -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
     }
     "HTMLMail"
     {      
@@ -417,12 +567,12 @@ switch ($OutputMode)
         $subjectTypeName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
 
         $paramsplatting = @{
-            MailMessageObject = $resultsObject
+            MailMessageObject = $resultObject
             MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
         }  
         
         # If there are bad results, lets change the subject of the mail
-        if ($resultsObject.Where({$_.Status -ne 0}))
+        if ($resultObject.Where({$_.Status -ine 'OK'}))
         {
             $MailSubject = 'FAILED: {0} from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -439,20 +589,24 @@ switch ($OutputMode)
     }
     "PSObject"
     {
-        $resultsObject
+        $resultObject
     }
     "PRTGString"
     {
-        $badResults = $resultsObject.Where({$_.Status -ne 0})
+        $badResults = $resultObject.Where({$_.Status -ine 'OK'})
         if ($badResults)
         {
-            $resultString = '{0}:ConfigMgr file inbox limit reached' -f $badResults.count
+            $resultString = '{0}:Number of ConfigMgr file inbox limits reached' -f $badResults.count
             Write-Output $resultString
         }
         else
         {
-            Write-Output "0:No ConfigMgr file inboxes are fine"
+            Write-Output "0:ConfigMgr file inboxes are fine"
         }
+    }
+    "PRTGJSON"
+    {
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
     }
 }
 #endregion
