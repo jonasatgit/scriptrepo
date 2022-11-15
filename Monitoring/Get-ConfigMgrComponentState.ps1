@@ -178,14 +178,8 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
-        [string]$InputType,
         [ValidateSet("LeutekObject", "PrtgObject")]
-        [string]$OutputType,        
-        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
-        [string]$SystemName
-
+        [string]$OutputType
     )
 
     Begin
@@ -206,195 +200,51 @@ Function ConvertTo-CustomMonitoringObject
     }
     Process
     {
-        switch ($InputType)
+        switch ($OutputType) 
         {
-            "ConfigMgrLogState" 
-            {
-                if($InputObject.State -ieq 'OK')
+            'LeutekObject' 
+            {  
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
+                if ($shortDescription.Length -gt 300)
                 {
-                    if ($OutputType -eq 'LeutekObject')
-                    {
-                        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                        $tmpResultObject.Name = $SystemName # <- wrong!
-                        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                        $tmpResultObject.Status = 0
-                        $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
-                        $tmpResultObject.Debug = ''
-                        [void]$resultsObject.Add($tmpResultObject)
-                    }
+                    # ShortDescription has a 300 character limit
+                    $shortDescription = $shortDescription.Substring(0, 299)    
+                }
 
-                    if ($OutputType -eq 'PrtgObject')
-                    {
-                        $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                        $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
-                        $tmpResultObject.Value = 0
-                        $tmpResultObject.Warning = 0
-                        [void]$resultsObject.Add($tmpResultObject)  
-                    }               
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
 
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", ""
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            }
+            'PrtgObject'
+            {
+                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
+                $tmpResultObject.Value = 0
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Warning = 0
                 }
                 else
                 {
-                    if ($OutputType -eq 'LeutekObject')
-                    {
-                        $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
-                        if ($shortDescription.Length -gt 300)
-                        {
-                            # ShortDescription has a 300 character limit
-                            $shortDescription = $shortDescription.Substring(0, 299)    
-                        }
-                        # Remove some chars like quotation marks
-                        $shortDescription = $shortDescription -replace "\'", ""
-                    
-                        
-                        # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                        $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                        $tmpResultObject.Name = $systemName
-                        $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                        $tmpResultObject.Status = 2
-                        $tmpResultObject.ShortDescription = $shortDescription
-                        $tmpResultObject.Debug = ''
-                        [void]$resultsObject.Add($tmpResultObject)
-                    }
-
-                    if ($OutputType -eq 'PrtgObject')
-                    {
-                        $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                        $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
-                        $tmpResultObject.Value = 0
-                        $tmpResultObject.Warning = 1
-                        [void]$resultsObject.Add($tmpResultObject)  
-                    }                      
-                }
-            } 
-            "ConfigMgrComponentState" 
-            {
-                if ($OutputType -eq 'LeutekObject')
-                {
-                    # Format for ConfigMgrComponentState
-                    # Adding infos to short description field
-                    [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-
-                    switch ($InputObject.Status) 
-                    {
-                        'Ok' {$outState = 0}
-                        'Warning' {$outState = 1}
-                        'Error' {$outState = 2}
-                        Default {$outState = 3}
-                    }
-
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $InputObject.Name -replace "\'", ""
-                    $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = $outState
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject)
-                }
-                
-                if ($OutputType -eq 'PrtgObject')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                    $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
-                    $tmpResultObject.Value = 0
-                    if ($InputObject.Status -ieq 'Ok')
-                    {
-                        $tmpResultObject.Warning = 0
-                    }
-                    else
-                    {
-                        $tmpResultObject.Warning = 1
-                    }                    
-                    [void]$resultsObject.Add($tmpResultObject)  
-                } 
-
-            } 
-            "ConfigMgrInboxFileCount" 
-            {
-                if ($OutputType -eq 'LeutekObject')
-                {                
-                    $shortDescription = $InputObject.ShortDescription
-                    
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-                    # Remove some chars like quotation marks
-                    $shortDescription = $shortDescription -replace "\'", ""                
-
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $InputObject.Name
-                    $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = $InputObject.Status
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = $InputObject.Debug
-                    [void]$resultsObject.Add($tmpResultObject)
-                }
-
-                if ($OutputType -eq 'PrtgObject')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                    $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
-                    $tmpResultObject.Value = 0
-                    if ($InputObject.Status -eq 0)
-                    {
-                        $tmpResultObject.Warning = 0
-                    }
-                    else
-                    {
-                        $tmpResultObject.Warning = 1
-                    }                    
-                    [void]$resultsObject.Add($tmpResultObject)  
-                } 
-
-
-            } 
-            "ConfigMgrCertificateState" 
-            {
-                if ($OutputType -eq 'LeutekObject')
-                {                 
-                    $shortDescription = $InputObject.ShortDescription
-                    
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-                    # Remove some chars like quotation marks
-                    $shortDescription = $shortDescription -replace "\'", ""                
-
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $InputObject.Name
-                    $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = $InputObject.Status
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = $InputObject.Debug
-                    [void]$resultsObject.Add($tmpResultObject)        
-                }
-
-                if ($OutputType -eq 'PrtgObject')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                    $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
-                    $tmpResultObject.Value = 0
-                    if ($InputObject.Status -eq 0)
-                    {
-                        $tmpResultObject.Warning = 0
-                    }
-                    else
-                    {
-                        $tmpResultObject.Warning = 1
-                    }                    
-                    [void]$resultsObject.Add($tmpResultObject)  
-                }               
+                    $tmpResultObject.Warning = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
             }
-        }                     
+        }                  
     }
     End
     {
@@ -415,7 +265,6 @@ Function ConvertTo-CustomMonitoringObject
         }  
 
     }
-
 }
 #endregion
 
@@ -483,7 +332,7 @@ if ($OutputTestData)
 
         $tmpObj = New-Object psobject | Select-Object $propertyList
         $tmpObj.CheckType = $selectedString[0]
-        $tmpObj.Name = '{0}:{1}_{2}{3}_P{4}' -f $tmpObj.CheckType, $systemName, $selectedString[1], ((Get-Random -Minimum 0 -Maximum 99)).ToString('00'), $i.ToString('00')
+        $tmpObj.Name = '{0}:{1}:{2}{3}_P{4}' -f $tmpObj.CheckType, $systemName, $selectedString[1], ((Get-Random -Minimum 0 -Maximum 99)).ToString('00'), $i.ToString('00')
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
         $tmpObj.SiteCode = ""
@@ -535,7 +384,7 @@ else
                     {
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'ComponentState'
-                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
                         $tmpObj.SystemName = $componentState.MachineName
                         $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
                         $tmpObj.SiteCode = $componentState.SiteCode
@@ -575,7 +424,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'SiteSystemState'
-                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $siteSystemState.Role, $siteSystemState.SiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $siteSystemState.Role, $siteSystemState.SiteCode
                         $tmpObj.SystemName = $siteSystemName
                         $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
                         $tmpObj.SiteCode = $siteSystemState.SiteCode
@@ -647,7 +496,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'AlertState'
-                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -699,7 +548,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'EPAlertState'
-                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -750,7 +599,7 @@ else
                         }
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'CHAlertState'
-                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -826,11 +675,11 @@ switch ($OutputMode)
     }
     "LeutekJSON" 
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName -OutputType LeutekObject | ConvertTo-Json -Depth 2
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2
     }
     "LeutekJSONCompressed"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
     }
     "HTMLMail"
     {      
@@ -880,7 +729,7 @@ switch ($OutputMode)
     }
     "PRTGJSON"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName -OutputType PrtgObject | ConvertTo-Json -Depth 3
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
     }
 }
 #endregion 
