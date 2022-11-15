@@ -66,7 +66,7 @@ param
 (
     [Parameter(Mandatory=$false)]
     [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
-    [String]$OutputMode = "LeutekJSON",
+    [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!',
     [Parameter(Mandatory=$false)]
