@@ -86,9 +86,9 @@
 param
 (
     [parameter(Mandatory=$false,ValueFromPipeline=$false)]
-    [datetime]$ProbeTime = (get-date), # Testing (Get-Date('2022-06-14 01:00'))
+    [datetime]$ProbeTime = (get-date), # Test example: (Get-Date('2022-06-14 01:00'))
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
+    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
@@ -107,96 +107,105 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 
 
 #region log entry list
-$logEntryList = New-Object System.Collections.ArrayList
-########## Paste new entries below ##########
-$logEntry = @{
-    Name = "Configmgr Backup Monitor"
-    Description = "Will monitor backup stuff"
-    LogPath = "E:\Program Files\Microsoft Configuration Manager\Logs\smsbkup.log"
-    SuccessString = "Backup completed"
-    Intervall = "Daily"
-    IntervallDay = ""
-    IntervallWeek = 0
-    IntervallTime = "02:00"
-    TimespanMinutes = 60
-    IgnorePreviousEntries = $true
-    RunOnActiveNodeOnly = $true
-	RunOnSystemList = ""
+$logEntryListJSON = @'
+{
+    "LogEntries": [
+            {
+                "Name": "Configmgr Backup Monitor",
+                "Description": "Will monitor backup stuff",
+                "LogPath": "E:\\Program Files\\Microsoft Configuration Manager\\Logs\\smsbkup.log",
+                "SuccessString": "Backup completed",
+                "Interval": "Daily",
+                "IntervalDay": "",
+                "IntervalWeek": 0,
+                "IntervalTime": "02:00",
+                "TimespanMinutes": 60,
+                "IgnorePreviousEntries": true,
+                "RunOnActiveNodeOnly": true,
+                "RunOnSystemList": ""
+            },
+            {
+                "Name": "ConfigMgr PatchCycle Monitor",
+                "Description": "Will validate patch stuff",
+                "LogPath": "E:\\CUSTOM\\LogTest\\monthlytest.log",
+                "SuccessString": "Script done!",
+                "Interval": "Monthly",
+                "IntervalDay": "Tuesday",
+                "IntervalWeek": 2,
+                "IntervalTime": "22:00",
+                "TimespanMinutes": 60,
+                "IgnorePreviousEntries": false,
+                "RunOnActiveNodeOnly": false,
+                "RunOnSystemList": "test1.contoso.local"
+            },
+            {
+                "Name": "ConfigMgr weekly Collection export",
+                "Description": "Will export weekly stuff",
+                "LogPath": "E:\\CUSTOM\\LogTest\\weeklytest.log",
+                "SuccessString": "Collections exported!",
+                "Interval": "Monthly",
+                "IntervalDay": "Tuesday",
+                "IntervalWeek": 2,
+                "IntervalTime": "22:00",
+                "TimespanMinutes": 60,
+                "IgnorePreviousEntries": true,
+                "RunOnActiveNodeOnly": false,
+                "RunOnSystemList": ""
+            },
+            {
+                "Name": "ConfigMgr no there test",
+                "Description": "Will export weekly stuff",
+                "LogPath": "E:\\CUSTOM\\LogTest\\weeklytest-missing.log",
+                "SuccessString": "Collections exported!",
+                "Interval": "Weekly",
+                "IntervalDay": "Wednesday",
+                "IntervalWeek": 0,
+                "IntervalTime": "22:00",
+                "TimespanMinutes": 60,
+                "IgnorePreviousEntries": true,
+                "RunOnActiveNodeOnly": false,
+                "RunOnSystemList": ""
+            },
+            {
+                "Name": "DAILY TEST",
+                "Description": "Will export daily stuff",
+                "LogPath": "E:\\CUSTOM\\LogTest\\dailytest.log",
+                "SuccessString": "Important log line",
+                "Interval": "Daily",
+                "IntervalDay": "",
+                "IntervalWeek": 0,
+                "IntervalTime": "03:00",
+                "TimespanMinutes": 120,
+                "IgnorePreviousEntries": false,
+                "RunOnActiveNodeOnly": false,
+                "RunOnSystemList": ""
+            }
+    ]
 }
-$logEntryObj = New-Object PSCustomObject -Property $logEntry
-[void]$logEntryList.add($logEntryObj)
-
-$logEntry = @{
-    Name = "ConfigMgr PatchCycle Monitor"
-    Description = "Will validate patch stuff"
-    LogPath = "E:\CUSTOM\LogTest\monthlytest.log"
-    SuccessString = "Patches deployed!"
-    Intervall = "Monthly"
-    IntervallDay = "Tuesday"
-    IntervallWeek = 2
-    IntervallTime = "22:00"
-    TimespanMinutes = 60
-    IgnorePreviousEntries = $false
-    RunOnActiveNodeOnly = $false
-	RunOnSystemList = ""
-}
-$logEntryObj = New-Object PSCustomObject -Property $logEntry
-[void]$logEntryList.add($logEntryObj)
-
-
-$logEntry = @{
-    Name = "ConfigMgr weekly Collection export"
-    Description = "Will export weekly stuff"
-    LogPath = "E:\CUSTOM\LogTest\weeklytest.log"
-    SuccessString = "Collections exported!"
-    Intervall = "Weekly"
-    IntervallDay = "Tuesday"
-    IntervallWeek = 0
-    IntervallTime = "22:00"
-    TimespanMinutes = 60
-    IgnorePreviousEntries = $true
-    RunOnActiveNodeOnly = $false
-	RunOnSystemList = ""
-}
-$logEntryObj = New-Object PSCustomObject -Property $logEntry
-[void]$logEntryList.add($logEntryObj)
-
-
-$logEntry = @{
-    Name = "ConfigMgr no there test"
-    Description = "Will export weekly stuff"
-    LogPath = "E:\CUSTOM\LogTest\weeklytest-missing.log"
-    SuccessString = "Collections exported!"
-    Intervall = "Weekly"
-    IntervallDay = "Wednesday"
-    IntervallWeek = 0
-    IntervallTime = "22:00"
-    TimespanMinutes = 60
-    IgnorePreviousEntries = $true
-    RunOnActiveNodeOnly = $false
-	RunOnSystemList = ""
-}
-$logEntryObj = New-Object PSCustomObject -Property $logEntry
-[void]$logEntryList.add($logEntryObj)
-
-
-$logEntry = @{
-    Name = "DAILY TEST"
-    Description = "Will export daily stuff"
-    LogPath = "E:\CUSTOM\LogTest\dailytest.log"
-    SuccessString = "Important log line"
-    Intervall = "Daily"
-    IntervallDay = ""
-    IntervallWeek = 0
-    IntervallTime = "03:00"
-    TimespanMinutes = 120
-    IgnorePreviousEntries = $false
-    RunOnActiveNodeOnly = $false
-	RunOnSystemList = ""
-}
-$logEntryObj = New-Object PSCustomObject -Property $logEntry
-[void]$logEntryList.add($logEntryObj)
-########## Paste new entries above ##########
+'@
+<#
+$logEntryListJSON = @'
+{
+    "LogEntries": [
+            {
+                "Name": "DAILY TEST",
+                "Description": "Will export daily stuff",
+                "LogPath": "E:\\CUSTOM\\LogTest\\dailytest.log",
+                "SuccessString": "Important log line",
+                "Interval": "Daily",
+                "IntervalDay": "",
+                "IntervalWeek": 0,
+                "IntervalTime": "03:00",
+                "TimespanMinutes": 120,
+                "IgnorePreviousEntries": false,
+                "RunOnActiveNodeOnly": false,
+                "RunOnSystemList": ""
+            }
+            ]
+        }
+'@
+#>
+$logEntryListJSONObject = $logEntryListJSON | ConvertFrom-Json
 #endregion
 
 
@@ -221,86 +230,61 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
-        [string]$InputType,
-        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
-        [string]$SystemName
-
+        [ValidateSet("LeutekObject", "PrtgObject")]
+        [string]$OutputType
     )
 
     Begin
     {
         $resultsObject = New-Object System.Collections.ArrayList
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1    
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+                $outObject.InterfaceVersion = 1  
+            }
+            'PrtgObject'
+            {
+                $outObject = New-Object psobject | Select-Object prtg
+            }
+        }  
     }
     Process
     {
-        switch ($InputType)
+        switch ($OutputType) 
         {
-            "ConfigMgrLogState" 
-            {
-                # Format for ConfigMgrLogState
-                if($InputObject.State -ieq 'OK')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $SystemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 0
-                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject) 
-                }
-                else
-                {
-                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-                    # Remove some chars like quotation marks
-                    $shortDescription = $shortDescription -replace "\'", ""
-                   
-                    
-                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $systemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 2
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject)
-                }
-            } 
-            "ConfigMgrComponentState" 
-            {
+            'LeutekObject' 
+            {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
-                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
-                if ($InputObject.SiteCode)
+                Switch ($InputObject.CheckType)
                 {
-                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Inbox'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Log'
+                    {
+                        Write-Verbose $InputObject.StateDescription
+                        [string]$shortDescription = $InputObject.StateDescription -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                    }
                 }
 
-                if ($InputObject.Name)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
-                }
-
-                if ($InputObject.Description)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
-                }
-
+                # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
                 {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
 
                 switch ($InputObject.Status) 
                 {
@@ -311,64 +295,51 @@ Function ConvertTo-CustomMonitoringObject
                 }
 
                 $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
                 $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = $outState
                 $tmpResultObject.ShortDescription = $shortDescription
                 $tmpResultObject.Debug = ''
                 [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrInboxFileCount" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrCertificateState" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)                
             }
-        }          
+            'PrtgObject'
+            {
+                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
+                $tmpResultObject.Value = 0
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Warning = 0
+                }
+                else
+                {
+                    $tmpResultObject.Warning = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
+            }
+        }                  
     }
     End
     {
-        $outObject.Results = $resultsObject
-        $outObject
-    }
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject.Results = $resultsObject
+                $outObject
+            }
+            'PrtgObject'
+            {
+                $tmpPrtgResultObject = New-Object psobject | Select-Object result
+                $tmpPrtgResultObject.result = $resultsObject
+                $outObject.prtg = $tmpPrtgResultObject
+                $outObject
+            }
+        }  
 
+    }
 }
 #endregion
-
 
 #region Test-ConfigMgrActiveSiteSystemNode
 <#
@@ -495,6 +466,7 @@ else
 #region main log logic
 # temp results object and corresponding property list
 [array]$propertyList = 'Name'
+$propertyList += 'CheckType'
 $propertyList += 'State'
 $propertyList += 'StateDescription'
 $propertyList += 'LogPath'
@@ -516,7 +488,7 @@ $propertyList += 'RunOnSystemList'
 
 $logEntrySearchResultList = New-Object System.Collections.ArrayList
 
-foreach ($logEntryItem in $logEntryList)
+foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
 {
     Write-Verbose "$("{0,-35}-> Working on: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
     $timeSpanObject = $null
@@ -528,13 +500,14 @@ foreach ($logEntryItem in $logEntryList)
     # Tmp object to track log parse status
     $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
     $tmpLogEntryObject.Name = $logEntryItem.Name
+    $tmpLogEntryObject.CheckType = 'Log'
     $tmpLogEntryObject.State = "" # Set to nothing to force string format
     $tmpLogEntryObject.StateDescription = "" # Set to nothing to force string format
     $tmpLogEntryObject.LogPath = $logEntryItem.LogPath
-    $tmpLogEntryObject.LogDateTime = [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.LogDateTime #= [datetime]::MinValue # Set to min value to force datime format
     $tmpLogEntryObject.ProbeTime = $ProbeTime
-    $tmpLogEntryObject.StartTime = [datetime]::MinValue # Set to min value to force datime format
-    $tmpLogEntryObject.EndTime = [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.StartTime #= [datetime]::MinValue # Set to min value to force datime format
+    $tmpLogEntryObject.EndTime #= [datetime]::MinValue # Set to min value to force datime format
     $tmpLogEntryObject.Interval = $logEntryItem.Interval
     $tmpLogEntryObject.IntervalDay = $logEntryItem.IntervalDay
     $tmpLogEntryObject.IntervalWeek = $logEntryItem.IntervalWeek
@@ -697,14 +670,14 @@ foreach ($logEntryItem in $logEntryList)
         {
             if (-NOT(Test-Path -Path $logEntryItem.LogPath))
             {
-                $tmpLogEntryObject.State = "NOK"
+                $tmpLogEntryObject.State = "Error"
                 $tmpLogEntryObject.StateDescription = "Path not found"
                 [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                 Write-Verbose "$("{0,-35}-> Path not found: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))" 
             }
             else 
             {
-               if ($timeSpanObject.StartTime)
+                if ($timeSpanObject.StartTime)
                 {
                     $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
                     $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
@@ -719,6 +692,7 @@ foreach ($logEntryItem in $logEntryList)
                             # Custom object per found log entry
                             $tmpLogLineObject = New-Object PSCustomObject | Select-Object $propertyList
                             $tmpLogLineObject.Name = $logEntryItem.Name
+                            $tmpLogLineObject.CheckType = 'Log'
                             $tmpLogLineObject.State = "" # Set to nothing to force string format
                             $tmpLogLineObject.StateDescription = "" # Set to nothing to force string format
                             $tmpLogLineObject.ProbeTime = $ProbeTime
@@ -791,7 +765,7 @@ foreach ($logEntryItem in $logEntryList)
 
                             if (-NOT ($tmpLogLineObject.LogDateTime))
                             {
-                                $tmpLogLineObject.State = 'NOK'
+                                $tmpLogLineObject.State = 'Error'
                                 $tmpLogLineObject.StateDescription = 'DateTime could not be extracted from log!'
                                 Write-Verbose "$("{0,-35}-> DateTime could not be extracted from log: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                             }
@@ -811,7 +785,7 @@ foreach ($logEntryItem in $logEntryList)
 
                         if (-NOT ($foundLogEntryInTimeFrame))
                         {
-                            $tmpLogEntryObject.State = 'NOK'
+                            $tmpLogEntryObject.State = 'Error'
                             $tmpLogEntryObject.StateDescription = 'Success string not found in given timeframe'
                             [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                             Write-Verbose "$("{0,-35}-> Success string not found in given timeframe: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
@@ -821,7 +795,7 @@ foreach ($logEntryItem in $logEntryList)
                     else 
                     {
                         # no result in log found
-                        $tmpLogEntryObject.State = 'NOK'
+                        $tmpLogEntryObject.State = 'Error'
                         $tmpLogEntryObject.StateDescription = 'Success string not found in log!'
                         [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                         Write-Verbose "$("{0,-35}-> Success string not found in log! {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
@@ -830,7 +804,7 @@ foreach ($logEntryItem in $logEntryList)
                 }
                 else 
                 {
-                    $tmpLogEntryObject.State = "NOK"
+                    $tmpLogEntryObject.State = "Error"
                     $tmpLogEntryObject.StateDescription = "Could not calculate time"
                     [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                     Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
@@ -851,7 +825,7 @@ foreach ($logEntryItem in $logEntryList)
 
 
 #region limit outputlist for some output modes
-$returnObj = New-Object System.Collections.ArrayList
+$resultObject = New-Object System.Collections.ArrayList
 # Group the results by log name to be able to look at the overall result
 $logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
               
@@ -862,16 +836,16 @@ foreach ($groupItem in $logEntrySearchResultListGroups)
     #[array]$goodResults = $groupItem.group | Where-Object {$_.State -eq 'OK'}
     If($groupItem.group | Where-Object {$_.State -eq 'OK'})
     {
-        [void]$returnObj.Add(($groupItem.group | Where-Object {$_.State -eq 'OK'}))        
+        [void]$resultObject.Add(($groupItem.group | Where-Object {$_.State -eq 'OK'}))        
     }
     else
     {
-        [void]$returnObj.Add(($groupItem.group | Select-Object -Last 1)) # pick the last bad result to limit the output
+        [void]$resultObject.Add(($groupItem.group | Select-Object -Last 1)) # pick the last bad result to limit the output
                        
     }
 }
 # Limit output to some properties
-$returnObj = $returnObj | Select-Object Name, State, StateDescription, LogPath, LogDateTime, Interval, IntervalDay, Intervalweek
+$resultObject = $resultObject | Select-Object Name, State, StateDescription, LogPath, LogDateTime, Interval, IntervalDay, Intervalweek
 #endregion
 
 
@@ -883,13 +857,13 @@ switch ($OutputMode)
         # Output full list
         $logEntrySearchResultList | Out-GridView -Title 'Full list of log parse results'
     }
-    "JSON" 
+    "LeutekJSON" 
     {
-        $returnObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrLogState -SystemName $systemName | ConvertTo-Json
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2
     }
-    "JSONCompressed"
+    "LeutekJSONCompressed"
     {
-        $returnObj | ConvertTo-CustomMonitoringObject -InputType ConfigMgrLogState -SystemName $systemName | ConvertTo-Json -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
     }
     "HTMLMail"
     {      
@@ -900,12 +874,12 @@ switch ($OutputMode)
         $subjectTypeName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
 
         $paramsplatting = @{
-            MailMessageObject = $returnObj
+            MailMessageObject = $resultObject
             MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
         }  
         
         # If there are bad results, lets change the subject of the mail
-        if($returnObj.Where({$_.State -ieq 'NOK'}))
+        if($resultObject.Where({$_.State -ine 'OK'}))
         {
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -922,11 +896,11 @@ switch ($OutputMode)
     }
     "PSObject"
     {
-        $returnObj   
+        $resultObject   
     }
     "PRTGString"
     {
-        $badResults = $returnObj.Where({$_.State -ieq 'NOK'})
+        $badResults = $resultObject.Where({$_.State -ine 'OK'})
         if ($badResults)
         {
             $resultString = '{0}:ConfigMgr log monitor failures' -f $badResults.count
@@ -936,6 +910,10 @@ switch ($OutputMode)
         {
             Write-Output "0:No ConfigMgr log monitor failures"
         }
+    }
+    "PRTGJSON"
+    {
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
     }
 }
 #endregion 
