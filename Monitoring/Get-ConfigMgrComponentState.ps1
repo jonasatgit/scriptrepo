@@ -76,7 +76,7 @@ param
 (
     [Parameter(Mandatory=$false)]
     [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
-    [String]$OutputMode = "PrtgJSON",
+    [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored ConfigMgr components. This email is sent every day!',
     [Parameter(Mandatory=$false)]
@@ -394,7 +394,7 @@ Function ConvertTo-CustomMonitoringObject
                     [void]$resultsObject.Add($tmpResultObject)  
                 }               
             }
-        }          		   
+        }                     
     }
     End
     {
@@ -454,7 +454,7 @@ if (-NOT($CachePath))
 #region Generic Script state object
 # We always need a generic script state object. Especially if we have no errors
 $tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
-$tmpScriptStateObj.Name = '{0} - Script' -f $systemName 
+$tmpScriptStateObj.Name = 'Script:{0}' -f $systemName 
 $tmpScriptStateObj.CheckType = 'Script'
 $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
@@ -483,7 +483,7 @@ if ($OutputTestData)
 
         $tmpObj = New-Object psobject | Select-Object $propertyList
         $tmpObj.CheckType = $selectedString[0]
-        $tmpObj.Name = '{0} - {1} {2} - P{3}' -f $systemName, $selectedString[1], ((Get-Random -Minimum 0 -Maximum 99)).ToString('00'), $i.ToString('00')
+        $tmpObj.Name = '{0}:{1}_{2}{3}_P{4}' -f $tmpObj.CheckType, $systemName, $selectedString[1], ((Get-Random -Minimum 0 -Maximum 99)).ToString('00'), $i.ToString('00')
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
         $tmpObj.SiteCode = ""
@@ -535,7 +535,7 @@ else
                     {
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'ComponentState'
-                        $tmpObj.Name = '{0} - {1} - {2}' -f $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
+                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
                         $tmpObj.SystemName = $componentState.MachineName
                         $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
                         $tmpObj.SiteCode = $componentState.SiteCode
@@ -575,7 +575,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'SiteSystemState'
-                        $tmpObj.Name = '{0} - {1} - {2}' -f $siteSystemName ,$siteSystemState.Role, $siteSystemState.SiteCode
+                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $siteSystemState.Role, $siteSystemState.SiteCode
                         $tmpObj.SystemName = $siteSystemName
                         $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
                         $tmpObj.SiteCode = $siteSystemState.SiteCode
@@ -603,17 +603,17 @@ else
                     #$listFromSMSAlert | ogv
                     <#
                         AlertState
-                        0	Active
-                        1	Postponed
-                        2	Canceled
-                        3	Unknown
-                        4	Disabled
-                        5	Never Triggered
+                        0  Active
+                        1  Postponed
+                        2  Canceled
+                        3  Unknown
+                        4  Disabled
+                        5  Never Triggered
                         
                         Severity
-                        1	Error
-                        2	Warning
-                        3	Informational
+                        1  Error
+                        2  Warning
+                        3  Informational
                     
                     #>
                     foreach ($alertState in $listFromSMSAlert)
@@ -647,7 +647,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'AlertState'
-                        $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertName, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -673,17 +673,17 @@ else
                     #$listFromSMSAlert | ogv
                     <#
                         AlertState
-                        0	Active
-                        1	Postponed
-                        2	Canceled
-                        3	Unknown
-                        4	Disabled
-                        5	Never Triggered
+                        0  Active
+                        1  Postponed
+                        2  Canceled
+                        3  Unknown
+                        4  Disabled
+                        5  Never Triggered
                         
                         Severity
-                        1	Error
-                        2	Warning
-                        3	Informational
+                        1  Error
+                        2  Warning
+                        3  Informational
                     
                     #>
                     foreach ($alertState in $listFromSMSEPAlert)
@@ -699,7 +699,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'EPAlertState'
-                        $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $alertState.Name, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -725,17 +725,17 @@ else
                     #$listFromSMSAlert | ogv
                     <#
                         AlertState
-                        0	Active
-                        1	Postponed
-                        2	Canceled
-                        3	Unknown
-                        4	Disabled
-                        5	Never Triggered
+                        0  Active
+                        1  Postponed
+                        2  Canceled
+                        3  Unknown
+                        4  Disabled
+                        5  Never Triggered
                         
                         Severity
-                        1	Error
-                        2	Warning
-                        3	Informational
+                        1  Error
+                        2  Warning
+                        3  Informational
                     
                     #>
                     foreach ($alertState in $listFromSMSCHAlert)
@@ -750,7 +750,7 @@ else
                         }
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'CHAlertState'
-                        $tmpObj.Name = '{0} - {1} - {2}' -f $systemName, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}_{2}_{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -883,4 +883,4 @@ switch ($OutputMode)
         $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrComponentState -SystemName $systemName -OutputType PrtgObject | ConvertTo-Json -Depth 3
     }
 }
-#endregion
+#endregion 
