@@ -232,11 +232,15 @@ Function ConvertTo-CustomMonitoringObject
                 {
                     'Certificate'
                     {
-                        [string]$shortDescription = $InputObject.Description -replace "\'", "" # Remove some chars like quotation marks    
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Inbox'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
                     }
                     Default 
                     {
-                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
                     }
                 }
 
@@ -256,7 +260,7 @@ Function ConvertTo-CustomMonitoringObject
                 }
 
                 $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name -replace "\'", ""
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
                 $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = $outState
                 $tmpResultObject.ShortDescription = $shortDescription
@@ -266,7 +270,7 @@ Function ConvertTo-CustomMonitoringObject
             'PrtgObject'
             {
                 $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
                 $tmpResultObject.Value = 0
                 if ($InputObject.Status -ieq 'Ok')
                 {
