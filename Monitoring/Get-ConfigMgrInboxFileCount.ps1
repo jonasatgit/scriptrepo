@@ -75,7 +75,7 @@ param
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
-    [int]$OutputTestData=1
+    [int]$OutputTestData
 )
 
 #region admin rights
