@@ -304,6 +304,7 @@ if (-NOT($CachePath))
 # We always need a generic script state object. Especially if we have no errors
 $tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
 $tmpScriptStateObj.Name = 'Script:{0}' -f $systemName 
+$tmpScriptStateObj.SystemName = $systemName
 $tmpScriptStateObj.CheckType = 'Script'
 $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
