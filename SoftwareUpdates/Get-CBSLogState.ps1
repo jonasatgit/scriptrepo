@@ -68,7 +68,7 @@ foreach ($cbsLogFile in $cbsLogsList)
                 # Means: (filesize in bytes / 2(%)) * 100 (%)
                 $approxRequiredSpace = ($cbsLogFile.Length / 2) * 100
                 # Also adding 512MB just to make sure we are not filling up the volume
-                $approxRequiredSpace = $approxRequiredSpace + 536870912
+                $approxRequiredSpace = $approxRequiredSpace + 512MB
                 
                 $driveLetter = ($($env:SystemRoot) | Split-Path)  -replace '\\'
                 $osDrive = Get-WmiObject -Query "SELECT * FROM Win32_Volume WHERE DriveLetter = '$($driveLetter)'" -ErrorAction Stop
