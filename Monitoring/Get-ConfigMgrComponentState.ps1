@@ -665,6 +665,7 @@ if ($CacheState)
                 # Item not in the list of active errors anymore
                 # Lets copy the item and change the state to OK
                 $cacheItem.Status = 'Ok'
+                $cacheItem.Description = ""
                 [void]$resultObject.add($cacheItem)
             }
         }
