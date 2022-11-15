@@ -427,14 +427,14 @@ switch ($OutputMode)
             $MailSubject = 'FAILED: {0} from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
 
-            Send-CustomMonitoringMail @$paramsplatting -HighPrio            
+            Send-CustomMonitoringMail @paramsplatting -HighPrio            
         }
         else 
         {
             $MailSubject = 'OK: {0} from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
 
-            Send-CustomMonitoringMail @$paramsplatting
+            Send-CustomMonitoringMail @paramsplatting
         }
     }
     "PSObject"
