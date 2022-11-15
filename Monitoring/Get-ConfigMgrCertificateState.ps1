@@ -361,34 +361,46 @@ if ($OutputTestData)
 }
 else
 {
-
-# Going the extra mile and checking DP and or BootStick certificates via SMS Provider call, but just if we are on the active site server
-# Mainly to prevent multiple alerts for one certificate coming from multiple systems
-if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
-{
-    # Active node found. Let's check DP certificates via SMS Provider
-    $SMSProviderLocation = Get-WmiObject -Namespace root\sms -Query "SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($SMSProviderLocation)
+    # Going the extra mile and checking DP and or BootStick certificates via SMS Provider call, but just if we are on the active site server
+    # Mainly to prevent multiple alerts for one certificate coming from multiple systems
+    if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
     {
-        [array]$ConfigMgrOSDCertificates = Get-WmiObject -Namespace "root\sms\Site_$($SMSProviderLocation.SiteCode)" -ComputerName ($SMSProviderLocation.Machine) -Query 'SELECT * FROM SMS_Certificate where Type in (1,2) and IsBlocked = 0'
-        if ($ConfigMgrOSDCertificates)
+        # Active node found. Let's check DP certificates via SMS Provider
+        $SMSProviderLocation = Get-WmiObject -Namespace root\sms -Query "SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($SMSProviderLocation)
         {
-            foreach ($OSDCertificate in $ConfigMgrOSDCertificates)
+            [array]$ConfigMgrOSDCertificates = Get-WmiObject -Namespace "root\sms\Site_$($SMSProviderLocation.SiteCode)" -ComputerName ($SMSProviderLocation.Machine) -Query 'SELECT * FROM SMS_Certificate where Type in (1,2) and IsBlocked = 0'
+            if ($ConfigMgrOSDCertificates)
             {
-                $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
-                if ($expireDays -le $minValidDays)
+                foreach ($OSDCertificate in $ConfigMgrOSDCertificates)
                 {
-                    $tmpObj = New-Object psobject | Select-Object $propertyList
-                    $tmpObj.CheckType = 'Certificate'
-                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($OSDCertificate.SMSID)
-                    $tmpObj.SystemName = $systemName
-                    $tmpObj.Status = 'Warning'
-                    $tmpObj.SiteCode = ""
-                    $tmpObj.Description = 'DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
-                    $tmpObj.PossibleActions = 'Renew certificate or request a new one'
-                    [void]$resultObject.Add($tmpObj)   
+                    $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
+                    if ($expireDays -le $minValidDays)
+                    {
+                        $tmpObj = New-Object psobject | Select-Object $propertyList
+                        $tmpObj.CheckType = 'Certificate'
+                        $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($OSDCertificate.SMSID)
+                        $tmpObj.SystemName = $systemName
+                        $tmpObj.Status = 'Warning'
+                        $tmpObj.SiteCode = ""
+                        $tmpObj.Description = 'DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
+                        $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                        [void]$resultObject.Add($tmpObj)   
+                    }
                 }
             }
+            else
+            {
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'Certificate'
+                $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
+                $tmpObj.SystemName = $systemName
+                $tmpObj.Status = 'Warning'
+                $tmpObj.SiteCode = ""
+                $tmpObj.Description = 'No DP or Boot certificate found!'
+                $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                [void]$resultObject.Add($tmpObj)      
+            }   
         }
         else
         {
@@ -396,71 +408,58 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
             $tmpObj.CheckType = 'Certificate'
             $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
             $tmpObj.SystemName = $systemName
+            $tmpObj.Status = 'Error'
+            $tmpObj.SiteCode = ""
+            $tmpObj.Description = 'Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
+            $tmpObj.PossibleActions = 'Validate WMI or debug script'
+            [void]$resultObject.Add($tmpObj)
+        }
+
+    }
+
+    # Looking for certificates in personal store of current system if a webserver is installed
+    # Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
+    if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
+    {
+        $configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
+            $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
+        }
+
+        if ($configMgrCerts)
+        {
+            foreach ($certificate in $configMgrCerts)
+            {
+                $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
+
+                if ($expireDays -le $minValidDays)
+                {              
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'Certificate'
+                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = 'Warning'
+                    $tmpObj.SiteCode = ""
+                    $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
+                    $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                    [void]$resultObject.Add($tmpObj)                  
+                }       
+            }
+        }
+        else
+        {
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'Certificate'
+            $tmpObj.Name = '{0}:{1}:NotFound' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
+            $tmpObj.SystemName = $systemName
             $tmpObj.Status = 'Warning'
             $tmpObj.SiteCode = ""
-            $tmpObj.Description = 'No DP or Boot certificate found!'
-            $tmpObj.PossibleActions = 'Renew certificate or request a new one'
-            [void]$resultObject.Add($tmpObj)      
-        }   
-    }
-    else
-    {
-        $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = 'Certificate'
-        $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
-        $tmpObj.SystemName = $systemName
-        $tmpObj.Status = 'Error'
-        $tmpObj.SiteCode = ""
-        $tmpObj.Description = 'Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
-        $tmpObj.PossibleActions = 'Validate WMI or debug script'
-        [void]$resultObject.Add($tmpObj)
-    }
-
-}
-
-# Looking for certificates in personal store of current system if a webserver is installed
-# Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
-if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
-{
-    $configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
-        $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
-    }
-
-    if ($configMgrCerts)
-    {
-        foreach ($certificate in $configMgrCerts)
-        {
-            $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
-
-            if ($expireDays -le $minValidDays)
-            {              
-                $tmpObj = New-Object psobject | Select-Object $propertyList
-                $tmpObj.CheckType = 'Certificate'
-                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
-                $tmpObj.SystemName = $systemName
-                $tmpObj.Status = 'Warning'
-                $tmpObj.SiteCode = ""
-                $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
-                $tmpObj.PossibleActions = 'Renew certificate or request a new one'
-                [void]$resultObject.Add($tmpObj)                  
-            }       
+            $tmpObj.Description = 'No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
+            $tmpObj.PossibleActions = 'Request a new certificate'
+            [void]$resultObject.Add($tmpObj)   
         }
-    }
-    else
-    {
-        $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = 'Certificate'
-        $tmpObj.Name = '{0}:{1}:NotFound' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
-        $tmpObj.SystemName = $systemName
-        $tmpObj.Status = 'Warning'
-        $tmpObj.SiteCode = ""
-        $tmpObj.Description = 'No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
-        $tmpObj.PossibleActions = 'Request a new certificate'
-        [void]$resultObject.Add($tmpObj)   
     }
 }
 #endregion
-}
 
 
 # Adding overall script state to list
