@@ -51,12 +51,12 @@ foreach ($cbsLogFile in $cbsLogsList)
             '.log' 
             {
                 $Matches = $null
-                $searchResult = $cbsLogFile | Select-String -Pattern 'Mark store corruption flag because of package'
+                [array]$searchResult = $cbsLogFile | Select-String -Pattern 'Mark store corruption flag because of package'
                 if ($searchResult)
                 {
-                    if ($searchResult.Line -match '(?<ArticleID>KB\d+)')
+                    if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
                     {
-                        $resultString = $Matches.ArticleID
+                        $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename)
                     }
                 }
             }
@@ -95,12 +95,12 @@ foreach ($cbsLogFile in $cbsLogsList)
                         # Filename extension will still be CAB, but since it is a txt file after using expand.exe, select-String will be able to read it. 
                         # So, no need to rename the files to name.log
                         $extractedCabFiles = Get-ChildItem -Path $tempExtractionFolder
-                        $searchResult = $extractedCabFiles | Select-String -Pattern 'Mark store corruption flag because of package'
+                        [array]$searchResult = $extractedCabFiles | Select-String -Pattern 'Mark store corruption flag because of package'
                         if ($searchResult)
                         {
-                            if ($searchResult.Line -match '(?<ArticleID>KB\d+)')
+                            if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
                             {
-                                $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult.Filename -replace '.cab', '.log')
+                                $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename -replace '.cab', '.log')
                             }
                         }
 
