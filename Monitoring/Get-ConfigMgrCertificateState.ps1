@@ -25,14 +25,6 @@
     a simple PowerShell objekt PSObject or via HTMLMail.
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
-.PARAMETER CacheState
-    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
-    The file will be stored next to the script or a path set via parameter "CachePath"
-    The filename will look like this: CACHE_[name-of-script.ps1].json
-
-.PARAMETER CachePath
-    Path to store the JSON cache file. Default value is root path of script. 
-
 .PARAMETER TemplateSearchString
     String to search for a certificate based on a specific template name
     Valid template names are:
@@ -45,6 +37,17 @@
 
 .PARAMETER MinValidDays
     Value in days before certificate expiration
+
+.PARAMETER CacheState
+    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+    The file will be stored next to the script or a path set via parameter "CachePath"
+    The filename will look like this: CACHE_[name-of-script.ps1].json
+
+.PARAMETER CachePath
+    Path to store the JSON cache file. Default value is root path of script. 
+
+.PARAMETER OutputTestData
+    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1
@@ -68,7 +71,7 @@
    None
 
 .OUTPUTS
-   Either GridView, JSON formatted or JSON compressed.
+   Depends in OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo  
@@ -77,14 +80,21 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "JSON", "JSONCompressed","HTMLMail","PSObject","PRTGString")]
+    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
     [Parameter(Mandatory=$false)]
     [int]$MinValidDays = 30,
     [Parameter(Mandatory=$false)]
-    [String]$MailInfotext = 'Status about monitored certificates. This email is sent every day!'
+    [String]$MailInfotext = 'Status about monitored certificates. This email is sent every day!',
+    [Parameter(Mandatory=$false)]
+    [bool]$CacheState = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(0,60)]
+    [int]$OutputTestData
 )
 
 #region admin rights
@@ -190,86 +200,52 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
-        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet("ConfigMgrLogState", "ConfigMgrComponentState", "ConfigMgrInboxFileCount","ConfigMgrCertificateState")]
-        [string]$InputType,
-        [Parameter(Mandatory=$false,ValueFromPipeline=$false)]
-        [string]$SystemName
-
+        [ValidateSet("LeutekObject", "PrtgObject")]
+        [string]$OutputType
     )
 
     Begin
     {
         $resultsObject = New-Object System.Collections.ArrayList
-        $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-        $outObject.InterfaceVersion = 1    
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+                $outObject.InterfaceVersion = 1  
+            }
+            'PrtgObject'
+            {
+                $outObject = New-Object psobject | Select-Object prtg
+            }
+        }  
     }
     Process
     {
-        switch ($InputType)
+        switch ($OutputType) 
         {
-            "ConfigMgrLogState" 
-            {
-                # Format for ConfigMgrLogState
-                if($InputObject.State -ieq 'OK')
-                {
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $SystemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 0
-                    $tmpResultObject.ShortDescription = 'OK: `"{0}`"' -f $InputObject.Name
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject) 
-                }
-                else
-                {
-                    $shortDescription = 'FAILED: `"{0}`" Desc:{1} Log:{2}' -f $InputObject.Name, $InputObject.StateDescription, $InputObject.LogPath
-                    if ($shortDescription.Length -gt 300)
-                    {
-                        # ShortDescription has a 300 character limit
-                        $shortDescription = $shortDescription.Substring(0, 299)    
-                    }
-                    # Remove some chars like quotation marks
-                    $shortDescription = $shortDescription -replace "\'", ""
-                   
-                    
-                    # Status: 0=OK, 1=Warning, 2=Critical, 3=Unknown
-                    $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                    $tmpResultObject.Name = $systemName
-                    $tmpResultObject.Epoch = 0 # FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                    $tmpResultObject.Status = 2
-                    $tmpResultObject.ShortDescription = $shortDescription
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject)
-                }
-            } 
-            "ConfigMgrComponentState" 
-            {
+            'LeutekObject' 
+            {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
-                [string]$shortDescription = '{0}: {1}:' -f ($InputObject.Status), ($InputObject.CheckType)
-                if ($InputObject.SiteCode)
+                Switch ($InputObject.CheckType)
                 {
-                    $shortDescription = '{0} {1}:' -f $shortDescription, ($InputObject.SiteCode)    
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" # Remove some chars like quotation marks    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
+                    }
                 }
 
-                if ($InputObject.Name)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Name)    
-                }
-
-                if ($InputObject.Description)
-                {
-                    $shortDescription = '{0} {1}' -f $shortDescription, ($InputObject.Description)    
-                }
-
+                # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
                 {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
 
                 switch ($InputObject.Status) 
                 {
@@ -280,61 +256,49 @@ Function ConvertTo-CustomMonitoringObject
                 }
 
                 $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.SystemName
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", ""
                 $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
                 $tmpResultObject.Status = $outState
                 $tmpResultObject.ShortDescription = $shortDescription
                 $tmpResultObject.Debug = ''
                 [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrInboxFileCount" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)
-            } 
-            "ConfigMgrCertificateState" 
-            {
-                $shortDescription = $InputObject.ShortDescription
-                
-                if ($shortDescription.Length -gt 300)
-                {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
-                # Remove some chars like quotation marks
-                $shortDescription = $shortDescription -replace "\'", ""                
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $InputObject.Status
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = $InputObject.Debug
-                [void]$resultsObject.Add($tmpResultObject)                
             }
-        }          
+            'PrtgObject'
+            {
+                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", ""
+                $tmpResultObject.Value = 0
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Warning = 0
+                }
+                else
+                {
+                    $tmpResultObject.Warning = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
+            }
+        }                  
     }
     End
     {
-        $outObject.Results = $resultsObject
-        $outObject
-    }
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject.Results = $resultsObject
+                $outObject
+            }
+            'PrtgObject'
+            {
+                $tmpPrtgResultObject = New-Object psobject | Select-Object result
+                $tmpPrtgResultObject.result = $resultsObject
+                $outObject.prtg = $tmpPrtgResultObject
+                $outObject
+            }
+        }  
 
+    }
 }
 #endregion
 
@@ -381,7 +345,6 @@ if ($OutputTestData)
     # create dummy entries
     for ($i = 1; $i -le $OutputTestData; $i++)
     { 
-
         # create dummy thumbprint
         $dummyThrumbprint = (-join ((65..73)+(65..73)+(65..73)+(65..73)+(65..73) | Get-Random -Count 40 | ForEach-Object {[char]$_})) -replace 'G|H|I', (Get-Random -Minimum 0 -Maximum 9)
 
@@ -391,10 +354,9 @@ if ($OutputTestData)
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
         $tmpObj.SiteCode = ""
-        $tmpObj.Description = "Warning: Certificate is about to expire in {0} days! Thumbprint:{1}" -f (Get-Random -Minimum 0 -Maximum $MinValidDays), $dummyThrumbprint
+        $tmpObj.Description = "Certificate is about to expire in {0} days! Thumbprint:{1}" -f (Get-Random -Minimum 0 -Maximum $MinValidDays), $dummyThrumbprint
         $tmpObj.PossibleActions = 'Renew certificate or request new one'
         [void]$resultObject.Add($tmpObj) 
-
     }
 }
 else
@@ -422,7 +384,7 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
                     $tmpObj.SystemName = $systemName
                     $tmpObj.Status = 'Warning'
                     $tmpObj.SiteCode = ""
-                    $tmpObj.Description = 'Warning: DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
+                    $tmpObj.Description = 'DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
                     $tmpObj.PossibleActions = 'Renew certificate or request a new one'
                     [void]$resultObject.Add($tmpObj)   
                 }
@@ -436,7 +398,7 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
             $tmpObj.SystemName = $systemName
             $tmpObj.Status = 'Warning'
             $tmpObj.SiteCode = ""
-            $tmpObj.Description = 'Warning: No DP or Boot certificate found!'
+            $tmpObj.Description = 'No DP or Boot certificate found!'
             $tmpObj.PossibleActions = 'Renew certificate or request a new one'
             [void]$resultObject.Add($tmpObj)      
         }   
@@ -449,7 +411,7 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
         $tmpObj.SiteCode = ""
-        $tmpObj.Description = 'Warning: Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
+        $tmpObj.Description = 'Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
         $tmpObj.PossibleActions = 'Validate WMI or debug script'
         [void]$resultObject.Add($tmpObj)
     }
@@ -478,7 +440,7 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
                 $tmpObj.SystemName = $systemName
                 $tmpObj.Status = 'Warning'
                 $tmpObj.SiteCode = ""
-                $tmpObj.Description = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
+                $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
                 $tmpObj.PossibleActions = 'Renew certificate or request a new one'
                 [void]$resultObject.Add($tmpObj)                  
             }       
@@ -492,13 +454,48 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Warning'
         $tmpObj.SiteCode = ""
-        $tmpObj.Description = 'Warning: No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
+        $tmpObj.Description = 'No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
         $tmpObj.PossibleActions = 'Request a new certificate'
         [void]$resultObject.Add($tmpObj)   
     }
 }
 #endregion
 }
+
+
+# Adding overall script state to list
+[void]$resultObject.Add($tmpScriptStateObj)
+#endregion
+
+#region cache state
+# In case we need to know witch components are already in error state
+if ($CacheState)
+{
+    # Get cache file
+    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    if (Test-Path $cacheFileName)
+    {
+        # Found a file lets load it
+        $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
+
+        foreach ($cacheItem in $cacheFileObject)
+        {
+            if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
+            {
+                # Item not in the list of active errors anymore
+                # Lets copy the item and change the state to OK
+                $cacheItem.Status = 'Ok'
+                [void]$resultObject.add($cacheItem)
+            }
+        }
+    }
+
+    # Lets output the current state for future runtimes 
+    # BUT only error states
+    $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
+    
+}
+#endregion
 
 
 #region Output
@@ -508,13 +505,13 @@ switch ($OutputMode)
     {  
         $resultObject | Out-GridView -Title 'List of states'
     }
-    "JSON" 
+    "LeutekJSON" 
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2
     }
-    "JSONCompressed"
+    "LeutekJSONCompressed"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
     }
     "HTMLMail"
     {      

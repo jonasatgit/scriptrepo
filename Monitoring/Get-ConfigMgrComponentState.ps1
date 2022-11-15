@@ -206,12 +206,24 @@ Function ConvertTo-CustomMonitoringObject
             {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
-                [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
+                Switch ($InputObject.CheckType)
+                {
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" # Remove some chars like quotation marks    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" # Remove some chars like quotation marks
+                    }
+                }
+
+                # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
                 {
-                    # ShortDescription has a 300 character limit
-                    $shortDescription = $shortDescription.Substring(0, 299)    
-                }
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
 
                 switch ($InputObject.Status) 
                 {
