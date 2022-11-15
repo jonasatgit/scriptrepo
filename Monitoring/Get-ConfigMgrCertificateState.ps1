@@ -340,15 +340,65 @@ Function ConvertTo-CustomMonitoringObject
 
 
 #region main certificate logic
-$resultsObject = New-Object System.Collections.ArrayList
+<#
+$resultObject = New-Object System.Collections.ArrayList
 
 [array]$propertyList  = $null
 $propertyList += 'Name' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
 $propertyList += 'Status'
 $propertyList += 'ShortDescription'
 $propertyList += 'Debug'
+#>
 
-[bool]$badResult = $false
+$resultObject = New-Object System.Collections.ArrayList
+[array]$propertyList  = $null
+$propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
+$propertyList += 'Name' # Has to be a unique check name. Something like the system fqdn and the check itself
+$propertyList += 'SystemName'
+$propertyList += 'SiteCode'
+$propertyList += 'Status'
+$propertyList += 'Description'
+$propertyList += 'PossibleActions'
+
+if (-NOT($CachePath))
+{
+    $CachePath = $PSScriptRoot
+}
+#endregion
+
+#region Generic Script state object
+# We always need a generic script state object. Especially if we have no errors
+$tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
+$tmpScriptStateObj.Name = 'Script:{0}' -f $systemName 
+$tmpScriptStateObj.SystemName = $systemName
+$tmpScriptStateObj.CheckType = 'Script'
+$tmpScriptStateObj.Status = 'Ok'
+$tmpScriptStateObj.Description = "Overall state of script"
+#endregion
+
+if ($OutputTestData)
+{
+    # create dummy entries
+    for ($i = 1; $i -le $OutputTestData; $i++)
+    { 
+
+        # create dummy thumbprint
+        $dummyThrumbprint = (-join ((65..73)+(65..73)+(65..73)+(65..73)+(65..73) | Get-Random -Count 40 | ForEach-Object {[char]$_})) -replace 'G|H|I', (Get-Random -Minimum 0 -Maximum 9)
+
+        $tmpObj = New-Object psobject | Select-Object $propertyList
+        $tmpObj.CheckType = 'Certificate'
+        $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $dummyThrumbprint
+        $tmpObj.SystemName = $systemName
+        $tmpObj.Status = 'Error'
+        $tmpObj.SiteCode = ""
+        $tmpObj.Description = "Warning: Certificate is about to expire in {0} days! Thumbprint:{1}" -f (Get-Random -Minimum 0 -Maximum $MinValidDays), $dummyThrumbprint
+        $tmpObj.PossibleActions = 'Renew certificate or request new one'
+        [void]$resultObject.Add($tmpObj) 
+
+    }
+}
+else
+{
 
 # Going the extra mile and checking DP and or BootStick certificates via SMS Provider call, but just if we are on the active site server
 # Mainly to prevent multiple alerts for one certificate coming from multiple systems
@@ -366,36 +416,42 @@ if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
                 $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
                 if ($expireDays -le $minValidDays)
                 {
-                    $tmpResultObject = New-Object psobject | Select-Object $propertyList
-                    $tmpResultObject.Name = $systemName
-                    $tmpResultObject.Status = 1
-                    $tmpResultObject.ShortDescription = 'Warning: DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
-                    $tmpResultObject.Debug = ''
-                    [void]$resultsObject.Add($tmpResultObject)
-                    $badResult = $true     
+                    $tmpObj = New-Object psobject | Select-Object $propertyList
+                    $tmpObj.CheckType = 'Certificate'
+                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($OSDCertificate.SMSID)
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = 'Warning'
+                    $tmpObj.SiteCode = ""
+                    $tmpObj.Description = 'Warning: DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
+                    $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                    [void]$resultObject.Add($tmpObj)   
                 }
             }
         }
         else
         {
-            $tmpResultObject = New-Object psobject | Select-Object $propertyList
-            $tmpResultObject.Name = $systemName
-            $tmpResultObject.Status = 1
-            $tmpResultObject.ShortDescription = 'Warning: No DP or Boot certificate found!'
-            $tmpResultObject.Debug = ''
-            [void]$resultsObject.Add($tmpResultObject)
-            $badResult = $true        
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'Certificate'
+            $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
+            $tmpObj.SystemName = $systemName
+            $tmpObj.Status = 'Warning'
+            $tmpObj.SiteCode = ""
+            $tmpObj.Description = 'Warning: No DP or Boot certificate found!'
+            $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+            [void]$resultObject.Add($tmpObj)      
         }   
     }
     else
     {
-        $tmpResultObject = New-Object psobject | Select-Object $propertyList
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Status = 1
-        $tmpResultObject.ShortDescription = 'Warning: Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)
-        $badResult = $true
+        $tmpObj = New-Object psobject | Select-Object $propertyList
+        $tmpObj.CheckType = 'Certificate'
+        $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
+        $tmpObj.SystemName = $systemName
+        $tmpObj.Status = 'Error'
+        $tmpObj.SiteCode = ""
+        $tmpObj.Description = 'Warning: Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
+        $tmpObj.PossibleActions = 'Validate WMI or debug script'
+        [void]$resultObject.Add($tmpObj)
     }
 
 }
@@ -415,43 +471,34 @@ if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
             $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
 
             if ($expireDays -le $minValidDays)
-            {
-                $tmpResultObject = New-Object psobject | Select-Object $propertyList
-                $tmpResultObject.Name = $systemName
-                $tmpResultObject.Status = 1
-                $tmpResultObject.ShortDescription = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
-                $tmpResultObject.Debug = ''
-                [void]$resultsObject.Add($tmpResultObject)
-                $badResult = $true     
-            }
-        
+            {              
+                $tmpObj = New-Object psobject | Select-Object $propertyList
+                $tmpObj.CheckType = 'Certificate'
+                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
+                $tmpObj.SystemName = $systemName
+                $tmpObj.Status = 'Warning'
+                $tmpObj.SiteCode = ""
+                $tmpObj.Description = 'Warning: Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
+                $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                [void]$resultObject.Add($tmpObj)                  
+            }       
         }
     }
     else
     {
-        $tmpResultObject = New-Object psobject | Select-Object $propertyList
-        $tmpResultObject.Name = $systemName
-        $tmpResultObject.Status = 1
-        $tmpResultObject.ShortDescription = 'Warning: No ConfigMgr Certificate found on system!'
-        $tmpResultObject.Debug = ''
-        [void]$resultsObject.Add($tmpResultObject)
-        $badResult = $true   
+        $tmpObj = New-Object psobject | Select-Object $propertyList
+        $tmpObj.CheckType = 'Certificate'
+        $tmpObj.Name = '{0}:{1}:NotFound' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
+        $tmpObj.SystemName = $systemName
+        $tmpObj.Status = 'Warning'
+        $tmpObj.SiteCode = ""
+        $tmpObj.Description = 'Warning: No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
+        $tmpObj.PossibleActions = 'Request a new certificate'
+        [void]$resultObject.Add($tmpObj)   
     }
 }
 #endregion
-
-
-#region prepare output
-if (-NOT ($badResult))
-{
-    $tmpResultObject = New-Object psobject | Select-Object $propertyList
-    $tmpResultObject.Name = $systemName
-    $tmpResultObject.Status = 0
-    $tmpResultObject.ShortDescription = 'ok'
-    $tmpResultObject.Debug = ''
-    [void]$resultsObject.Add($tmpResultObject)
 }
-#endregion
 
 
 #region Output
@@ -459,15 +506,15 @@ switch ($OutputMode)
 {
     "GridView" 
     {  
-        $resultsObject | Out-GridView -Title 'List of states'
+        $resultObject | Out-GridView -Title 'List of states'
     }
     "JSON" 
     {
-        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json
+        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json
     }
     "JSONCompressed"
     {
-        $resultsObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -InputType ConfigMgrCertificateState -SystemName $systemName | ConvertTo-Json -Compress
     }
     "HTMLMail"
     {      
@@ -478,12 +525,12 @@ switch ($OutputMode)
         $subjectTypeName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
 
         $paramsplatting = @{
-            MailMessageObject = $resultsObject
+            MailMessageObject = $resultObject
             MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
         }  
         
         # If there are bad results, lets change the subject of the mail
-        if ($resultsObject.Where({$_.Status -ne 0}))
+        if ($resultObject.Where({$_.Status -ine 'OK'}))
         {
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -500,20 +547,24 @@ switch ($OutputMode)
     }
     "PSObject"
     {
-        $resultsObject
-    } 
+        $resultObject
+    }
     "PRTGString"
     {
-        $badResults = $resultsObject.Where({$_.Status -ne 0})
+        $badResults = $resultObject.Where({$_.Status -ine 'OK'}) 
         if ($badResults)
         {
-            $resultString = '{0}:ConfigMgr certificates about to expire' -f $badResults.count
+            $resultString = '{0}:ConfigMgr Components in failure state' -f $badResults.count
             Write-Output $resultString
         }
         else
         {
-            Write-Output "0:No ConfigMgr certificates are about to expire soon"
+            Write-Output "0:No active ConfigMgr component alerts"
         }
+    }
+    "PRTGJSON"
+    {
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
     }
 }
 #endregion

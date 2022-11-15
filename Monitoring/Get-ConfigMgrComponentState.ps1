@@ -66,7 +66,7 @@
    None
 
 .OUTPUTS
-   Either GridView, JSON formatted or JSON compressed. JSON compressed is the default mode
+   Depends in OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -650,10 +650,8 @@ if ($CacheState)
         {
             if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
             {
-                Write-Host '----'
-                $cacheItem.Name
                 # Item not in the list of active errors anymore
-                # Lets copy the item and chnage the state to OK
+                # Lets copy the item and change the state to OK
                 $cacheItem.Status = 'Ok'
                 [void]$resultObject.add($cacheItem)
             }
