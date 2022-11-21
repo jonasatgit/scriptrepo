@@ -1946,7 +1946,7 @@ Install new SQL Server if necessary. The most important SQL information can be f
 Use a supported version and same edition of SQL Server. 
 Do not switch from SQL Standard to SQL Enterprise or vice versa. 
 Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
-Use the "SQL Backup Metadata" don below to find the right backup to be recovered. Only the last 30 backups are visible in the list.
+Use the "SQL Backup Metadata" shown below to find the right backup to be recovered. Only the last 30 backups are visible in the list.
 More information about how to restore databases can be found here: https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/restore-a-database-backup-using-ssms
 '@
 

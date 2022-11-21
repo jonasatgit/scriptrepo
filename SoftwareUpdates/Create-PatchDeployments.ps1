@@ -1094,6 +1094,42 @@ Function Stop-ScriptExec
 }
 #endregion
 
+#region
+<#
+.Synopsis
+    Will try to open a logfile with cmtrace .DESCRIPTION
+   Will try to open a logfile with cmtrace .EXAMPLE
+   Open-LogWithCmTrace -$FilePath 'C:\Temp\outfile.log'
+#>
+Function Open-LogWithCmTrace
+{
+    param
+    (
+        [string]$FilePath
+    )
+
+    if (Test-Path $FilePath)
+    {
+
+        $regItem = Get-ItemProperty HKLM:\SOFTWARE\Microsoft\CCM -Name TempDir -ErrorAction SilentlyContinue
+        if ($regItem)
+        {
+            $cmTracePath = '{0}\CMTrace.exe' -f ($regItem.TempDir | Split-Path -Parent)
+            &$cmTracePath $FilePath
+        }
+        else
+        {
+            Write-ScriptLog -Message "Not able to find CMTrace.exe on this machine. Not able to open log" -Severity Warning
+        }
+    }
+    else
+    {
+        Write-ScriptLog -Message "Logfile not found: $($FilePath)" -Severity Warning
+    }
+}
+#endregion
+
+
 
 #region MAIN SCRIPT
 #-----------------------------------------------------------------------------------------
@@ -1143,7 +1179,11 @@ if (-NOT ($ScheduleDefinitionFile))
     {
         # let the user running the script decide which file to use
         Write-ScriptLog -Message "No definition file specified with parameter -ScheduleDefinitionFile"
-        Write-ScriptLog -Message "Let user choose a file via Out-GridView..." 
+        Write-ScriptLog -Message "Lets also open the log file"
+        
+        Open-LogWithCmTrace -FilePath $LogFile
+        
+        Write-ScriptLog -Message "Let user choose a file via Out-GridView..."        
         $ScheduleDefinitionFileObject = Get-ChildItem (Split-Path -path $PSCommandPath) -Filter '*.json' | Select-Object Name, Length, LastWriteTime, FullName | Out-GridView -Title 'Choose a JSON configfile' -OutputMode Single
         if (-NOT ($ScheduleDefinitionFileObject))
         {
