@@ -41,8 +41,11 @@
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
 
+.PARAMETER PrtgLookupFileName
+    Name of a PRTG value lookup file. 
+
 .PARAMETER OutputTestData
-    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors. 
+    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
@@ -83,6 +86,8 @@ param
     [bool]$CacheState = $false,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [string]$PrtgLookupFileName,  
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData
@@ -178,8 +183,11 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
+        [Parameter(Mandatory=$true)]
         [ValidateSet("LeutekObject", "PrtgObject")]
-        [string]$OutputType
+        [string]$OutputType,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName        
     )
 
     Begin
@@ -247,16 +255,24 @@ Function ConvertTo-CustomMonitoringObject
             }
             'PrtgObject'
             {
-                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                if ($PrtgLookupFileName)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, ValueLookup
+                    $tmpResultObject.ValueLookup = $PrtgLookupFileName
+                }
+                else 
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value
+                }
+               
                 $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
-                $tmpResultObject.Value = 0
                 if ($InputObject.Status -ieq 'Ok')
                 {
-                    $tmpResultObject.Warning = 0
+                    $tmpResultObject.Value = 0
                 }
                 else
                 {
-                    $tmpResultObject.Warning = 1
+                    $tmpResultObject.Value = 1
                 }                    
                 [void]$resultsObject.Add($tmpResultObject)  
             }
@@ -745,7 +761,7 @@ switch ($OutputMode)
     }
     "PRTGJSON"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
 #endregion 
