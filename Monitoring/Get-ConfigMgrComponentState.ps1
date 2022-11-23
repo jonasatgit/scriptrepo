@@ -672,6 +672,11 @@ else
 if ($CacheState)
 {
     # Get cache file
+
+    #$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    #$currentUser.Name 
+
+
     $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
     if (Test-Path $cacheFileName)
     {

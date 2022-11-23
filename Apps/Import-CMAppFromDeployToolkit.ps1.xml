@@ -1,0 +1,68 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+
+<configItems>
+    <!-- UNC path to the root folder where all applications are stored. Only the first sub-folder will be used to look for the Deploy-Application.ps1 file  -->
+    <appRootFolder>\\server.contoso.local\source$\Apps</appRootFolder>
+
+    <!-- Path to the ConfigMgr folder where Collections should be placed  -->
+    <cmCollectionFolder>\DeviceCollection\Softwaredeployment</cmCollectionFolder>
+
+    <!-- Path to the ConfigMgr folder the Applications should be placed  -->
+    <cmApplicationFolder>\Application\NewApps</cmApplicationFolder>
+
+    <!-- Limiting CollectionID for each new Collection  -->
+    <cmLimitingCollectionID>SMS00001</cmLimitingCollectionID>
+
+    <!-- List of domains to be used as prefix for AD groups in collection queries-->
+    <adGroupDomainList>
+        <adGroupDomain>domain1</adGroupDomain>
+        <adGroupDomain>domain2</adGroupDomain>
+        <adGroupDomain>domain3</adGroupDomain>
+    </adGroupDomainList>
+
+    <!-- Prefix for Active Directory Groups. Will be used as Collection-Query IMPORTANT: adGroupDomainList will be added like this: "DOMAIN1\\APP-C-"-->
+    <adGroupPrefix>APP-C-</adGroupPrefix>
+
+    <!-- Prefix of the [string]$installRegistryPath variable of each Deploy-Application.ps1 file, for validation puposes -->
+    <!-- HKLM: is the only supported HIVE at the momment -->
+    <defaultRegistryPrefixInstalled>HKLM:\SOFTWARE\_Custom\Installed\</defaultRegistryPrefixInstalled>
+
+    <!-- Prefix of the [string]$uninstallRegistryPath variable of each Deploy-Application.ps1 file, for validation puposes -->
+    <!-- HKLM: is the only supported HIVE at the momment -->
+    <defaultRegistryPrefixUninstalled>HKLM:\SOFTWARE\_Custom\Uninstalled\</defaultRegistryPrefixUninstalled>
+
+    <!-- Defines the default value of the maximum runtime of an application if the variable [int]$cmAppInstallTimeout is not present in the Deploy-Application.ps1 file-->
+    <cmAppMaxAllowedRuntimeDefaultValueInMinutes>30</cmAppMaxAllowedRuntimeDefaultValueInMinutes>
+
+    <!-- Either true or false. If true a simple script will be added as the detection logic. If false the built-in detection logic File and Registry will be used -->
+    <useScriptDetectionLogic>false</useScriptDetectionLogic>
+
+    <!-- Defines the default value of the maximum runtime of an application if the varibale $cmAppEstimatedInstallTime is not present in the Deploy-Application.ps1 file-->
+    <cmAppEstimatedInstallTimeDefaultValue>15</cmAppEstimatedInstallTimeDefaultValue>
+
+    <!-- Collection variable prefix for task sequence dynamic app install step (the script is able to generate a maximum of 9999 variables like APPVAR9999 -->
+    <dynamicAppVariableBaseName>APPVAR</dynamicAppVariableBaseName>
+
+    <!-- Either true to use collection variables, or no to not use them. -->
+    <useCollectionVariables>false</useCollectionVariables>
+
+    <!-- Either true to set software deployment collections to incremental or false to use the default schedule -->
+    <useIncrementalCollectionUpdates>true</useIncrementalCollectionUpdates>
+
+    <!-- FQDN of the ConfigMgr SMS provider server -->
+    <ProviderMachineName>cm01.contoso.local</ProviderMachineName>
+
+    <!-- Default app installation command -->
+    <appDefaultInstallCommand>powershell.exe -ExecutionPolicy Bypass -file .\Deploy-Application.ps1</appDefaultInstallCommand>
+
+    <!-- Default app uninstallation command -->
+    <appDefaultUninstallCommand>powershell.exe -ExecutionPolicy Bypass -file .\Deploy-Application.ps1 -DeploymentType Uninstall</appDefaultUninstallCommand>
+
+    <!-- List of Distribution Points each app should be distributed to. Either "<DP>All</DP>" for all available DPs, or "<DP>server01.domain.local</DP>" and as many entries as needed. -->
+    <cmDistributionPointList>
+
+        <DP>All</DP>
+
+    </cmDistributionPointList>
+
+</configItems>
