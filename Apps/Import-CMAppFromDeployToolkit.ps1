@@ -98,6 +98,16 @@ param
 [string]$xmlConfigFile = "$($PSScriptRoot)\$($global:scriptName).xml"
 #endregion
 
+
+#region ISE check
+if ($host.name -like '*ISE*')
+{
+    Write-Warning 'Do not run the script in PowerShell ISE. Use PowerShell or VSCode instead.'
+    Exit 0
+} 
+#endregion
+
+
 #region Helper Functions
 <#
 .Synopsis
