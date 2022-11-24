@@ -88,7 +88,7 @@ param
 )
 
 #region variable declaration
-[string]$ScriptVersion = "20221123"
+[string]$ScriptVersion = "20221124"
 #endregion
 
 #region fixed variables
@@ -1160,9 +1160,10 @@ if($selectedappDeploymentFiles)
 
         # add temp object to arraylist
         [void]$appInfoObj.add($tmpAppObj)
-
+        
         
     } # end ForEach-Object
+    Write-Progress -Activity 'Reading config data...' -Completed
     Write-CMTraceLog -Message "Validation done!"
 
     if($validationFailedGlobal)
@@ -1216,7 +1217,7 @@ if($selectedappDeploymentFiles)
     if($selectedAppsToImport)
     {
         Write-CMTraceLog -Message "$($selectedAppsToImport.Count) apps selected for import" # count not available if just one result
-        
+
         #region connect to ConfigMgr site
         $SiteCode = Get-CMSiteCode -ProviderMachineName $ProviderMachineName
         if(-NOT ($SiteCode))
@@ -1326,36 +1327,49 @@ if($selectedappDeploymentFiles)
         #endregion
         
         #region actually importing stuff
+        $i = 0        
         $collectionVariableCounter = 0
         foreach($appItem in $selectedAppsToImport)
         {
+            $i++
+            $stepCounter = 1 # To be able to count Write-Progress steps
+            $numberOfSteps = 14 # Number of "Write-Progress -Id 2 -Activity 'Import app:'" entries to calculate percentage
+            Write-Progress -Id 1 -Activity 'Import applications...' -Status "Working on: $i of $($selectedAppsToImport.count) app/s" -PercentComplete (100/$selectedAppsToImport.count*$i)
             if($appItem.Validation -eq 'Passed')
             {
                 Write-CMTraceLog -Message "Starting import process for: `"$($appItem.CMAppNameInConsole)`"..."
-
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`"" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 # check if app exists
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Check if app exists" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 if(Get-CMApplication -Fast -Name ($appItem.CMAppNameInConsole))
                 {
                     Write-CMTraceLog -Message "   App: `"$($appItem.CMAppNameInConsole)`" already exists. Skipping!" -Type Warning
-                    Continue # with look   
+                    Continue # with loop
                 }
 
-                
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Check if install collection exists" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 # check if install collection exists
                 if(Get-CMCollection -Name ($appItem.CMCollectionName_Install))
                 {
                     Write-CMTraceLog -Message "   Collection: `"$($appItem.CMCollectionName_Install)`" already exists. Skipping!" -Type Warning
-                    Continue # with look 
+                    Continue # with loop
                 }
 
                 # check if install collection exists
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Check if uninstall collection exists" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 if(Get-CMCollection -Name ($appItem.CMCollectionName_Uninstall))
                 {
                     Write-CMTraceLog -Message "   Collection: `"$($appItem.CMCollectionName_Uninstall)`" already exists. Skipping!" -Type Warning
-                    Continue # with look 
+                    Continue # with loop
                 }
 
                 # create app
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Creating app" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 try
                 {
                     Write-CMTraceLog -Message "   Creating app: $($appItem.CMAppNameInConsole)"
@@ -1386,6 +1400,8 @@ if($selectedappDeploymentFiles)
                 }
                 
                 # create deploymentype
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Creating deploymenttype" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 try
                 {
                     Write-CMTraceLog -Message "   Creating deploymenttype"
@@ -1471,6 +1487,8 @@ if($selectedappDeploymentFiles)
                 
 
                 # remove revision histroy
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Removing ApplicationRevisionHistory" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 Write-CMTraceLog -Message "   Removing ApplicationRevisionHistory"
                 try
                 {
@@ -1487,6 +1505,8 @@ if($selectedappDeploymentFiles)
                 # (move app)
 
                 # distribute app
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Distribute app to DPs" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 Write-CMTraceLog -Message "   Distribute App to DPs"
                 try
                 {
@@ -1510,6 +1530,8 @@ if($selectedappDeploymentFiles)
                 }
 
                 Write-CMTraceLog -Message "   Move Application to `"$cmApplicationFolder`""
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Move application to folder" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 try
                 {
                     $null = $newAppObject | Move-CMObject -FolderPath $cmApplicationFolder
@@ -1522,6 +1544,8 @@ if($selectedappDeploymentFiles)
                 }
 
                 # create collection and move
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Create install collection" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 Write-CMTraceLog -Message "   Create Collection `"$($appItem.CMCollectionName_Install)`""
                 try
                 {
@@ -1550,11 +1574,13 @@ if($selectedappDeploymentFiles)
                 Catch
                 {
                     Write-CMTraceLog -Message "   Error: Create Collection failed!" -Type Error
-                    Write-CMTraceLog -Message "   $($error[0].Exception)" -Type Error   
+                    Write-CMTraceLog -Message "   $($error[0].Exception)" -Type Error  
                     Continue                 
                 }
 
                 Write-CMTraceLog -Message "   Move Collection to `"$cmCollectionFolderPath`""
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Move collection to folder" -PercentComplete (100/$numberOfSteps*$stepCounter) 
+                $stepCounter++
                 try
                 {
                     $paramSplatting = [ordered]@{
@@ -1571,6 +1597,8 @@ if($selectedappDeploymentFiles)
                 }
 
                 # create AD group query rule
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Create Collection query rule" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 Write-CMTraceLog -Message "   Create Collection query rule"
                 try
                 {
@@ -1594,6 +1622,8 @@ if($selectedappDeploymentFiles)
 
 
                 # add task sequence variable to collection
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Create collection variables if allowed" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 if($useCollectionVariables -ieq 'true')
                 {
                     try
@@ -1622,6 +1652,8 @@ if($selectedappDeploymentFiles)
                 
 
                 # create deployment
+                Write-Progress -Id 2 -Activity 'Import app:' -Status "`"$($appItem.CMAppNameInConsole)`" Create deployment" -PercentComplete (100/$numberOfSteps*$stepCounter)
+                $stepCounter++
                 Write-CMTraceLog -Message "   Create deployment"
                 try
                 {
@@ -1647,8 +1679,11 @@ if($selectedappDeploymentFiles)
             {
                 Write-CMTraceLog -Message "Skipping app: `"$($appItem.CMAppNameInConsole)`" because of validation errors! See log for details." -Type Warning
             }
+            Write-Progress -Id 2 -Activity 'Import app:' -Completed
+
         } # end of: foreach($appItem in $selectedAppsToImport)
         #endregion
+        Write-Progress -id 1 -Activity 'Import applications...' -Completed
     }
     else # of if($selectedAppsToImport)
     {
