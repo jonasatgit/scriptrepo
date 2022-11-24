@@ -671,13 +671,20 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    # we need to store one cache file per user running the script to avoid 
+    # inconsistencies if the script is run by different accounts on the same machine
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($currentUser.Name -match '\\')
+    {
+        $userName = ($currentUser.Name -split '\\')[1]
+    }
+    else 
+    {
+        $userName = $currentUser.Name
+    }
+
     # Get cache file
-
-    #$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    #$currentUser.Name 
-
-
-    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
