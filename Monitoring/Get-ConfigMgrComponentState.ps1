@@ -83,7 +83,7 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored ConfigMgr components. This email is sent every day!',
     [Parameter(Mandatory=$false)]
-    [bool]$CacheState = $false,
+    [bool]$CacheState = $true,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
@@ -214,6 +214,7 @@ Function ConvertTo-CustomMonitoringObject
             {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
+                <#
                 Switch ($InputObject.CheckType)
                 {
                     'Certificate'
@@ -229,6 +230,10 @@ Function ConvertTo-CustomMonitoringObject
                         [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
                     }
                 }
+                #>
+
+                # Needs to be name at the moment
+                $shortDescription = $InputObject.Name -replace "\'", "" -replace '>','_'
 
                 # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
