@@ -92,9 +92,11 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored certificates. This email is sent every day!',
     [Parameter(Mandatory=$false)]
-    [bool]$CacheState = $false,
+    [bool]$CacheState = $true,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [string]$PrtgLookupFileName,      
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData
@@ -203,8 +205,11 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
+        [Parameter(Mandatory=$true)]
         [ValidateSet("LeutekObject", "PrtgObject")]
-        [string]$OutputType
+        [string]$OutputType,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName        
     )
 
     Begin
@@ -231,6 +236,7 @@ Function ConvertTo-CustomMonitoringObject
             {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
+                <#
                 Switch ($InputObject.CheckType)
                 {
                     'Certificate'
@@ -246,6 +252,10 @@ Function ConvertTo-CustomMonitoringObject
                         [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
                     }
                 }
+                #>
+
+                # Needs to be name at the moment
+                $shortDescription = $InputObject.Name -replace "\'", "" -replace '>','_'
 
                 # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
@@ -272,16 +282,24 @@ Function ConvertTo-CustomMonitoringObject
             }
             'PrtgObject'
             {
-                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                if ($PrtgLookupFileName)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, ValueLookup
+                    $tmpResultObject.ValueLookup = $PrtgLookupFileName
+                }
+                else 
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value
+                }
+               
                 $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
-                $tmpResultObject.Value = 0
                 if ($InputObject.Status -ieq 'Ok')
                 {
-                    $tmpResultObject.Warning = 0
+                    $tmpResultObject.Value = 0
                 }
                 else
                 {
-                    $tmpResultObject.Warning = 1
+                    $tmpResultObject.Value = 1
                 }                    
                 [void]$resultsObject.Add($tmpResultObject)  
             }
@@ -311,16 +329,6 @@ Function ConvertTo-CustomMonitoringObject
 
 
 #region main certificate logic
-<#
-$resultObject = New-Object System.Collections.ArrayList
-
-[array]$propertyList  = $null
-$propertyList += 'Name' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
-$propertyList += 'Status'
-$propertyList += 'ShortDescription'
-$propertyList += 'Debug'
-#>
-
 $resultObject = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
 $propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
@@ -477,8 +485,20 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    # we need to store one cache file per user running the script to avoid 
+    # inconsistencies if the script is run by different accounts on the same machine
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($currentUser.Name -match '\\')
+    {
+        $userName = ($currentUser.Name -split '\\')[1]
+    }
+    else 
+    {
+        $userName = $currentUser.Name
+    }
+
     # Get cache file
-    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
@@ -568,7 +588,7 @@ switch ($OutputMode)
     }
     "PRTGJSON"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
 #endregion
