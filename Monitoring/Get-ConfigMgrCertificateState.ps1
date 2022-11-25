@@ -46,6 +46,9 @@
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
 
+.PARAMETER PrtgLookupFileName
+    Name of a PRTG value lookup file. 
+
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 

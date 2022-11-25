@@ -38,6 +38,21 @@
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
 
+.PARAMETER PrtgLookupFileName
+    Name of a PRTG value lookup file. 
+
+.PARAMETER OutputTestData
+    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
+
+.PARAMETER InScriptConfigFile
+    Default value is $true and means the config file is part of this script. Embedded in a here-String as $referenceDataJSON.
+    This can be helpful is the script should not have an external config file.
+    If set to $false the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
+    path specified vie parameter -ConfigFilePath
+
+.PARAMETER ConfigFilePath
+    Path to the configfile called Get-ConfigMgrInboxFileCount.ps1.json. JSON can be created using the content of the in script variable $referenceDataJSON
+
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
 
@@ -72,9 +87,15 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!',
     [Parameter(Mandatory=$false)]
-    [bool]$CacheState = $false,
+    [bool]$CacheState = $true,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [string]$PrtgLookupFileName,  
+    [Parameter(Mandatory=$false)]
+    [bool]$InScriptConfigFile = $true,  
+    [Parameter(Mandatory=$false)]
+    [string]$ConfigFilePath, 
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData
@@ -93,8 +114,8 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 #region reference data
 # Get the full list of available inbox perf counter via the following command:
 # Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
-# Usinh here string and embedded JSON to not have an external dependency
-# Could also easily be moved outside the script and stored next to it as JSON
+# Using here string and embedded JSON to not have an external dependency
+# Could also be moved outside the script and stored next to it as JSON via $InScriptConfigFile=$false
 $referenceDataJSON = @'
 {
     "SMSInboxPerfData": [
@@ -261,8 +282,6 @@ $referenceDataJSON = @'
     ]
 }
 '@
-
-$referenceDataObject = $referenceDataJSON | ConvertFrom-Json
 #endregion
 
 
@@ -301,8 +320,11 @@ Function ConvertTo-CustomMonitoringObject
     param (
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
+        [Parameter(Mandatory=$true)]
         [ValidateSet("LeutekObject", "PrtgObject")]
-        [string]$OutputType
+        [string]$OutputType,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName        
     )
 
     Begin
@@ -329,6 +351,7 @@ Function ConvertTo-CustomMonitoringObject
             {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
+                <#
                 Switch ($InputObject.CheckType)
                 {
                     'Certificate'
@@ -344,6 +367,10 @@ Function ConvertTo-CustomMonitoringObject
                         [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
                     }
                 }
+                #>
+
+                # Needs to be name at the moment
+                $shortDescription = $InputObject.Name -replace "\'", "" -replace '>','_'
 
                 # ShortDescription has a 300 character limit
                 if ($shortDescription.Length -gt 300)
@@ -370,16 +397,24 @@ Function ConvertTo-CustomMonitoringObject
             }
             'PrtgObject'
             {
-                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
+                if ($PrtgLookupFileName)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, ValueLookup
+                    $tmpResultObject.ValueLookup = $PrtgLookupFileName
+                }
+                else 
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value
+                }
+               
                 $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
-                $tmpResultObject.Value = 0
                 if ($InputObject.Status -ieq 'Ok')
                 {
-                    $tmpResultObject.Warning = 0
+                    $tmpResultObject.Value = 0
                 }
                 else
                 {
-                    $tmpResultObject.Warning = 1
+                    $tmpResultObject.Value = 1
                 }                    
                 [void]$resultsObject.Add($tmpResultObject)  
             }
@@ -407,7 +442,6 @@ Function ConvertTo-CustomMonitoringObject
 }
 #endregion
 
-
 #region main perf counter logic
 $resultObject = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
@@ -434,6 +468,35 @@ $tmpScriptStateObj.CheckType = 'Script'
 $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
 #endregion
+
+
+#region get config data
+if ($InScriptConfigFile)
+{
+    $referenceDataObject = $referenceDataJSON | ConvertFrom-Json
+}
+else 
+{
+    if (-NOT($ConfigFilePath))
+    {
+        $ConfigFilePath = $PSScriptRoot
+    }
+    
+    $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
+    if (Test-Path $configFileFullName)
+    {
+        $referenceDataObject = Get-Content -Path $configFileFullName | ConvertFrom-Json
+    }
+    else 
+    {
+        $tmpScriptStateObj.Status = 'Error'
+        $tmpScriptStateObj.Description = ('Path not found: {}' -f $configFileFullName)
+    }
+}
+#endregion
+
+
+#region
 if ($OutputTestData)
 {
     # create dummy entries using the $referenceDataObject
@@ -517,8 +580,20 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    # we need to store one cache file per user running the script to avoid 
+    # inconsistencies if the script is run by different accounts on the same machine
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($currentUser.Name -match '\\')
+    {
+        $userName = ($currentUser.Name -split '\\')[1]
+    }
+    else 
+    {
+        $userName = $currentUser.Name
+    }
+
     # Get cache file
-    $cacheFileName = '{0}\CACHE_{1}.json' -f $CachePath, ($MyInvocation.MyCommand)
+    $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
@@ -608,7 +683,7 @@ switch ($OutputMode)
     }
     "PRTGJSON"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
 #endregion

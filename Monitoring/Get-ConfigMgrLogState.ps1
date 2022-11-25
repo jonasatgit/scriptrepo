@@ -63,6 +63,12 @@
     Datetime parameter to be able to set a specific datetime to simulate a script run in the past or future. Example value: (Get-Date('2022-06-14 01:00'))
     Can help to simulate a specific run date and run time for the script. If not specific the current local datetime will be used
 
+.PARAMETER PrtgLookupFileName
+    Name of a PRTG value lookup file. 
+
+.PARAMETER OutputTestData
+    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
+
 .EXAMPLE
     .\Get-ConfigMgrLogState
 
