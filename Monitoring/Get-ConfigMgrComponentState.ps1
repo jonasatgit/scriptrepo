@@ -69,7 +69,7 @@
    None
 
 .OUTPUTS
-   Depends in OutputMode
+   Depends on OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
