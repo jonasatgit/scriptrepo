@@ -41,8 +41,11 @@
 .PARAMETER PrtgLookupFileName
     Name of a PRTG value lookup file. 
 
-.PARAMETER OutputTestData
-    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
+.PARAMETER WriteLog
+    If true, the script will write a log. Helpful during testing. Default value is $false. 
+
+.PARAMETER LogPath
+    Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
 
 .PARAMETER InScriptConfigFile
     Default value is $true and means the config file is part of this script. Embedded in a here-String as $referenceDataJSON.
@@ -53,6 +56,9 @@
 .PARAMETER ConfigFilePath
     Path to the configfile called Get-ConfigMgrInboxFileCount.ps1.json. JSON can be created using the content of the in script variable $referenceDataJSON
 
+.PARAMETER OutputTestData
+    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
+
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1
 
@@ -60,19 +66,25 @@
     Get-ConfigMgrInboxFileCount.ps1 -OutputMode GridView
 
 .EXAMPLE
-    Get-ConfigMgrInboxFileCount.ps1 -OutputMode JSON
+    Get-ConfigMgrInboxFileCount.ps1 -OutputMode GridView -OutputTestData 20
 
 .EXAMPLE
-    Get-ConfigMgrInboxFileCount.ps1 -OutputMode JSONCompressed
+    Get-ConfigMgrInboxFileCount.ps1 -OutputMode LeutekJSON
 
 .EXAMPLE
     Get-ConfigMgrInboxFileCount.ps1 -OutputMode HTMLMail
+
+.EXAMPLE
+    Get-ConfigMgrInboxFileCount.ps1 -WriteLog $true
+
+.EXAMPLE
+    Get-ConfigMgrInboxFileCount.ps1 -WriteLog $true -LogPath "C:\Temp"
 
 .INPUTS
    None
 
 .OUTPUTS
-   Either GridView, JSON formatted or JSON compressed.
+   Depends on OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -97,8 +109,12 @@ param
     [Parameter(Mandatory=$false)]
     [string]$ConfigFilePath, 
     [Parameter(Mandatory=$false)]
-    [ValidateRange(0,60)]
-    [int]$OutputTestData
+    [bool]$WriteLog = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$LogPath,
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(1,60)]
+    [int]$OutputTestData=0
 )
 
 #region admin rights
@@ -285,20 +301,6 @@ $referenceDataJSON = @'
 #endregion
 
 
-#region system name
-# get system FQDN if possible
-$win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
-if ($win32Computersystem)
-{
-    $systemName = '{0}.{1}' -f $win32Computersystem.Name, $win32Computersystem.Domain   
-}
-else
-{
-    $systemName = $env:COMPUTERNAME
-}
-#endregion
-
-
 #region ConvertTo-CustomMonitoringObject
 <# 
 .Synopsis
@@ -442,6 +444,35 @@ Function ConvertTo-CustomMonitoringObject
 }
 #endregion
 
+#region log path
+if ($WriteLog)
+{
+    if (-NOT($LogPath))
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+    }
+    else 
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $LogPath, ($MyInvocation.MyCommand)
+    }
+}
+if($WriteLog){Write-CMTraceLog -Message " " -Component ($MyInvocation.MyCommand)}
+if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocation.MyCommand)}
+#endregion
+
+#region system name
+# get system FQDN if possible
+$win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
+if ($win32Computersystem)
+{
+    $systemName = '{0}.{1}' -f $win32Computersystem.Name, $win32Computersystem.Domain   
+}
+else
+{
+    $systemName = $env:COMPUTERNAME
+}
+#endregion
+
 #region main perf counter logic
 $resultObject = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
@@ -499,6 +530,7 @@ else
 #region
 if ($OutputTestData)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     # create dummy entries using the $referenceDataObject
     $inboxCounterList = $referenceDataObject.SMSInboxPerfData | ForEach-Object {
         $tmpObj = New-Object psobject | Select-Object Name, FileCurrentCount
@@ -506,16 +538,18 @@ if ($OutputTestData)
         $tmpObj.FileCurrentCount = (Get-Random -Minimum ($_.MaxValue+10) -Maximum 5000)
         $tmpObj
     }
-
-    $inboxCounterList = $inboxCounterList | Get-Random -Count $OutputTestData
+    # More consistent dummy data generation not using get-random
+    $inboxCounterList = $inboxCounterList | Select-Object -First $OutputTestData
 }
 else
 {
-    $inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
+    if($WriteLog){Write-CMTraceLog -Message "Getting data from: Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox" -Component ($MyInvocation.MyCommand)}
+    [array]$inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
 } 
         
 if ($inboxCounterList)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Found $($inboxCounterList.Count) items to work with" -Component ($MyInvocation.MyCommand)}
     foreach ($inboxCounter in $inboxCounterList)
     {
         # Lets see if we have a definition for the counter
@@ -539,7 +573,7 @@ if ($inboxCounterList)
             }
             else 
             {
-                #Object is set to be skipped
+                if($WriteLog){Write-CMTraceLog -Message "Counter set to be skipped: $($inboxCounter.Name)" -Component ($MyInvocation.MyCommand)}
             }
         }
         else 
@@ -558,15 +592,10 @@ if ($inboxCounterList)
 }
 else 
 {
-    $tmpObj = New-Object psobject | Select-Object $propertyList
-    $tmpObj.CheckType = 'Inbox'
-    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox'
-    $tmpObj.SystemName = $systemName
-    $tmpObj.Status = 'Warning'
-    $tmpObj.SiteCode = ""
-    $tmpObj.Description = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
-    $tmpObj.PossibleActions = 'Check locally or debug script'
-    [void]$resultObject.Add($tmpObj) 
+    if($WriteLog){Write-CMTraceLog -Message 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read' -Component -Severity Warning ($MyInvocation.MyCommand)}
+    $tmpScriptStateObj.Status = 'Warning'
+    $tmpScriptStateObj.Description = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
+    $tmpScriptStateObj.PossibleActions = 'Check locally or debug script'
 } 
 
 #endregion
@@ -580,6 +609,7 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
     # we need to store one cache file per user running the script to avoid 
     # inconsistencies if the script is run by different accounts on the same machine
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -594,33 +624,36 @@ if ($CacheState)
 
     # Get cache file
     $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
+															   
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
+        $i=0
         $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
-
         foreach ($cacheItem in $cacheFileObject)
         {
+            $i++
             if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
             {
                 # Item not in the list of active errors anymore
                 # Lets copy the item and change the state to OK
                 $cacheItem.Status = 'Ok'
                 $cacheItem.Description = ""
-                [void]$resultObject.add($cacheItem)
+                [void]$resultObject.add($cacheItem) 
             }
         }
+        if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
     }
 
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
-    
 }
 #endregion
 
 
 #region Output
+if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
 switch ($OutputMode) 
 {
     "GridView" 
@@ -686,4 +719,5 @@ switch ($OutputMode)
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
+if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
 #endregion
