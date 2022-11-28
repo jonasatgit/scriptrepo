@@ -44,6 +44,12 @@
 .PARAMETER PrtgLookupFileName
     Name of a PRTG value lookup file. 
 
+.PARAMETER WriteLog
+    If true, the script will write a log. Helpful during testing. Default value is $false. 
+
+.PARAMETER LogPath
+    Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
+
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
@@ -57,13 +63,16 @@
     Get-ConfigMgrComponentState.ps1 -OutputMode GridView -OutputTestData 20
 
 .EXAMPLE
-    Get-ConfigMgrComponentState.ps1 -OutputMode JSON
-
-.EXAMPLE
-    Get-ConfigMgrComponentState.ps1 -OutputMode JSONCompressed
+    Get-ConfigMgrComponentState.ps1 -OutputMode LeutekJSON
 
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1 -OutputMode HTMLMail
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -WriteLog $true
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -WriteLog $true -LogPath "C:\Temp"
 
 .INPUTS
    None
@@ -87,7 +96,11 @@ param
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
-    [string]$PrtgLookupFileName,  
+    [string]$PrtgLookupFileName,
+    [Parameter(Mandatory=$false)]
+    [bool]$WriteLog = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$LogPath,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData
@@ -100,6 +113,81 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 {
     Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
     return 
+}
+#endregion
+
+
+#region Write-CMTraceLog
+<#
+.Synopsis
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe .DESCRIPTION
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
+.EXAMPLE
+    Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
+function Write-CMTraceLog 
+{
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Global:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$true)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = 'Log'
+    )
+
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
+        {
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
+    {
+        Write-Host $Message -ForegroundColor $color
+    }
+   
+    If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
+    {
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
+
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
 }
 #endregion
 
@@ -305,6 +393,21 @@ Function ConvertTo-CustomMonitoringObject
 }
 #endregion
 
+#region log path
+if ($WriteLog)
+{
+    if (-NOT($LogPath))
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+    }
+    else 
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $LogPath, ($MyInvocation.MyCommand)
+    }
+}
+if($WriteLog){Write-CMTraceLog -Message " " -Component ($MyInvocation.MyCommand)}
+if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocation.MyCommand)}
+#endregion
 
 #region Get system fqdn
 # get system FQDN if possible
@@ -318,7 +421,6 @@ else
     $systemName = $env:COMPUTERNAME
 }
 #endregion
-
 
 #region Base param definition
 $resultObject = New-Object System.Collections.ArrayList
@@ -347,8 +449,10 @@ $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
 #endregion
 
+#region main checks
 if ($OutputTestData)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     [array]$dummyData = @(
         'SiteSystemState|SMS_MP_CONTROL_MANAGER'
         'SiteSystemState|SMS_HIERARCHY_MANAGER'
@@ -388,7 +492,7 @@ else
     {
         1 ## ACTIVE NODE FOUND. Run checks
         {
-            
+            if($WriteLog){Write-CMTraceLog -Message "Active node found. Run checks" -Component ($MyInvocation.MyCommand)}
             #region Get provider location and site code
             try 
             {
@@ -657,11 +761,13 @@ else
         
         0 ## PASSIVE NODE FOUND. Nothing to do.
         {
+            if($WriteLog){Write-CMTraceLog -Message "Passive node found. No checks will run" -Component ($MyInvocation.MyCommand)}
             $tmpScriptStateObj.Description = "Passive node found. No checks will run."
         }
 
         Default ## NO STATE FOUND
         {
+            if($WriteLog){Write-CMTraceLog -Message "Error: No ConfigMgr Site System found" -Component ($MyInvocation.MyCommand)}
             $tmpScriptStateObj.Status = 'Error'
             $tmpScriptStateObj.Description = "Error: No ConfigMgr Site System found"
         }
@@ -676,6 +782,7 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
     # we need to store one cache file per user running the script to avoid 
     # inconsistencies if the script is run by different accounts on the same machine
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -693,10 +800,11 @@ if ($CacheState)
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
+        $i=0
         $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
-
         foreach ($cacheItem in $cacheFileObject)
         {
+            $i++
             if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
             {
                 # Item not in the list of active errors anymore
@@ -706,14 +814,16 @@ if ($CacheState)
                 [void]$resultObject.add($cacheItem)
             }
         }
+        if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
     }
 
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
-    
 }
 #endregion
+
+if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
 
 #region Output
 switch ($OutputMode) 
@@ -781,4 +891,5 @@ switch ($OutputMode)
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
+if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
 #endregion 
