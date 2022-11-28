@@ -804,13 +804,11 @@ if ($CacheState)
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
-	 
 }
 #endregion
 
-if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
-
 #region Output
+if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
 switch ($OutputMode) 
 {
     "GridView" 

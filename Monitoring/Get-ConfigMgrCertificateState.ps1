@@ -49,6 +49,12 @@
 .PARAMETER PrtgLookupFileName
     Name of a PRTG value lookup file. 
 
+.PARAMETER WriteLog
+    If true, the script will write a log. Helpful during testing. Default value is $false. 
+
+.PARAMETER LogPath
+    Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
+
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
@@ -59,13 +65,19 @@
     Get-ConfigMgrCertificateState.ps1 -OutputMode GridView
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -OutputMode JSON
+    Get-ConfigMgrCertificateState.ps1 -OutputMode GridView -OutputTestData 20
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -OutputMode JSONCompressed
+    Get-ConfigMgrCertificateState.ps1 -OutputMode LeutekJSON
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1 -OutputMode HTMLMail
+
+.EXAMPLE
+    Get-ConfigMgrCertificateState.ps1 -WriteLog $true
+
+.EXAMPLE
+    Get-ConfigMgrCertificateState.ps1 -WriteLog $true -LogPath "C:\Temp"
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1 -TemplateSearchString '*Custom*ConfigMgr*Certificate*' -MinValidDays 30
@@ -74,7 +86,7 @@
    None
 
 .OUTPUTS
-   Depends in OutputMode
+   Depends on OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo  
@@ -96,10 +108,14 @@ param
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
-    [string]$PrtgLookupFileName,      
+    [string]$PrtgLookupFileName,
     [Parameter(Mandatory=$false)]
-    [ValidateRange(0,60)]
-    [int]$OutputTestData
+    [bool]$WriteLog = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$LogPath,    
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(1,60)]
+    [int]$OutputTestData=0
 )
 
 #region admin rights
@@ -168,21 +184,6 @@ function Test-ConfigMgrActiveSiteSystemNode
     }
 }
 #endregion
-
-
-#region systemname
-# get system FQDN if possible
-$win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
-if ($win32Computersystem)
-{
-    $systemName = '{0}.{1}' -f $win32Computersystem.Name, $win32Computersystem.Domain   
-}
-else
-{
-    $systemName = $env:COMPUTERNAME
-}
-#endregion
-
 
 #region ConvertTo-CustomMonitoringObject
 <# 
@@ -327,6 +328,34 @@ Function ConvertTo-CustomMonitoringObject
 }
 #endregion
 
+#region log path
+if ($WriteLog)
+{
+    if (-NOT($LogPath))
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+    }
+    else 
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $LogPath, ($MyInvocation.MyCommand)
+    }
+}
+if($WriteLog){Write-CMTraceLog -Message " " -Component ($MyInvocation.MyCommand)}
+if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocation.MyCommand)}
+#endregion
+
+#region systemname
+# get system FQDN if possible
+$win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
+if ($win32Computersystem)
+{
+    $systemName = '{0}.{1}' -f $win32Computersystem.Name, $win32Computersystem.Domain   
+}
+else
+{
+    $systemName = $env:COMPUTERNAME
+}
+#endregion
 
 #region main certificate logic
 $resultObject = New-Object System.Collections.ArrayList
@@ -357,15 +386,18 @@ $tmpScriptStateObj.Description = "Overall state of script"
 
 if ($OutputTestData)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     # create dummy entries
     for ($i = 1; $i -le $OutputTestData; $i++)
     { 
         # create dummy thumbprint
-        $dummyThrumbprint = (-join ((65..73)+(65..73)+(65..73)+(65..73)+(65..73) | Get-Random -Count 40 | ForEach-Object {[char]$_})) -replace 'G|H|I', (Get-Random -Minimum 0 -Maximum 9)
+        #$dummyThrumbprint = (-join ((65..73)+(65..73)+(65..73)+(65..73)+(65..73) | Get-Random -Count 40 | ForEach-Object {[char]$_})) -replace 'G|H|I', (Get-Random -Minimum 0 -Maximum 9)
+        # A more consistent approach to test data instead of using get-random. Makes troubleshooting easier. 
+        $dummyThrumbprint = "F0EEBAD0A0FC0FDAB00A0D0D0C0EEFE00CBCC0FA"
 
         $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = 'Certificate'
-        $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $dummyThrumbprint
+        $tmpObj.CheckType = 'DummyData'
+        $tmpObj.Name = 'DummyData:{0}:{1}:Dummy{2}' -f $systemName, $dummyThrumbprint, $i.ToString('00')
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
         $tmpObj.SiteCode = ""
@@ -380,6 +412,7 @@ else
     # Mainly to prevent multiple alerts for one certificate coming from multiple systems
     if ((Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName) -eq 1)
     {
+        if($WriteLog){Write-CMTraceLog -Message "Active node found. Let's check DP certificates via SMS Provider" -Component ($MyInvocation.MyCommand)}
         # Active node found. Let's check DP certificates via SMS Provider
         $SMSProviderLocation = Get-WmiObject -Namespace root\sms -Query "SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($SMSProviderLocation)
@@ -419,24 +452,21 @@ else
         }
         else
         {
-            $tmpObj = New-Object psobject | Select-Object $propertyList
-            $tmpObj.CheckType = 'Certificate'
-            $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
-            $tmpObj.SystemName = $systemName
-            $tmpObj.Status = 'Error'
-            $tmpObj.SiteCode = ""
-            $tmpObj.Description = 'Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
-            $tmpObj.PossibleActions = 'Validate WMI or debug script'
-            [void]$resultObject.Add($tmpObj)
+            $tmpScriptStateObj.Status = 'Error'
+            $tmpScriptStateObj.Description = 'Not able to get SMS Provider location from root\sms -> SMS_ProviderLocation'
         }
-
+    }
+    else 
+    {
+        if($WriteLog){Write-CMTraceLog -Message "No active ConfigMgr node found. Will skip in console certfifcate checks" -Component ($MyInvocation.MyCommand)}
     }
 
     # Looking for certificates in personal store of current system if a webserver is installed
     # Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
     if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
     {
-        $configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
+        if($WriteLog){Write-CMTraceLog -Message "Found IIS service. Will check IIS certificates" -Component ($MyInvocation.MyCommand)}
+        [array]$configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
             $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
         }
 
@@ -462,16 +492,14 @@ else
         }
         else
         {
-            $tmpObj = New-Object psobject | Select-Object $propertyList
-            $tmpObj.CheckType = 'Certificate'
-            $tmpObj.Name = '{0}:{1}:NotFound' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
-            $tmpObj.SystemName = $systemName
-            $tmpObj.Status = 'Warning'
-            $tmpObj.SiteCode = ""
-            $tmpObj.Description = 'No ConfigMgr Certificate based on template string: {0} found on system!' -f $templateSearchString
-            $tmpObj.PossibleActions = 'Request a new certificate'
-            [void]$resultObject.Add($tmpObj)   
+            if($WriteLog){Write-CMTraceLog -Message "$('No ConfigMgr Certificate based on template string: "{0}" found on system!' -f $templateSearchString)" -Component ($MyInvocation.MyCommand)}
+            $tmpScriptStateObj.Status = 'Error'
+            $tmpScriptStateObj.Description = 'No ConfigMgr Certificate based on template string: "{0}" found on system!' -f $templateSearchString
         }
+    }
+    else 
+    {
+        if($WriteLog){Write-CMTraceLog -Message "NO IIS service found. Will NOT check IIS certificates" -Component ($MyInvocation.MyCommand)}
     }
 }
 #endregion
@@ -485,6 +513,7 @@ else
 # In case we need to know witch components are already in error state
 if ($CacheState)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
     # we need to store one cache file per user running the script to avoid 
     # inconsistencies if the script is run by different accounts on the same machine
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -499,33 +528,36 @@ if ($CacheState)
 
     # Get cache file
     $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
+															   
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
+        $i=0
         $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
-
         foreach ($cacheItem in $cacheFileObject)
         {
+            $i++
             if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
             {
                 # Item not in the list of active errors anymore
                 # Lets copy the item and change the state to OK
                 $cacheItem.Status = 'Ok'
                 $cacheItem.Description = ""
-                [void]$resultObject.add($cacheItem)
+                [void]$resultObject.add($cacheItem) 
             }
         }
+        if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
     }
 
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
-    
 }
 #endregion
 
 
 #region Output
+if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
 switch ($OutputMode) 
 {
     "GridView" 
@@ -591,4 +623,5 @@ switch ($OutputMode)
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
+if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
 #endregion
