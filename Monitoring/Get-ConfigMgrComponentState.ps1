@@ -102,8 +102,8 @@ param
     [Parameter(Mandatory=$false)]
     [string]$LogPath,
     [Parameter(Mandatory=$false)]
-    [ValidateRange(0,60)]
-    [int]$OutputTestData
+    [ValidateRange(1,60)]
+    [int]$OutputTestData=0
 )
 
 
@@ -453,35 +453,18 @@ $tmpScriptStateObj.Description = "Overall state of script"
 if ($OutputTestData)
 {
     if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
-    [array]$dummyData = @(
-        'SiteSystemState|SMS_MP_CONTROL_MANAGER'
-        'SiteSystemState|SMS_HIERARCHY_MANAGER'
-        'SiteSystemState|SMS_WSUS_CONFIGURATION_MANAGER'
-        'SiteSystemState|SMS_WSUS_SYNC_MANAGER'
-        'ComponentState|SMS Software Update Point'
-        'ComponentState|SMS Management Point'
-        'ComponentState|SMS Distribution Point'
-        'AlertState|Synchronization failure alert for software update point'
-        'AlertState|ADR Rule failure'
-        'AlertState|Management Point check failed'
-    )
-  
     # create dummy entries
     for ($i = 1; $i -le $OutputTestData; $i++)
     { 
-        $selectionInt = Get-Random -Minimum 0 -Maximum $dummyData.Count 
-        $selectedString = $dummyData[$selectionInt] -split '\|'
-
         $tmpObj = New-Object psobject | Select-Object $propertyList
-        $tmpObj.CheckType = $selectedString[0]
-        $tmpObj.Name = '{0}:{1}:{2}{3}_P{4}' -f $tmpObj.CheckType, $systemName, $selectedString[1], ((Get-Random -Minimum 0 -Maximum 99)).ToString('00'), $i.ToString('00')
+        $tmpObj.CheckType = 'DummyData'
+        $tmpObj.Name = 'DummyData:{0}:Dummy{1}' -f $systemName, $i.ToString('00')
         $tmpObj.SystemName = $systemName
         $tmpObj.Status = 'Error'
-        $tmpObj.SiteCode = ""
-        $tmpObj.Description = ""
+        $tmpObj.SiteCode = "P01"
+        $tmpObj.Description = "This is just a dummy entry"
         $tmpObj.PossibleActions = 'Check ConfigMgr console. Also, check the logfile of the corresponding component'
         [void]$resultObject.Add($tmpObj) 
-
     }
 }
 else
@@ -797,6 +780,7 @@ if ($CacheState)
 
     # Get cache file
     $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
+															   
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
@@ -811,7 +795,7 @@ if ($CacheState)
                 # Lets copy the item and change the state to OK
                 $cacheItem.Status = 'Ok'
                 $cacheItem.Description = ""
-                [void]$resultObject.add($cacheItem)
+                [void]$resultObject.add($cacheItem) 
             }
         }
         if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
@@ -820,6 +804,7 @@ if ($CacheState)
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
+	 
 }
 #endregion
 
