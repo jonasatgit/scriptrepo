@@ -855,6 +855,54 @@ $resultObject = $resultObject | Select-Object Name, State, StateDescription, Log
 #endregion
 
 
+#region cache state
+# In case we need to know witch logs are already in error state
+# Not really required by can be helpful in case a logentry was deleted from the definition file 
+if ($CacheState)
+{
+    if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
+    # we need to store one cache file per user running the script to avoid 
+    # inconsistencies if the script is run by different accounts on the same machine
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($currentUser.Name -match '\\')
+    {
+        $userName = ($currentUser.Name -split '\\')[1]
+    }
+    else 
+    {
+        $userName = $currentUser.Name
+    }
+
+    # Get cache file
+    $cacheFileName = '{0}\{1}_{2}_CACHE.json' -f $CachePath, ($MyInvocation.MyCommand), ($userName.ToLower)
+															   
+    if (Test-Path $cacheFileName)
+    {
+        # Found a file lets load it
+        $i=0
+        $cacheFileObject = Get-Content -Path $cacheFileName | ConvertFrom-Json
+        foreach ($cacheItem in $cacheFileObject)
+        {
+            $i++
+            if(-NOT($resultObject.Where({$_.Name -eq $cacheItem.Name})))
+            {
+                # Item not in the list of active errors anymore
+                # Lets copy the item and change the state to OK
+                $cacheItem.Status = 'Ok'
+                $cacheItem.Description = ""
+                [void]$resultObject.add($cacheItem) 
+            }
+        }
+        if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
+    }
+
+    # Lets output the current state for future runtimes 
+    # BUT only error states
+    $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
+}
+#endregion
+
+
 #region Output
 switch ($OutputMode) 
 {

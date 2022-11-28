@@ -527,7 +527,7 @@ if ($CacheState)
     }
 
     # Get cache file
-    $cacheFileName = '{0}\CACHE_{1}_{2}.json' -f $CachePath, ($userName.ToLower()), ($MyInvocation.MyCommand)
+    $cacheFileName = '{0}\{1}_{2}_CACHE.json' -f $CachePath, ($MyInvocation.MyCommand), ($userName.ToLower)
 															   
     if (Test-Path $cacheFileName)
     {
