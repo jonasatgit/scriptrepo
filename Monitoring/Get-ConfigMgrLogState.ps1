@@ -133,7 +133,7 @@ param
     [Parameter(Mandatory=$false)]
     [string]$PrtgLookupFileName,
     [Parameter(Mandatory=$false)]
-    [bool]$InScriptConfigFile = $false,  
+    [bool]$InScriptConfigFile = $true,  
     [Parameter(Mandatory=$false)]
     [string]$ConfigFilePath,     
     [bool]$WriteLog = $false,
@@ -650,6 +650,7 @@ $tmpScriptStateObj.Description = "Overall state of script"
 #region get config data
 if ($InScriptConfigFile)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Using in script config file" -Component ($MyInvocation.MyCommand)}
     $logEntryListJSONObject = $logEntryListJSON | ConvertFrom-Json
 }
 else 
@@ -660,6 +661,7 @@ else
     }
     
     $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
+    if($WriteLog){Write-CMTraceLog -Message "Using: $configFileFullName" -Component ($MyInvocation.MyCommand)}
     if (Test-Path $configFileFullName)
     {
         $logEntryListJSONObject = Get-Content -Path $configFileFullName | ConvertFrom-Json
@@ -677,6 +679,7 @@ $logEntrySearchResultList = New-Object System.Collections.ArrayList
 
 foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
 {
+    if($WriteLog){Write-CMTraceLog -Message "Working on: $($logEntryItem.LogPath)" -Component ($MyInvocation.MyCommand)}
     Write-Verbose "$("{0,-35}-> Working on: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
     $timeSpanObject = $null
     $timeSpanObject = New-Object PSCustomObject | Select-Object StartTime, EndTime
@@ -716,6 +719,7 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
         "Hourly" 
         {
             Write-Error "$("{0,-35}-> Hourly not implemented yet" -f  $($logEntryItem.Name))"
+            if($WriteLog){Write-CMTraceLog -Message "Hourly not implemented yet" -Severity Error -Component ($MyInvocation.MyCommand)}
         }
         "Daily" 
         {
@@ -1069,6 +1073,7 @@ $resultObject = New-Object System.Collections.ArrayList
 # Adding overall script output
 [void]$logEntrySearchResultList.Add($tmpScriptStateObj)
 # Group the results by log name to be able to look at the overall result
+if($WriteLog){Write-CMTraceLog -Message "Grouping results to limit overall output to the latest entries" -Component ($MyInvocation.MyCommand)}
 $logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
               
 foreach ($groupItem in $logEntrySearchResultListGroups)
@@ -1141,6 +1146,7 @@ $resultObject = $resultObject | Select-Object Name, Status, Description, LogPath
 #endregion
 
 #region Output
+if($WriteLog){Write-CMTraceLog -Message "Output of data as: `"$OutputMode`"" -Component ($MyInvocation.MyCommand)}
 switch ($OutputMode) 
 {
     "GridView" 
@@ -1207,4 +1213,5 @@ switch ($OutputMode)
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
+if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
 #endregion 
