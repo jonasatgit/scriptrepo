@@ -136,6 +136,7 @@ param
     [bool]$InScriptConfigFile = $true,  
     [Parameter(Mandatory=$false)]
     [string]$ConfigFilePath,     
+    [Parameter(Mandatory=$false)]
     [bool]$WriteLog = $false,
     [Parameter(Mandatory=$false)]
     [string]$LogPath,
