@@ -33,7 +33,7 @@
 .PARAMETER CacheState
     Boolean parameter. If set to $true, the script will output its current state to a JSON file.
     The file will be stored next to the script or a path set via parameter "CachePath"
-    The filename will look like this: CACHE_[name-of-script.ps1].json
+    The filename will look like this: [name-of-script.ps1]_[Name of user running the script]_CACHE.json
 
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
@@ -49,9 +49,9 @@
 
 .PARAMETER InScriptConfigFile
     Default value is $true and means the config file is part of this script. Embedded in a here-String as $referenceDataJSON.
-    This can be helpful is the script should not have an external config file.
+    This can be helpful if the script should not have an external config file.
     If set to $false the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
-    path specified vie parameter -ConfigFilePath
+    path specified via parameter -ConfigFilePath
 
 .PARAMETER ConfigFilePath
     Path to the configfile called Get-ConfigMgrInboxFileCount.ps1.json. JSON can be created using the content of the in script variable $referenceDataJSON

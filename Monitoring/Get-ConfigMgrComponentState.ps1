@@ -36,7 +36,7 @@
 .PARAMETER CacheState
     Boolean parameter. If set to $true, the script will output its current state to a JSON file.
     The file will be stored next to the script or a path set via parameter "CachePath"
-    The filename will look like this: CACHE_[name-of-script.ps1].json
+    The filename will look like this: [name-of-script.ps1]_[Name of user running the script]_CACHE.json
 
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
