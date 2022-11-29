@@ -18,30 +18,37 @@
 
 .DESCRIPTION
     Get-ConfigMgrLogState is designed to monitor logfiles and output the result in different ways. (See parameter OutputMode for more details)
-    The script will not use an external config file to avoid any dependencies. Instead the script uses an arraylist of logentries to be tested.
-    There is one dependency though when HTMLMail is used as the outputmode. "Send-CustomMonitoringMail.ps1" is required in that case. 
-    The script needs to run at least as often as the lowest interval configured in the section described next.
-    For each logfile to be monitored, copy the below lines and paste them below the line: "########## Paste new entries below ##########"
-    Change the values as required for the log test.
+    If parameter -InScriptConfigFile is set to $true the script will use the contents of variable: $logEntryListJSON.
+    If parameter -InScriptConfigFile is set to $false the script will use an external JSON config file called: "Get-ConfigMgrLogState.ps1.json"
+    The file can be created by copying the contents of $logEntryListJSON from "$logEntryListJSON = @'" to "'@"
+    The variable $logEntryListJSON also contains the documentation of the various settings. 
+    The script needs to run at least as often as the lowest interval configured in $logEntryListJSON or the JSON file.
+    
+    There is one extra dependency  when HTMLMail is used as the outputmode. "Send-CustomMonitoringMail.ps1" is required in that case. 
+    
+    JSON definition:
+    {
+        "LogEntries": [
+            {
+                "Name": "Name of lofile or type of check to be performed",
+                "Description": "Description of this item",
+                "LogPath": "IMPORTANT: needs to have two backslash in path. Path to a logfile like this: C:\\temp\\logfile.log",
+                "SuccessString": "String we expect in case of success. Lile 'Script successful'. Can also contain regular expression. Like: '(string1)|(string2)'",
+                "Interval": "The interval we expect the SuccessString to be written. Possible values are: Daily, Weekly or Monthly",
+                "IntervalDay": "The day we expect the SuccessString to be written if 'Interval' is set to Weekly or Monthly. Like: Monday or Tuesday",
+                "IntervalWeek": "Only valid if 'Interval' is set to 'Monthly'. Number for the week we expect the SuccessString to be written. Like 2 for the second week in a month.",
+                "IntervalTime": "Time we expect the SuccessString to be written in 24h format like 15:00",
+                "TimespanMinutes": "Number of minutes to be added before and after 'IntervalTime'. 60 will add 60 minutes before and after to the value of 'IntervalTime'. Otherweise the script will only look for an entry at exactly 15:00 for example.",
+                "DateFormat": "Date format of log entries. ONLY Cmtrace.exe log format supported at the moment. Either: DMY or MDY. DMY = day, month, year or ddMMyyyy | MDY = month, day, year or MMddyyy",
+                "IgnorePreviousEntries": "Either true or false. If set to true and if we are probing before the time we would expect a log entry, we should not look one day, week or month back and test the last result instead",
+                "RunOnActiveNodeOnly": "Either true or false. True means, the specific scan will only be performed if the ConfigMgr node running the script is the active node. (Only valid in ConfigMgr HA scenarios)",
+                "RunOnSystemList": "Comma seperated list of system fqdns the check should be performed on. If empty, the test will be performed on any system"
+            }
+        ]
+    }   
 
-    ########## Copy here ##########
-    $logEntry = @{
-        Name = "Configmgr Backup Monitor Daily Test"
-        Description = "Just a test" # A short description of the logfile and why a test is needed
-        LogPath = "C:\Users\sccmops\Downloads\smsbkup.log" # Path and name of a logfile to be parsed
-        SuccessString = "Backup completed" # String to look for in case of success. The script will try to find the string in the given timeframe
-        Interval = "Daily" # How often we expect the success string to be written to the logfile. Valid strings: "Hourly", "Daily", "Weekly" or "Monthly
-        IntervalDay = "" # A specific day we expect the success string to be written. Only valid if "Interval" is set to Weekly or Monthly. Valid strings: "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday" 
-        IntervalWeek = 0 # A specific week we expect the success string to be written. Only valid if "Interval" is set to Monthly
-        IntervalTime = "02:00" # Time in 24h format hh:mm. The time we expect a log entry to appear
-        TimespanMinutes = 60 # Minutes added to the Intervaltime before and after. This is the timeframe we will look for the SuccessString in the log
-        IgnorePreviousEntries = $true or $false. If set to true and if we are probing before the time we would expect a log entry, we should not look one day, week or month back and test the last result instead
-        RunOnActiveNodeOnly = $true or $false. If set to true the test will only run on an active ConfigMgr site server.
-        RunOnSystemList = Comma seperated list of system fqdns the check should be performed. If empty, the test will be performed on any system
-    }
-    $logEntryObj = New-Object PSCustomObject -Property $logEntry
-    [void]$logEntryList.add($logEntryObj)
-    ########## Copy here ##########
+    IMPORTANT: 
+    Parameter: "-OutputMode 'GridView'" shows each log line to have the search string and not just the overall result per check. Best for troubleshooting. 
 
 .EXAMPLE
     .\Get-ConfigMgrLogState
@@ -54,7 +61,7 @@
 .PARAMETER CacheState
     Boolean parameter. If set to $true, the script will output its current state to a JSON file.
     The file will be stored next to the script or a path set via parameter "CachePath"
-    The filename will look like this: CACHE_[name-of-script.ps1].json
+    The filename will look like this: [name-of-script.ps1]_[Name of user running the script]_CACHE.json
 
 .PARAMETER CachePath
     Path to store the JSON cache file. Default value is root path of script. 
@@ -66,8 +73,23 @@
 .PARAMETER PrtgLookupFileName
     Name of a PRTG value lookup file. 
 
+.PARAMETER InScriptConfigFile
+    Default value is $true and means the config file is part of this script. Embedded in a here-String as $logEntryListJSON.
+    This can be helpful if the script should not have an external config file.
+    If set to $false the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
+    path specified via parameter -ConfigFilePath
+
+.PARAMETER ConfigFilePath
+    Path to the configfile called Get-ConfigMgrInboxFileCount.ps1.json. JSON can be created using the content of the in script variable $logEntryListJSON
+
+.PARAMETER WriteLog
+    If true, the script will write a log. Helpful during testing. Default value is $false. 
+
+.PARAMETER LogPath
+    Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
+
 .PARAMETER OutputTestData
-    Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
+    NOT USED at the momment. Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
 .EXAMPLE
     .\Get-ConfigMgrLogState
@@ -78,11 +100,17 @@
 .EXAMPLE
     .\Get-ConfigMgrLogState -ProbeTime (Get-Date('2022-06-14 01:00'))
 
+.EXAMPLE
+    .\Get-ConfigMgrLogState -WriteLog $true
+
+.EXAMPLE
+    .\Get-ConfigMgrLogState -WriteLog $true -LogPath "C:\Temp"
+
 .INPUTS
    None
 
 .OUTPUTS
-   GridView, JSON, compressed JSON or HTML mail
+   Depends on OutputMode
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -97,10 +125,24 @@ param
     [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
-    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!'
+    [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
+    [Parameter(Mandatory=$false)]
+    [bool]$CacheState = $true,
+    [Parameter(Mandatory=$false)]
+    [string]$CachePath,
+    [Parameter(Mandatory=$false)]
+    [string]$PrtgLookupFileName,
+    [Parameter(Mandatory=$false)]
+    [bool]$InScriptConfigFile = $false,  
+    [Parameter(Mandatory=$false)]
+    [string]$ConfigFilePath,     
+    [bool]$WriteLog = $false,
+    [Parameter(Mandatory=$false)]
+    [string]$LogPath,
+    [Parameter(Mandatory=$false)]
+    [ValidateRange(1,60)]
+    [int]$OutputTestData=0
 )
-
-$VerbosePreference = "silentlyContinue"
 
 #region admin check
 #Ensure that the Script is running with elevated permissions
@@ -115,6 +157,23 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
 #region log entry list
 $logEntryListJSON = @'
 {
+    "DOCUMENTATION": [
+        {
+            "Name": "Name of logfile or type of check to be performed",
+            "Description": "Description of this item",
+            "LogPath": "IMPORTANT: needs to have two backslashes in path. Path to a logfile like this: C:\\temp\\logfile.log",
+            "SuccessString": "String we expect in case of success. Like: 'Script successful'. Can also contain regular expression. Like: '(string1)|(string2)'",
+            "Interval": "The interval we expect the SuccessString to be written. Possible values are: Daily, Weekly or Monthly",
+            "IntervalDay": "The day we expect the SuccessString to be written if 'Interval' is set to Weekly or Monthly. Like: Monday or Tuesday",
+            "IntervalWeek": "Only valid if 'Interval' is set to 'Monthly'. Number for the week we expect the SuccessString to be written. Like 2 for the second week in a month.",
+            "IntervalTime": "Time we expect the SuccessString to be written in 24h format like 15:00",
+            "TimespanMinutes": "Number of minutes to be added before and after 'IntervalTime'. 60 will add 60 minutes before and after to the value of 'IntervalTime'. Otherweise the script will only look for an entry at exactly 15:00 for example.",
+            "DateFormat": "Date format of log entries. ONLY Cmtrace.exe log format supported at the moment. Either: DMY or MDY. DMY = day, month, year or ddMMyyyy | MDY = month, day, year or MMddyyy",
+            "IgnorePreviousEntries": "Either true or false. If set to true and if we are probing before the time we would expect a log entry, we should not look one day, week or month back and test the last result instead",
+            "RunOnActiveNodeOnly": "Either true or false. True means, the specific scan will only be performed if the ConfigMgr node running the script is the active node. (Only valid in ConfigMgr HA scenarios)",
+            "RunOnSystemList": "Comma seperated list of system fqdns the check should be performed on. If empty, the test will be performed on any system"
+        }
+    ],
     "LogEntries": [
             {
                 "Name": "Configmgr Backup Monitor",
@@ -126,6 +185,7 @@ $logEntryListJSON = @'
                 "IntervalWeek": 0,
                 "IntervalTime": "02:00",
                 "TimespanMinutes": 60,
+                "DateFormat": "MDY",
                 "IgnorePreviousEntries": true,
                 "RunOnActiveNodeOnly": true,
                 "RunOnSystemList": ""
@@ -140,6 +200,7 @@ $logEntryListJSON = @'
                 "IntervalWeek": 2,
                 "IntervalTime": "22:00",
                 "TimespanMinutes": 60,
+                "DateFormat": "MDY",
                 "IgnorePreviousEntries": false,
                 "RunOnActiveNodeOnly": false,
                 "RunOnSystemList": "test1.contoso.local"
@@ -154,6 +215,7 @@ $logEntryListJSON = @'
                 "IntervalWeek": 2,
                 "IntervalTime": "22:00",
                 "TimespanMinutes": 60,
+                "DateFormat": "MDY",
                 "IgnorePreviousEntries": true,
                 "RunOnActiveNodeOnly": false,
                 "RunOnSystemList": ""
@@ -168,6 +230,7 @@ $logEntryListJSON = @'
                 "IntervalWeek": 0,
                 "IntervalTime": "22:00",
                 "TimespanMinutes": 60,
+                "DateFormat": "MDY",
                 "IgnorePreviousEntries": true,
                 "RunOnActiveNodeOnly": false,
                 "RunOnSystemList": ""
@@ -182,6 +245,7 @@ $logEntryListJSON = @'
                 "IntervalWeek": 0,
                 "IntervalTime": "03:00",
                 "TimespanMinutes": 120,
+                "DateFormat": "MDY",
                 "IgnorePreviousEntries": false,
                 "RunOnActiveNodeOnly": false,
                 "RunOnSystemList": ""
@@ -189,160 +253,78 @@ $logEntryListJSON = @'
     ]
 }
 '@
-<#
-$logEntryListJSON = @'
-{
-    "LogEntries": [
-            {
-                "Name": "DAILY TEST",
-                "Description": "Will export daily stuff",
-                "LogPath": "E:\\CUSTOM\\LogTest\\dailytest.log",
-                "SuccessString": "Important log line",
-                "Interval": "Daily",
-                "IntervalDay": "",
-                "IntervalWeek": 0,
-                "IntervalTime": "03:00",
-                "TimespanMinutes": 120,
-                "IgnorePreviousEntries": false,
-                "RunOnActiveNodeOnly": false,
-                "RunOnSystemList": ""
-            }
-            ]
-        }
-'@
-#>
-$logEntryListJSONObject = $logEntryListJSON | ConvertFrom-Json
 #endregion
 
-
-#region ConvertTo-CustomMonitoringObject
-<# 
+#region Write-CMTraceLog
+<#
 .Synopsis
-   Function ConvertTo-CustomMonitoringObject
-
-.DESCRIPTION
-   Will convert a specific input object to a custom JSON like object
-   Which then can be used as an input object for a custom monitoring solution
-
-.PARAMETER InputObject
-   Well defined input object
-
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe .DESCRIPTION
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
 .EXAMPLE
-   $CustomObject | ConvertTo-CustomMonitoringObject
-#>
-Function ConvertTo-CustomMonitoringObject
+    Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
+function Write-CMTraceLog 
 {
     [CmdletBinding()]
-    param (
-        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [object]$InputObject,
-        [ValidateSet("LeutekObject", "PrtgObject")]
-        [string]$OutputType
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Global:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$true)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = 'Log'
     )
 
-    Begin
-    {
-        $resultsObject = New-Object System.Collections.ArrayList
-        switch ($OutputType)
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
         {
-            'LeutekObject'
-            {
-                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
-                $outObject.InterfaceVersion = 1  
-            }
-            'PrtgObject'
-            {
-                $outObject = New-Object psobject | Select-Object prtg
-            }
-        }  
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
+    {
+        Write-Host $Message -ForegroundColor $color
     }
-    Process
+    
+    If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
     {
-        switch ($OutputType) 
-        {
-            'LeutekObject' 
-            {  
-                # Format for ConfigMgrComponentState
-                # Adding infos to short description field
-                Switch ($InputObject.CheckType)
-                {
-                    'Certificate'
-                    {
-                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
-                    }
-                    'Inbox'
-                    {
-                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
-                    }
-                    'Log'
-                    {
-                        Write-Verbose $InputObject.StateDescription
-                        [string]$shortDescription = $InputObject.StateDescription -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
-                    }
-                    Default 
-                    {
-                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
-                    }
-                }
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
 
-                # ShortDescription has a 300 character limit
-                if ($shortDescription.Length -gt 300)
-                {
-                    $shortDescription = $shortDescription.Substring(0, 299) 
-                } 
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
 
-
-                switch ($InputObject.Status) 
-                {
-                    'Ok' {$outState = 0}
-                    'Warning' {$outState = 1}
-                    'Error' {$outState = 2}
-                    Default {$outState = 3}
-                }
-
-                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
-                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
-                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
-                $tmpResultObject.Status = $outState
-                $tmpResultObject.ShortDescription = $shortDescription
-                $tmpResultObject.Debug = ''
-                [void]$resultsObject.Add($tmpResultObject)
-            }
-            'PrtgObject'
-            {
-                $tmpResultObject = New-Object psobject | Select-Object Channel, Value, Warning
-                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
-                $tmpResultObject.Value = 0
-                if ($InputObject.Status -ieq 'Ok')
-                {
-                    $tmpResultObject.Warning = 0
-                }
-                else
-                {
-                    $tmpResultObject.Warning = 1
-                }                    
-                [void]$resultsObject.Add($tmpResultObject)  
-            }
-        }                  
-    }
-    End
-    {
-        switch ($OutputType)
-        {
-            'LeutekObject'
-            {
-                $outObject.Results = $resultsObject
-                $outObject
-            }
-            'PrtgObject'
-            {
-                $tmpPrtgResultObject = New-Object psobject | Select-Object result
-                $tmpPrtgResultObject.result = $resultsObject
-                $outObject.prtg = $tmpPrtgResultObject
-                $outObject
-            }
-        }  
-
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
     }
 }
 #endregion
@@ -454,6 +436,164 @@ function Find-DayOfWeek
 }
 #endregion 
 
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject,
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("LeutekObject", "PrtgObject")]
+        [string]$OutputType,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName        
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+                $outObject.InterfaceVersion = 1  
+            }
+            'PrtgObject'
+            {
+                $outObject = New-Object psobject | Select-Object prtg
+            }
+        }  
+    }
+    Process
+    {
+        switch ($OutputType) 
+        {
+            'LeutekObject' 
+            {  
+                # Format for ConfigMgrComponentState
+                # Adding infos to short description field
+                <#
+                Switch ($InputObject.CheckType)
+                {
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Inbox'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                    }
+                }
+                #>
+
+                # Needs to be name at the moment
+                $shortDescription = $InputObject.Name -replace "\'", "" -replace '>','_'
+
+                # ShortDescription has a 300 character limit
+                if ($shortDescription.Length -gt 300)
+                {
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            }
+            'PrtgObject'
+            {
+                if ($PrtgLookupFileName)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, ValueLookup
+                    $tmpResultObject.ValueLookup = $PrtgLookupFileName
+                }
+                else 
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value
+                }
+               
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Value = 0
+                }
+                else
+                {
+                    $tmpResultObject.Value = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
+            }
+        }                  
+    }
+    End
+    {
+        switch ($OutputType)
+        {
+            'LeutekObject'
+            {
+                $outObject.Results = $resultsObject
+                $outObject
+            }
+            'PrtgObject'
+            {
+                $tmpPrtgResultObject = New-Object psobject | Select-Object result
+                $tmpPrtgResultObject.result = $resultsObject
+                $outObject.prtg = $tmpPrtgResultObject
+                $outObject
+            }
+        }  
+
+    }
+}
+#endregion
+
+#region log path
+if ($WriteLog)
+{
+    if (-NOT($LogPath))
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+    }
+    else 
+    {
+        $Global:LogFilePath = '{0}\{1}.log' -f $LogPath, ($MyInvocation.MyCommand)
+    }
+}
+if($WriteLog){Write-CMTraceLog -Message " " -Component ($MyInvocation.MyCommand)}
+if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocation.MyCommand)}
+#endregion
 
 #region system name
 # get system FQDN if possible
@@ -469,12 +609,12 @@ else
 #endregion
 
 
-#region main log logic
+#region pre main log logic
 # temp results object and corresponding property list
 [array]$propertyList = 'Name'
 $propertyList += 'CheckType'
-$propertyList += 'State'
-$propertyList += 'StateDescription'
+$propertyList += 'Status'
+$propertyList += 'Description'
 $propertyList += 'LogPath'
 $propertyList += 'LogDateTime'
 $propertyList += 'ProbeTime'
@@ -488,10 +628,51 @@ $propertyList += 'LineNumber'
 $propertyList += 'Line'
 #$propertyList += 'Thread'
 $propertyList += 'TimeZoneOffset'
-$propertyList += 'Description'
+$propertyList += 'ItemDescription'
 $propertyList += 'NodeType'
 $propertyList += 'RunOnSystemList'
 
+if (-NOT($CachePath))
+{
+    $CachePath = $PSScriptRoot
+}
+#endregion
+
+#region Generic Script state object
+# We always need a generic script state object. Especially if we have no errors
+$tmpScriptStateObj = New-Object psobject | Select-Object $propertyList
+$tmpScriptStateObj.Name = 'Script:{0}' -f $systemName 
+$tmpScriptStateObj.CheckType = 'Script'
+$tmpScriptStateObj.Status = 'Ok'
+$tmpScriptStateObj.Description = "Overall state of script"
+#endregion
+
+#region get config data
+if ($InScriptConfigFile)
+{
+    $logEntryListJSONObject = $logEntryListJSON | ConvertFrom-Json
+}
+else 
+{
+    if (-NOT($ConfigFilePath))
+    {
+        $ConfigFilePath = $PSScriptRoot
+    }
+    
+    $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
+    if (Test-Path $configFileFullName)
+    {
+        $logEntryListJSONObject = Get-Content -Path $configFileFullName | ConvertFrom-Json
+    }
+    else 
+    {
+        $tmpScriptStateObj.Status = 'Error'
+        $tmpScriptStateObj.Description = ('Path not found: {0}' -f $configFileFullName)
+    }
+}
+#endregion
+
+#region MAIN LOG LOGIC
 $logEntrySearchResultList = New-Object System.Collections.ArrayList
 
 foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
@@ -505,10 +686,10 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
     $checkRequired = $true 
     # Tmp object to track log parse status
     $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
-    $tmpLogEntryObject.Name = $logEntryItem.Name
-    $tmpLogEntryObject.CheckType = 'Log'
-    $tmpLogEntryObject.State = "" # Set to nothing to force string format
-    $tmpLogEntryObject.StateDescription = "" # Set to nothing to force string format
+    $tmpLogEntryObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
+    $tmpLogEntryObject.CheckType = 'LogCheck'
+    $tmpLogEntryObject.Status = "" # Set to nothing to force string format
+    $tmpLogEntryObject.Description = "" # Set to nothing to force string format
     $tmpLogEntryObject.LogPath = $logEntryItem.LogPath
     $tmpLogEntryObject.LogDateTime #= [datetime]::MinValue # Set to min value to force datime format
     $tmpLogEntryObject.ProbeTime = $ProbeTime
@@ -522,7 +703,7 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
     $tmpLogEntryObject.Line = "" # Set to nothing to force string format
     #$tmpLogEntryObject.Thread = "" # Set to nothing to force string format
     $tmpLogEntryObject.TimeZoneOffset = "" # Set to nothing to force string format
-    $tmpLogEntryObject.Description = $logEntryItem.Description
+    $tmpLogEntryObject.ItemDescription = $logEntryItem.Description
     $tmpLogEntryObject.NodeType = "" # Set to nothing to force string format
     $tmpLogEntryObject.RunOnSystemList = $logEntryItem.RunOnSystemList
 
@@ -637,8 +818,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
     if ($checkRequired -eq $false)
     {
         # Nothing to for now for this log file
-        $tmpLogEntryObject.State = "OK"
-        $tmpLogEntryObject.StateDescription = "Probe time before log time. Nothing to do"
+        $tmpLogEntryObject.Status = "OK"
+        $tmpLogEntryObject.Description = "Probe time before log time. Nothing to do"
         [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
         Write-Verbose "$("{0,-35}-> Probetime before calculated logtime. Nothing to do." -f  $($logEntryItem.Name))"
     }
@@ -676,8 +857,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
         {
             if (-NOT(Test-Path -Path $logEntryItem.LogPath))
             {
-                $tmpLogEntryObject.State = "Error"
-                $tmpLogEntryObject.StateDescription = "Path not found"
+                $tmpLogEntryObject.Status = "Error"
+                $tmpLogEntryObject.Description = "Path not found"
                 [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                 Write-Verbose "$("{0,-35}-> Path not found: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))" 
             }
@@ -697,10 +878,10 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                         {
                             # Custom object per found log entry
                             $tmpLogLineObject = New-Object PSCustomObject | Select-Object $propertyList
-                            $tmpLogLineObject.Name = $logEntryItem.Name
-                            $tmpLogLineObject.CheckType = 'Log'
-                            $tmpLogLineObject.State = "" # Set to nothing to force string format
-                            $tmpLogLineObject.StateDescription = "" # Set to nothing to force string format
+                            $tmpLogLineObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
+                            $tmpLogLineObject.CheckType = 'LogCheck'
+                            $tmpLogLineObject.Status = "" # Set to nothing to force string format
+                            $tmpLogLineObject.Description = "" # Set to nothing to force string format
                             $tmpLogLineObject.ProbeTime = $ProbeTime
                             $tmpLogLineObject.StartTime = $timeSpanObject.StartTime
                             $tmpLogLineObject.EndTime  = $timeSpanObject.EndTime
@@ -711,7 +892,7 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                             $tmpLogLineObject.SuccessString = $logEntryItem.SuccessString
                             $tmpLogLineObject.Line = $resultLine.Line
                             $tmpLogLineObject.LineNumber = $resultLine.LineNumber
-                            $tmpLogLineObject.Description = $logEntryItem.Description
+                            $tmpLogLineObject.ItemDescription = $logEntryItem.Description
                             $tmpLogLineObject.NodeType = $nodeType
                             $tmpLogLineObject.RunOnSystemList = $logEntryItem.RunOnSystemList
                                                     
@@ -728,10 +909,20 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                             
                                 # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
                                 $datetimeSplit = (($Matches.datetime) -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
-                                $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'MM-dd-yyyy HH:mm:ss', $null)
-                                
-                                # adding timezoneoffset $datetimeSplit[1] = "+ or -", $datetimeSplit[2] = minutes
-                                $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $datetimeSplit[1], $datetimeSplit[2]
+                                Switch ($logEntryItem.DateFormat)
+                                {
+                                    'DMY'
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'dd-MM-yyyy HH:mm:ss', $null)
+                                    }
+                                    'MDY'
+                                    {
+                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'MM-dd-yyyy HH:mm:ss', $null)
+                                    }
+                                }
+                               
+                                # adding timezoneoffset $datetimeSplit[2] = "+ or -", $datetimeSplit[3] = minutes
+                                $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $datetimeSplit[2], $datetimeSplit[3]
                             }
                             
                             if (-NOT ($tmpLogLineObject.LogDateTime))
@@ -748,38 +939,82 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                                     # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
                                     $timeSplit = (($Matches.time -replace '(Time=")', '') -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
                                     $datetimeString = "{0} {1}" -f ($Matches.date -replace '(Date=")', ''), $timeSplit[0]
-                                    if ($datetimeString -match '\d{1}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}')
+
+                                    Switch -Regex ($datetimeString)
                                     {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-dd-yyyy HH:mm:ss', $null)
+                                        '\d{1}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}' 
+                                        {
+                                            Switch ($logEntryItem.DateFormat)
+                                            {
+                                                'DMY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-MM-yyyy HH:mm:ss', $null)
+                                                }
+                                                'MDY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-dd-yyyy HH:mm:ss', $null)
+                                                }
+                                            }                                            
+                                        }
+                                        '\d{2}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
+                                        {
+                                            Switch ($logEntryItem.DateFormat)
+                                            {
+                                                'DMY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-M-yyyy HH:mm:ss', $null)
+                                                }
+                                                'MDY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-d-yyyy HH:mm:ss', $null)
+                                                }
+                                            }                                             
+                                        }
+                                        '\d{1}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
+                                        {
+                                            Switch ($logEntryItem.DateFormat)
+                                            {
+                                                'DMY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-M-yyyy HH:mm:ss', $null)
+                                                }
+                                                'MDY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-d-yyyy HH:mm:ss', $null)
+                                                }
+                                            }                                             
+                                        }
+                                        '\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}'
+                                        {
+                                            Switch ($logEntryItem.DateFormat)
+                                            {
+                                                'DMY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-MM-yyyy HH:mm:ss', $null)   
+                                                }
+                                                'MDY'
+                                                {
+                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
+                                                }
+                                            }                                             
+                                        }
                                     }
-                                    elseif ($datetimeString -match '\d{2}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}') 
-                                    {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-d-yyyy HH:mm:ss', $null)
-                                    }
-                                    elseif ($datetimeString -match '\d{1}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}') 
-                                    {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-d-yyyy HH:mm:ss', $null)
-                                    }
-                                    elseif ($datetimeString -match '\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}') 
-                                    {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
-                                    }
-                                    # adding timezoneoffset $timeSplit[1] = "+ or -", $timeSplit[2] = minutes
+                                    # adding timezoneoffset $timeSplit[2] = "+ or -", $timeSplit[3] = minutes
                                     $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $timeSplit[2], $timeSplit[3]
                                 }
                             }
 
                             if (-NOT ($tmpLogLineObject.LogDateTime))
                             {
-                                $tmpLogLineObject.State = 'Error'
-                                $tmpLogLineObject.StateDescription = 'DateTime could not be extracted from log!'
+                                $tmpLogLineObject.Status = 'Error'
+                                $tmpLogLineObject.Description = 'DateTime could not be extracted from log! Is the correct DateFormat set?'
                                 Write-Verbose "$("{0,-35}-> DateTime could not be extracted from log: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                             }
 
                             # Check if the log line was written during the calculated "allowed" timeframe
                             If (($tmpLogLineObject.LogDateTime -ge $timeSpanObject.StartTime) -and ($tmpLogLineObject.LogDateTime -le $timeSpanObject.EndTime))
                             {
-                                $tmpLogLineObject.State = 'OK'
+                                $tmpLogLineObject.Status = 'OK'
                                 $foundLogEntryInTimeFrame = $true
                                 Write-Verbose "$("{0,-35}-> Success string found in given timeframe in line: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
                             }
@@ -791,8 +1026,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
 
                         if (-NOT ($foundLogEntryInTimeFrame))
                         {
-                            $tmpLogEntryObject.State = 'Error'
-                            $tmpLogEntryObject.StateDescription = 'Success string not found in given timeframe'
+                            $tmpLogEntryObject.Status = 'Error'
+                            $tmpLogEntryObject.Description = 'Success string not found in given timeframe'
                             [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                             Write-Verbose "$("{0,-35}-> Success string not found in given timeframe: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                         }
@@ -801,8 +1036,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                     else 
                     {
                         # no result in log found
-                        $tmpLogEntryObject.State = 'Error'
-                        $tmpLogEntryObject.StateDescription = 'Success string not found in log!'
+                        $tmpLogEntryObject.Status = 'Error'
+                        $tmpLogEntryObject.Description = 'Success string not found in log!'
                         [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                         Write-Verbose "$("{0,-35}-> Success string not found in log! {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                     } # END If ($parseResult)
@@ -810,8 +1045,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
                 }
                 else 
                 {
-                    $tmpLogEntryObject.State = "Error"
-                    $tmpLogEntryObject.StateDescription = "Could not calculate time"
+                    $tmpLogEntryObject.Status = "Error"
+                    $tmpLogEntryObject.Description = "Could not calculate time"
                     [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                     Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                 } # END if ($timeSpanObject.StartTime)
@@ -819,8 +1054,8 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
         }
         else 
         {
-            $tmpLogEntryObject.State = "OK"
-            $tmpLogEntryObject.StateDescription = "Test only allowed to run on active node or specific system"
+            $tmpLogEntryObject.Status = "OK"
+            $tmpLogEntryObject.Description = "Test only allowed to run on active node or specific system"
             [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
             Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"                
         } # end Test-ConfigMgrActiveSiteSystemNode
@@ -829,9 +1064,10 @@ foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
 }
 #endregion
 
-
 #region limit outputlist for some output modes
 $resultObject = New-Object System.Collections.ArrayList
+# Adding overall script output
+[void]$logEntrySearchResultList.Add($tmpScriptStateObj)
 # Group the results by log name to be able to look at the overall result
 $logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
               
@@ -839,10 +1075,10 @@ foreach ($groupItem in $logEntrySearchResultListGroups)
 {
     # Do we have a good result?
     #$goodResults = $null
-    #[array]$goodResults = $groupItem.group | Where-Object {$_.State -eq 'OK'}
-    If($groupItem.group | Where-Object {$_.State -eq 'OK'})
+    #[array]$goodResults = $groupItem.group | Where-Object {$_.Status -ieq 'OK'}
+    If($groupItem.group | Where-Object {$_.Status -ieq 'OK'})
     {
-        [void]$resultObject.Add(($groupItem.group | Where-Object {$_.State -eq 'OK'}))        
+        [void]$resultObject.Add(($groupItem.group | Where-Object {$_.Status -ieq 'OK'}))        
     }
     else
     {
@@ -850,8 +1086,6 @@ foreach ($groupItem in $logEntrySearchResultListGroups)
                        
     }
 }
-# Limit output to some properties
-$resultObject = $resultObject | Select-Object Name, State, StateDescription, LogPath, LogDateTime, Interval, IntervalDay, Intervalweek
 #endregion
 
 
@@ -902,6 +1136,9 @@ if ($CacheState)
 }
 #endregion
 
+#region Limit output to some properties
+$resultObject = $resultObject | Select-Object Name, Status, Description, LogPath, LogDateTime, Interval, IntervalDay, Intervalweek
+#endregion
 
 #region Output
 switch ($OutputMode) 
@@ -933,7 +1170,7 @@ switch ($OutputMode)
         }  
         
         # If there are bad results, lets change the subject of the mail
-        if($resultObject.Where({$_.State -ine 'OK'}))
+        if($resultObject.Where({$_.Status -ine 'OK'}))
         {
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -954,7 +1191,7 @@ switch ($OutputMode)
     }
     "PRTGString"
     {
-        $badResults = $resultObject.Where({$_.State -ine 'OK'})
+        $badResults = $resultObject.Where({$_.Status -ine 'OK'})
         if ($badResults)
         {
             $resultString = '{0}:ConfigMgr log monitor failures' -f $badResults.count
@@ -967,7 +1204,7 @@ switch ($OutputMode)
     }
     "PRTGJSON"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject | ConvertTo-Json -Depth 3
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
     }
 }
 #endregion 
