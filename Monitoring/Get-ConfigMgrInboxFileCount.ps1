@@ -615,7 +615,7 @@ if ($OutputTestData)
 {
     if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     # create dummy entries using the $referenceDataObject
-    $inboxCounterList = $referenceDataObject.SMSInboxPerfData | ForEach-Object {
+    $inboxCounterList = $referenceDataObject.SMSInboxPerfData | Where-Object {$_.SkipCheck -eq $false}  | ForEach-Object {
         $tmpObj = New-Object psobject | Select-Object Name, FileCurrentCount
         $tmpObj.Name = $_.CounterName
         $tmpObj.FileCurrentCount = (Get-Random -Minimum ($_.MaxValue+10) -Maximum 5000)
