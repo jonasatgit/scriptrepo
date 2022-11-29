@@ -604,7 +604,7 @@ else
     else 
     {
         $tmpScriptStateObj.Status = 'Error'
-        $tmpScriptStateObj.Description = ('Path not found: {}' -f $configFileFullName)
+        $tmpScriptStateObj.Description = ('Path not found: {0}' -f $configFileFullName)
     }
 }
 #endregion
