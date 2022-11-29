@@ -185,6 +185,80 @@ function Test-ConfigMgrActiveSiteSystemNode
 }
 #endregion
 
+#region Write-CMTraceLog
+<#
+.Synopsis
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe .DESCRIPTION
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
+.EXAMPLE
+    Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
+    function Write-CMTraceLog 
+    {
+        [CmdletBinding()]
+        Param
+        (
+            #Path to the log file
+            [parameter(Mandatory=$false)]
+            [String]$LogFile=$Global:LogFilePath,
+    
+            #The information to log
+            [parameter(Mandatory=$true)]
+            [String]$Message,
+    
+            #The source of the error
+            [parameter(Mandatory=$false)]
+            [String]$Component=(Split-Path $PSCommandPath -Leaf),
+    
+            #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+            [parameter(Mandatory=$false)]
+            [ValidateSet("Information","Warning","Error")]
+            [String]$Severity="Information",
+    
+            # write to console only
+            [Parameter(Mandatory=$false)]
+            [ValidateSet("Console","Log","ConsoleAndLog")]
+            [string]$OutputMode = 'Log'
+        )
+    
+    
+        # save severity in single for cmtrace severity
+        [single]$cmSeverity=1
+        switch ($Severity)
+            {
+                "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+                "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+                "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+            }
+    
+        If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
+        {
+            Write-Host $Message -ForegroundColor $color
+        }
+       
+        If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
+        {
+            #Obtain UTC offset
+            $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+            $DateTime.SetVarDate($(Get-Date))
+            $UtcValue = $DateTime.Value
+            $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+    
+            #Create the line to be logged
+            $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                        "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                        "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                        "component=`"$Component`" " +`
+                        "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                        "type=`"$cmSeverity`" " +`
+                        "thread=`"$PID`" " +`
+                        "file=`"`">"
+    
+            #Write the line to the passed log file
+            $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+        }
+    }
+    #endregion
+
 #region ConvertTo-CustomMonitoringObject
 <# 
 .Synopsis
