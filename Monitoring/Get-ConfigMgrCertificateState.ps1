@@ -468,7 +468,7 @@ $tmpScriptStateObj.CheckType = 'Script'
 $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
 #endregion
-
+ 
 if ($OutputTestData -ge 1)
 {
     if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
@@ -479,7 +479,7 @@ if ($OutputTestData -ge 1)
         #$dummyThrumbprint = (-join ((65..73)+(65..73)+(65..73)+(65..73)+(65..73) | Get-Random -Count 40 | ForEach-Object {[char]$_})) -replace 'G|H|I', (Get-Random -Minimum 0 -Maximum 9)
         # A more consistent approach to test data instead of using get-random. Makes troubleshooting easier. 
         $dummyThrumbprint = "F0EEBAD0A0FC0FDAB00A0D0D0C0EEFE00CBCC0FA"
-
+ 
         $tmpObj = New-Object psobject | Select-Object $propertyList
         $tmpObj.CheckType = 'DummyData'
         $tmpObj.Name = 'DummyData:{0}:{1}:Dummy{2}' -f $systemName, $dummyThrumbprint, $i.ToString('00')
@@ -507,7 +507,9 @@ else
             {
                 foreach ($OSDCertificate in $ConfigMgrOSDCertificates)
                 {
+                    if($WriteLog){Write-CMTraceLog -Message ('Checking certificate: {0}' -f ($OSDCertificate.SMSID)) -Component ($MyInvocation.MyCommand)}
                     $expireDays = (New-TimeSpan -Start (Get-Date) -End ([Management.ManagementdateTimeConverter]::ToDateTime($OSDCertificate.ValidUntil))).Days
+                    if($WriteLog){Write-CMTraceLog -Message ('Certificate will expire in: {0} days' -f ($expireDays)) -Component ($MyInvocation.MyCommand)}
                     if ($expireDays -le $minValidDays)
                     {
                         $tmpObj = New-Object psobject | Select-Object $propertyList
@@ -524,6 +526,7 @@ else
             }
             else
             {
+                if($WriteLog){Write-CMTraceLog -Message "No DP or Boot certificate found! Validate user rights and or ConfigMgr site config" -Severity Warning -Component ($MyInvocation.MyCommand)}
                 $tmpObj = New-Object psobject | Select-Object $propertyList
                 $tmpObj.CheckType = 'Certificate'
                 $tmpObj.Name = '{0}:{1}:DPCertificate' -f $tmpObj.CheckType, $systemName
@@ -545,7 +548,7 @@ else
     {
         if($WriteLog){Write-CMTraceLog -Message "No active ConfigMgr node found. Will skip in console certfifcate checks" -Component ($MyInvocation.MyCommand)}
     }
-
+ 
     # Looking for certificates in personal store of current system if a webserver is installed
     # Format method: https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.asnencodeddata.format
     if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
@@ -560,7 +563,7 @@ else
             Start-Sleep -Seconds 5
             Import-Module -Name WebAdministration -ErrorAction SilentlyContinue
         }
-
+ 
         # If still not loaded, let's stop
         if(-NOT (Get-Module -Name WebAdministration))
         {
@@ -577,7 +580,9 @@ else
                 {
                     if($sslBinding.certificateHash)
                     {
+                        if($WriteLog){Write-CMTraceLog -Message ('Checking certificate for port: {0}' -f ($sslBinding.bindingInformation -replace '\*','' -replace ':','')) -Component ($MyInvocation.MyCommand)}
                         $certPath = 'Cert:\LocalMachine\{0}\{1}' -f $sslBinding.certificateStoreName, $sslBinding.certificateHash
+                        if($WriteLog){Write-CMTraceLog -Message ('Checking certificate: {0}' -f ($certPath)) -Component ($MyInvocation.MyCommand)}
                         $sslCert = Get-Item $certPath -ErrorAction SilentlyContinue
                         if ($sslCert)
                         {
@@ -594,20 +599,28 @@ else
                                 $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
                                 $tmpObj.PossibleActions = 'Renew certificate or request a new one'            
                             }
-
-                            # Let's also check if the cert is coming from the correct template
-                            if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -ilike $templateSearchString)}))
+ 
+                            # check if it is a ConfigMgr managed certificate. Only if not, we will check the template
+                            if ($sslCert.Issuer -inotlike '*sms issuing*')
                             {
-                                $tmpObj.CheckType = 'Certificate'
-                                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
-                                $tmpObj.SystemName = $systemName
-                                $tmpObj.Status = 'Warning'
-                                $tmpObj.SiteCode = ""
-                                $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding teh info to the description in case both checks are successful
-                                $tmpObj.PossibleActions = 'Renew certificate or request a new one' 
+                                # Let's also check if the cert is coming from the correct template
+                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -ilike $templateSearchString)}))
+                                {
+                                    $tmpObj.CheckType = 'Certificate'
+                                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                                    $tmpObj.SystemName = $systemName
+                                    $tmpObj.Status = 'Warning'
+                                    $tmpObj.SiteCode = ""
+                                    $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding info to the description in case both checks are successful
+                                }
                             }
+                            else
+                            {
+                                if($WriteLog){Write-CMTraceLog -Message ('Found ConfigMgr managed certificate for E-HTTP for port: {0}. Will skip check.' -f ($sslBinding.bindingInformation -replace '\*','' -replace ':','')) -Component ($MyInvocation.MyCommand)}
+                            }
+ 
                             
-                            if ($tmpObj.Name)
+                            if (-NOT([string]::IsNullOrEmpty($tmpObj.Name)))
                             {
                                 [void]$resultObject.Add($tmpObj)
                             }
@@ -616,7 +629,7 @@ else
                         {
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'Certificate'
-                            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $certPath
                             $tmpObj.SystemName = $systemName
                             $tmpObj.Status = 'Error'
                             $tmpObj.SiteCode = ""
@@ -654,12 +667,12 @@ else
     }
 }
 #endregion
-
-
+ 
+ 
 # Adding overall script state to list
 [void]$resultObject.Add($tmpScriptStateObj)
 #endregion
-
+ 
 #region cache state
 # In case we need to know witch components are already in error state
 if ($CacheState)
@@ -676,10 +689,10 @@ if ($CacheState)
     {
         $userName = $currentUser.Name
     }
-
+ 
     # Get cache file
     $cacheFileName = '{0}\{1}_{2}_CACHE.json' -f $CachePath, ($MyInvocation.MyCommand), ($userName.ToLower())
-															   
+                                                                                                       
     if (Test-Path $cacheFileName)
     {
         # Found a file lets load it
@@ -699,16 +712,17 @@ if ($CacheState)
         }
         if($WriteLog){Write-CMTraceLog -Message "Found $i alarm/s in cache file" -Component ($MyInvocation.MyCommand)}
     }
-
+ 
     # Lets output the current state for future runtimes 
     # BUT only error states
     $resultObject | Where-Object {$_.Status -ine 'Ok'} | ConvertTo-Json | Out-File -FilePath $cacheFileName -Encoding utf8 -Force
 }
 #endregion
-
-
+ 
+ 
 #region Output
 if($WriteLog){Write-CMTraceLog -Message "Created $($resultObject.Count) alert items" -Component ($MyInvocation.MyCommand)}
+if($WriteLog){Write-CMTraceLog -Message "OutputMode: $OutputMode" -Component ($MyInvocation.MyCommand)}
 switch ($OutputMode) 
 {
     "GridView" 
@@ -727,10 +741,10 @@ switch ($OutputMode)
     {      
         # Reference email script
         .$PSScriptRoot\Send-CustomMonitoringMail.ps1
-
+ 
         # Adding the scriptname to the subject
         $subjectTypeName = ($MyInvocation.MyCommand.Name) -replace '.ps1', ''
-
+ 
         $paramsplatting = @{
             MailMessageObject = $resultObject
             MailInfotext = '{0}<br>{1}' -f $systemName, $MailInfotext
@@ -741,14 +755,14 @@ switch ($OutputMode)
         {
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
-
+ 
             Send-CustomMonitoringMail @paramsplatting -HighPrio            
         }
         else 
         {
             $MailSubject = 'OK: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
-
+ 
             Send-CustomMonitoringMail @paramsplatting
         }
     }
@@ -775,4 +789,5 @@ switch ($OutputMode)
     }
 }
 if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
-#endregion
+#endregion 
+
