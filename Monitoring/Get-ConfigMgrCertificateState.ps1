@@ -192,72 +192,72 @@ function Test-ConfigMgrActiveSiteSystemNode
     Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
 .EXAMPLE
     Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
-    function Write-CMTraceLog 
+function Write-CMTraceLog 
+{
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Global:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$true)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = 'Log'
+    )
+
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
+        {
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
     {
-        [CmdletBinding()]
-        Param
-        (
-            #Path to the log file
-            [parameter(Mandatory=$false)]
-            [String]$LogFile=$Global:LogFilePath,
-    
-            #The information to log
-            [parameter(Mandatory=$true)]
-            [String]$Message,
-    
-            #The source of the error
-            [parameter(Mandatory=$false)]
-            [String]$Component=(Split-Path $PSCommandPath -Leaf),
-    
-            #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
-            [parameter(Mandatory=$false)]
-            [ValidateSet("Information","Warning","Error")]
-            [String]$Severity="Information",
-    
-            # write to console only
-            [Parameter(Mandatory=$false)]
-            [ValidateSet("Console","Log","ConsoleAndLog")]
-            [string]$OutputMode = 'Log'
-        )
-    
-    
-        # save severity in single for cmtrace severity
-        [single]$cmSeverity=1
-        switch ($Severity)
-            {
-                "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
-                "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
-                "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
-            }
-    
-        If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
-        {
-            Write-Host $Message -ForegroundColor $color
-        }
-       
-        If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
-        {
-            #Obtain UTC offset
-            $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
-            $DateTime.SetVarDate($(Get-Date))
-            $UtcValue = $DateTime.Value
-            $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
-    
-            #Create the line to be logged
-            $LogLine =  "<![LOG[$Message]LOG]!>" +`
-                        "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
-                        "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
-                        "component=`"$Component`" " +`
-                        "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
-                        "type=`"$cmSeverity`" " +`
-                        "thread=`"$PID`" " +`
-                        "file=`"`">"
-    
-            #Write the line to the passed log file
-            $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
-        }
+        Write-Host $Message -ForegroundColor $color
     }
-    #endregion
+    
+    If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
+    {
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
+
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
+}
+#endregion
 
 #region ConvertTo-CustomMonitoringObject
 <# 
@@ -418,6 +418,17 @@ if($WriteLog){Write-CMTraceLog -Message " " -Component ($MyInvocation.MyCommand)
 if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocation.MyCommand)}
 #endregion
 
+#region prepare template string for "-ilike" and add * if neccesary
+if (-NOT($templateSearchString -match '^\*'))
+{
+    $templateSearchString = '*{0}' -f $templateSearchString
+}
+if (-NOT($templateSearchString -match '\*$'))
+{
+    $templateSearchString = '{0}*' -f $templateSearchString  
+}
+#endregion
+
 #region systemname
 # get system FQDN if possible
 $win32Computersystem = Get-WmiObject -Class win32_computersystem -ErrorAction SilentlyContinue
@@ -458,7 +469,7 @@ $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
 #endregion
 
-if ($OutputTestData)
+if ($OutputTestData -ge 1)
 {
     if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     # create dummy entries
@@ -540,39 +551,105 @@ else
     if (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)
     {
         if($WriteLog){Write-CMTraceLog -Message "Found IIS service. Will check IIS certificates" -Component ($MyInvocation.MyCommand)}
-        [array]$configMgrCerts = Get-ChildItem 'Cert:\LocalMachine\My' | Where-Object { 
-            $_.Extensions | Where-Object{ ($_.Oid.FriendlyName -eq 'Certificate Template Information') -and ($_.Format(0) -like $templateSearchString) }
+        # Let's look at the binding and if there is any certificate attached
+        Import-Module -Name WebAdministration -ErrorAction SilentlyContinue            
+        if(-NOT (Get-Module -Name WebAdministration))
+        {
+            if($WriteLog){Write-CMTraceLog -Message "Module WebAdministration could not be loaded. Let's try again" -Component -Severity Warning ($MyInvocation.MyCommand)}
+            # it sometimes fails to load. So, let's just wait a bit and try again 
+            Start-Sleep -Seconds 5
+            Import-Module -Name WebAdministration -ErrorAction SilentlyContinue
         }
 
-        if ($configMgrCerts)
+        # If still not loaded, let's stop
+        if(-NOT (Get-Module -Name WebAdministration))
         {
-            foreach ($certificate in $configMgrCerts)
-            {
-                $expireDays = (New-TimeSpan -Start (Get-Date) -End ($certificate.NotAfter)).Days
-
-                if ($expireDays -le $minValidDays)
-                {              
-                    $tmpObj = New-Object psobject | Select-Object $propertyList
-                    $tmpObj.CheckType = 'Certificate'
-                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($certificate.Thumbprint)
-                    $tmpObj.SystemName = $systemName
-                    $tmpObj.Status = 'Warning'
-                    $tmpObj.SiteCode = ""
-                    $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($certificate.Thumbprint)
-                    $tmpObj.PossibleActions = 'Renew certificate or request a new one'
-                    [void]$resultObject.Add($tmpObj)                  
-                }       
-            }
-        }
-        else
-        {
-            if($WriteLog){Write-CMTraceLog -Message "$('No ConfigMgr Certificate based on template string: "{0}" found on system!' -f $templateSearchString)" -Component ($MyInvocation.MyCommand)}
+            if($WriteLog){Write-CMTraceLog -Message "Module WebAdministration could not be loaded second try. Not able to proceed!" -Component -Severity Warning ($MyInvocation.MyCommand)}
             $tmpScriptStateObj.Status = 'Error'
-            $tmpScriptStateObj.Description = 'No ConfigMgr Certificate based on template string: "{0}" found on system!' -f $templateSearchString
+            $tmpScriptStateObj.Description = 'Module WebAdministration could not be loaded'
+        }
+        else 
+        {
+            $sslWebBindingInfo = Get-WebBinding | Where-Object {$_.Protocol -ieq 'https'}
+            if ($sslWebBindingInfo)
+            {
+                foreach ($sslBinding in $sslWebBindingInfo)
+                {
+                    if($sslBinding.certificateHash)
+                    {
+                        $certPath = 'Cert:\LocalMachine\{0}\{1}' -f $sslBinding.certificateStoreName, $sslBinding.certificateHash
+                        $sslCert = Get-Item $certPath -ErrorAction SilentlyContinue
+                        if ($sslCert)
+                        {
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            # Let's check the cert expiration date first
+                            $expireDays = (New-TimeSpan -Start (Get-Date) -End ($sslCert.NotAfter)).Days
+                            if ($expireDays -le $minValidDays)
+                            {              
+                                $tmpObj.CheckType = 'Certificate'
+                                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                                $tmpObj.SystemName = $systemName
+                                $tmpObj.Status = 'Warning'
+                                $tmpObj.SiteCode = ""
+                                $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
+                                $tmpObj.PossibleActions = 'Renew certificate or request a new one'            
+                            }
+
+                            # Let's also check if the cert is coming from the correct template
+                            if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -ilike $templateSearchString)}))
+                            {
+                                $tmpObj.CheckType = 'Certificate'
+                                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                                $tmpObj.SystemName = $systemName
+                                $tmpObj.Status = 'Warning'
+                                $tmpObj.SiteCode = ""
+                                $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding teh info to the description in case both checks are successful
+                                $tmpObj.PossibleActions = 'Renew certificate or request a new one' 
+                            }
+                            
+                            if ($tmpObj.Name)
+                            {
+                                [void]$resultObject.Add($tmpObj)
+                            }
+                        }
+                        else 
+                        {
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            $tmpObj.CheckType = 'Certificate'
+                            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                            $tmpObj.SystemName = $systemName
+                            $tmpObj.Status = 'Error'
+                            $tmpObj.SiteCode = ""
+                            $tmpObj.Description = "IIS site certificate not found:  $($certPath)"
+                            $tmpObj.PossibleActions = 'Add a new cert to IIS'                            
+                            [void]$resultObject.Add($tmpObj)
+                        }
+                    }
+                    else 
+                    {
+                        $tmpObj = New-Object psobject | Select-Object $propertyList
+                        $tmpObj.CheckType = 'Certificate'
+                        $tmpObj.Name = '{0}:{1}:Port {2}' -f $tmpObj.CheckType, $systemName, ($sslBinding.bindingInformation -replace '\*','' -replace ':','')
+                        $tmpObj.SystemName = $systemName
+                        $tmpObj.Status = 'Warning'
+                        $tmpObj.SiteCode = ""
+                        $tmpObj.Description = 'No certificate bound to port: {0}' -f ($sslBinding.bindingInformation -replace '\*','' -replace ':','')
+                        $tmpObj.PossibleActions = 'Add a new cert to IIS'                            
+                        [void]$resultObject.Add($tmpObj)
+                    }
+                }
+            }
+            else 
+            {
+                $tmpScriptStateObj.Status = 'Warning'
+                $tmpScriptStateObj.Description = 'No SSL bindings found in IIS'
+            }
         }
     }
     else 
     {
+        #$tmpScriptStateObj.Status = 'Warning'
+        #$tmpScriptStateObj.Description = 'NO IIS service found. Will NOT check IIS certificates'
         if($WriteLog){Write-CMTraceLog -Message "NO IIS service found. Will NOT check IIS certificates" -Component ($MyInvocation.MyCommand)}
     }
 }
