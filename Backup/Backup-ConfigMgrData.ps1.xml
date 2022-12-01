@@ -4,61 +4,63 @@
 XML for Script Version >= 20220701
 
 Source: https://github.com/jonasatgit/scriptrepo
-Documentation: 
-SCCMbackupPath 			= ConfigMgr backup path. The one configured in the backup maintenance task. Or, if the maintenance task is not activated, a path for the backup in general. 
-MaxBackupDays 			= How many days a backup can be stored before it will be deleted 
-MaxBackups				= The maximum amount of backups before older backups will be deleted
-LicenseKey				= ConfigMgr license key to be added to the restore file
-CheckSQLFiles 			= "Yes" or "No". If "Yes" the script will check if the SQL files are placed in the SCCM backup folder and wll fail if they are missing
-							Only valid if the backup maintenance task is used
-CustomFoldersToBackup 	= List of additional folders to backup.
-CustomFolderBackupName 	= Name of the folder each additional folder will be copied to. Each additional folder name
-ZipCustomBackup			= "Yes" or "No". If "Yes" the script will compress the custom folder to save space		
-TempZipFileFolder		= We need a folder to store data we want to compress temporarily. The folder cannot be part of the backup itself.
-BackupIIS				= "Yes" or "No". If "Yes" the script will backup the IIS config and will create a recovery script
-BackupScheduledTasks	= "Yes" or "No". If "Yes" the script will backup sheduled task in a give path and will create a recovery script. 
-							It will not backup any passwords.
-BackupScheduledTasksRootPath = Path from which to backup sheduled tasks
-BackupSSRSRDLs			= "Yes" or "No". If "Yes" the script will backup all SSRS reports. The backup accounts needs to have SSRS rights for that.
-EventSource				= Name of an event source for the eventlog. Only if the script should create events. Not used at the moment. 
-MaxLogfileSize			= Max logfile size in KB
-CopyToStandByServer		= "Yes" or "No". If "Yes" the script will copy the backup also to another server
-CopyContentLibrary		= "Yes" or "No". If "Yes" the script will copy the ContentLibrary also to another server or backup location
-						   This seting is not limited to ContentLibrary paths. It can copy any folder.
-						   IMPORTANT: Add a folder containing a operating system and SQL Server image. Add a folder containing the required ADK as well. 
-						   This will speed up the recovery process in case a system reinstall is required. 
-ContentLibraryPathLive 	= List of local ContentLibrary folders which needs to be copied to another server
-ContentLibraryPathBackup= Path to which the ContentLibrary should to be copied via the CopyContentLibrary parameter
-StandByBackupPath		= Path to which the Backup should to be copied via the CopyToStandByServer parameter
 
 -->
 <sccmbackup>
+	<!-- ConfigMgr backup path. The one configured in the backup maintenance task. Or, if the maintenance task is not activated, a path for the backup in general -->
     <SCCMbackupPath>F:\Backup</SCCMbackupPath>
+	<!-- How many days a backup can be stored before it will be deleted. Based on the folder name instead of creation date or change date -->
 	<MaxBackupDays>2</MaxBackupDays>
+	<!--- The maximum number of backups to keep before older backups will be deleted. This one wins over "MaxBackupDays" to make sure to have at least some backups -->
 	<MaxBackups>2</MaxBackups>
+	<!-- ConfigMgr license key. Will be added to the unattend.ini file to be able to restore in unattend mode -->
 	<LicenseKey>11111-11111-1111-11111-11111-11111</LicenseKey>
+	<!-- "Yes" or "No". If "Yes" the script will check if the SQL files are placed in the SCCM backup folder and wll fail if they are missing -->
+	<!-- Only valid if the backup maintenance task is used -->
     <CheckSQLFiles>No</CheckSQLFiles>
+	<!-- List of additional folders to backup -->
+	<!-- Schould contain everything required for a recovery -->
 	<CustomFoldersToBackup>
 		<Folder>E:\CUSTOM\ScheduledTasks</Folder>
 		<Folder>E:\CUSTOM\Scripts</Folder>
 		<Folder>E:\CUSTOM\Tools</Folder>
 	</CustomFoldersToBackup>
+	<!-- Name of the folder each additional folder will be copied to. No need to change -->
     <CustomFolderBackupName>CustomBackups</CustomFolderBackupName>
+	<!-- "Yes" or "No". If "Yes" the script will compress the custom folder to save space -->
     <ZipCustomBackup>Yes</ZipCustomBackup>
+	<!-- We need a folder to store data we want to compress temporarily. The folder cannot be part of the "SCCMbackupPath" -->
     <TempZipFileFolder>E:\CUSTOM\BackupTmpZipFolder</TempZipFileFolder>
+	<!-- "Yes" or "No". If "Yes" the script will backup the IIS config and will create a recovery script -->
 	<BackupIIS>Yes</BackupIIS>
+	<!-- "Yes" or "No". If "Yes" the script will backup sheduled task in a give path and will create a recovery script  -->
+	<!-- NOTE: Will not backup any passwords -->
     <BackupScheduledTasks>Yes</BackupScheduledTasks>
+	<!-- Path from within Task Scheduler from where to backup tasks -->
     <BackupScheduledTasksRootPath>Custom</BackupScheduledTasksRootPath>
+	<!-- "Yes" or "No". If "Yes" the script will backup all SSRS reports. The backup account needs to have SSRS rights for that. -->
 	<BackupSSRSRDLs>Yes</BackupSSRSRDLs>
+	<!-- Name of an event source for the Application eventlog -->
 	<EventSource>ConfigMgr Backup Script</EventSource>
+	<!-- Max logfile size in KB -->
    	<MaxLogfileSize>2048</MaxLogfileSize>
+	<!-- "Yes" or "No". If "Yes" the script will also copy the backup to a second server -->
     <CopyToStandByServer>No</CopyToStandByServer>
+	<!-- Path to which the Backup should to be copied if "CopyToStandByServer" is set to "yes" -->
+    <StandByBackupPath>F:\StandBy</StandByBackupPath>
+	<!-- "Yes" or "No". If "Yes" the script will not copy the SQL files (created via the built-in ConfigMgr backup task) to the second server-->
+    <ExcludeSQLFilesFromStandByCopy>Yes</ExcludeSQLFilesFromStandByCopy>
+	<!-- "Yes" or "No". If "Yes" the script will copy the ContentLibrary also to another server or backup location -->
+	<!-- This seting is not limited to ContentLibrary paths. It can copy any folder -->
+	<!-- IMPORTANT: Add a folder containing a operating system and SQL Server image. Add a folder containing the required ADK as well -->
+	<!-- This will speed up the recovery process in case a system reinstall is required -->
+	<!-- NOTE: Each folder will be kept up to date via robocopy and therefore does not follow the same process as with a folder configured via "CustomFoldersToBackup" -->
 	<CopyContentLibrary>No</CopyContentLibrary>
+	<!-- List of local folders which needs to be copied to another server. NOT limited to the ContentLibrary -->
     <ContentLibraryPathLive>
         	<Folder>F:\SCCMContentLib</Folder>
         	<Folder>F:\SMSPKGF$</Folder>   
     </ContentLibraryPathLive>
+	<!-- Path to which the folders configured via "ContentLibraryPathLive" should be copied. (UNC or local) -->
     <ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
-    <StandByBackupPath>F:\StandBy</StandByBackupPath>
-    <ExcludeSQLFilesFromStandByCopy>Yes</ExcludeSQLFilesFromStandByCopy>
 </sccmbackup>
