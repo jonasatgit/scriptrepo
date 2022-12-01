@@ -45,15 +45,16 @@
             Step-12-RecoverConfigMgr.txt                -> Recovery instructions to recover ConfigMgr eitehr manually or via a unattend.ini file. 	
             Step-13-Set-ServiceAccountPasswords.txt	    -> Instructions for post recovery tasks
 
-    Step 6: If configured in "Backup-ConfigMgrData.ps1.xml" the script will compress custom backups.
+    Step 6: If configured in "Backup-ConfigMgrData.ps1.xml" the script will backup either all SQL databases or all user databases or databases specified as "DatabaseList".
+    Step 7: If configured in "Backup-ConfigMgrData.ps1.xml" the script will compress custom backups.
             If the ConfigMgr backup task is NOT enabled, the script will also compress the CD.Latest folder and will add zip-file to the backup
-    Step 7: The script will rename the current backup folder and will add a string in the format of: 'yyyyMMdd-hhmmss'.
+    Step 8: The script will rename the current backup folder and will add a string in the format of: 'yyyyMMdd-hhmmss'.
             To ensure no future backup process will overwrite the folder. 
-    Step 8: If configured in "Backup-ConfigMgrData.ps1.xml" the script will copy the whole backup folder to a second location.
+    Step 9: If configured in "Backup-ConfigMgrData.ps1.xml" the script will copy the whole backup folder to a second location.
             If configured in "Backup-ConfigMgrData.ps1.xml" the script will copy ContentLibrary or Source folders to a backup location using RoboCopy.
             Any folder can be copied that way. For example a folder containing operating system and SQL server images to have them at the same location as the backup. 
-    Step 9: The script will delete old backup folders based on "MaxBackupDays" and "MaxBackups" configured in "Backup-ConfigMgrData.ps1.xml"
-    Step 10:The script will copy its logfile and the "Backup-ConfigMgrData.ps1.xml" to the backup location to make the files accessible in case of the need for recovery.
+    Step 10: The script will delete old backup folders based on "MaxBackupDays" and "MaxBackups" configured in "Backup-ConfigMgrData.ps1.xml"
+    Step 11: The script will copy its logfile and the "Backup-ConfigMgrData.ps1.xml" to the backup location to make the files accessible in case of the need for recovery.
     
 .EXAMPLE
     .\Backup-ConfigMgrData.ps1
@@ -1094,7 +1095,6 @@ function Export-SSRSReports
                     #note this will create the full folder hierarchy
                     [System.IO.Directory]::CreateDirectory($fullSubfolderName) | out-null
                 }
- 
 
                 if($item.TypeName -eq 'DataSet')
                 {
@@ -1356,7 +1356,7 @@ function Get-SQLBackupMetadata
     )
 
     $commandName = $MyInvocation.MyCommand.Name
-
+    Write-CMTraceLog -Message "Export SQL backup metadata" -Component ($commandName)
     $connectionString = "Server=$SQLServerName;Database=msdb;Integrated Security=True"
     Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
     
@@ -1387,22 +1387,188 @@ function Get-SQLBackupMetadata
     order by BS.backup_finish_date desc
 '@
 
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = $connectionString
+        $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+        $SqlCmd.Connection = $SqlConnection
+        $SqlCmd.CommandText = $SqlQuery
+        $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+        Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
+        $SqlAdapter.SelectCommand = $SqlCmd
+        $ds = New-Object -TypeName System.Data.DataSet
+        $SqlAdapter.Fill($ds) | Out-Null
+        $SqlCmd.Dispose()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName)
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName)      
+        return "Connection to SQL server failed"    
+    }
 
-    $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
-    $SqlConnection.ConnectionString = $connectionString
-    $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
-    $SqlCmd.Connection = $SqlConnection
-    $SqlCmd.CommandText = $SqlQuery
-    $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
-    Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
-    $SqlAdapter.SelectCommand = $SqlCmd
-    $ds = New-Object -TypeName System.Data.DataSet
-    $SqlAdapter.Fill($ds) | Out-Null
-    $SqlCmd.Dispose()
-  
     return $ds.tables[0]
 }
 #endregion
+
+#region Function Start-SQLDatabaseBackup
+<#
+.Synopsis
+    Start-SQLDatabaseBackup
+.DESCRIPTION
+    Will backup a database or multiple database files
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql2.contoso.local\instance2'
+.PARAMETER SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+.PARAMETER BackupFolder
+    Folder to save the backups to. UNC or local. The function will create a sub-folder called 'SQLBackup'
+.PARAMETER SQLDBNameList
+    Array of database names
+.PARAMETER BackupMode
+    Either "AllDatabases" or "AllUserDatabases" to backup everything or just all user databases. If set, parameter "SQLDBNameList" will be ignored
+#>
+Function Start-SQLDatabaseBackup
+{
+    [CmdletBinding(DefaultParametersetName='Default')]
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$SQLServerName,
+        [Parameter(Mandatory=$true)]
+        [string]$BackupFolder,
+        [parameter(ParameterSetName = 'SQLDBNameList',Mandatory=$false)]
+        [string[]]$SQLDBNameList=('ReportServer'),
+        [parameter(ParameterSetName = 'BackupMode',Mandatory=$false)]
+        [ValidateSet("AllDatabases", "AllUserDatabases")]
+        [string]$BackupMode
+    )
+
+    # We might need to create a folder
+    $sqlBackupFolder = '{0}\SQLBackup' -f $BackupFolder
+    try
+    {
+        # making sure we have a valid backup folder
+        if(-NOT(Test-Path $sqlBackupFolder))
+        {
+            $null = [system.io.directory]::CreateDirectory("$sqlBackupFolder")
+        }
+    }
+    catch
+    {
+        Write-CMTraceLog -Type Error -Message "ERROR: Folder could not be created `"$sitebackupPath`"" -Component ($MyInvocation.MyCommand.Name)
+        Write-CMTraceLog -Type Error -Message "$($Error[0].exception)" -Component ($MyInvocation.MyCommand.Name)
+        exit 1
+    }
+
+    Write-CMTraceLog -Message "Will connect to: $SQLServerName" -Component ($MyInvocation.MyCommand.Name)
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = "Integrated Security=SSPI;Persist Security Info=False;Initial Catalog=msdb;Data Source=$SQLServerName;Connection Timeout=20"
+        $SqlConnection.Open()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name)
+        Exit 1
+    }
+
+    # Query to get user DBs#
+    if ($BackupMode -ieq "AllUserDatabases")
+    {
+        $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('master','tempdb','model','msdb');"
+    }
+
+    # Query for all DBs
+    if ($BackupMode -ieq "AllDatabases")
+    {
+        $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('tempdb');"
+    }
+
+    if (($BackupMode -ieq "AllDatabases") -or ($BackupMode -ieq "AllUserDatabases"))
+    {
+        Write-CMTraceLog -Message "Getting list of databases from SQL. Since BackupMode is set to: $($BackupMode)" -Component ($MyInvocation.MyCommand.Name)
+        try 
+        {
+            # Get all user databases
+            $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+            $SqlCmd.Connection = $SqlConnection
+            $SqlCmd.CommandText = $userDBQuery
+            $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+            Write-Verbose "$commandName`: Running Query: `"$userDBQuery`""
+            $SqlAdapter.SelectCommand = $SqlCmd
+            $ds = New-Object -TypeName System.Data.DataSet
+            $SqlAdapter.Fill($ds) | Out-Null
+            $SqlCmd.Dispose()
+            
+            $listOfUserDBs = $ds.tables[0]         
+        }
+        catch 
+        {
+            Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name)
+            Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($MyInvocation.MyCommand.Name)
+            Exit 1            
+        }
+    }
+
+    # If we have a list of DBs. Use them instead of a provided list from parameter $SQLDBNameList
+    if ($listOfUserDBs)
+    {
+        $SQLDBNameList = $listOfUserDBs.Name
+    }
+
+    [string]$backupDatetime = get-date -f 'yyyyMMdd_HHmmss' # Will be added to the backup file name
+    foreach ($dbName in $SQLDBNameList)
+    {
+        Write-CMTraceLog -Message "Will try to backup database: $dbName" -Component ($MyInvocation.MyCommand.Name)
+        try 
+        {
+            # Backup variable definition
+            [string]$backupFileFullName = '{0}\{1}_backup_{2}.bak' -f $sqlBackupFolder, $dbName, $backupDatetime
+            [string]$backupName = '{0}-Full Database Backup' -f $dbName
+            $SqlCmd = New-Object System.Data.SqlClient.SqlCommand
+            $SqlCmd.CommandText = "BACKUP DATABASE [$dbName] TO  DISK = N'$backupFileFullName' WITH NOFORMAT, NOINIT,  NAME = N'$backupName', SKIP, NOREWIND, NOUNLOAD, COMPRESSION, STATS = 10"
+            $SqlCmd.Connection = $SqlConnection
+            $SqlCmd.CommandTimeout = 0 
+            $null = $SqlCmd.ExecuteScalar()
+        }
+        catch 
+        {
+            if ($Error[0].Exception -match '(Access is denied)|(error 5)')
+            {
+                Write-CMTraceLog -Type Error -Message "Access is denied" -Component ($MyInvocation.MyCommand.Name)
+                Write-CMTraceLog -Type Error -Message "SQL service account might not have write access to: $BackupFolder" -Component ($MyInvocation.MyCommand.Name)
+            }
+            else 
+            {
+                Write-CMTraceLog -Type Error -Message "Database backup failed" -Component ($MyInvocation.MyCommand.Name)
+                Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($MyInvocation.MyCommand.Name)
+            }
+            exit 1      
+        }
+    }
+
+    if ($SqlConnection)
+    {
+        if($SqlConnection.state -ieq 'Open')
+        {
+            Write-CMTraceLog -Message "Will close SQL connection" -Component ($MyInvocation.MyCommand.Name)
+            $SqlConnection.Close()
+        }
+    }
+}
+#endregion
+
+
+
+
+
 
 #-----------------------------------------
 # Main Script starts here
@@ -1448,6 +1614,9 @@ try
     [string]$BackupIIS = $xmlConfig.sccmbackup.BackupIIS
     [string]$BackupScheduledTasks = $xmlConfig.sccmbackup.BackupScheduledTasks
     [string]$BackupScheduledTasksRootPath = $xmlConfig.sccmbackup.BackupScheduledTasksRootPath
+    [string]$BackupSQLDatabases = $xmlConfig.sccmbackup.BackupSQLDatabases
+    [string[]]$BackupDatabaseList = $xmlConfig.sccmbackup.DatabaseList.DatabaseName
+    [string]$ExportSQLBackupData = $xmlConfig.sccmbackup.ExportSQLBackupData
 }
 catch
 {
@@ -1534,6 +1703,12 @@ foreach($Folder in $contentLibraryPathLive)
 }
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Exclude SQL files from StandBy:", $excludeSQLFilesFromStandByCopy)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Event source:", $eventSource)"
+Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "BackupSQLDatabases:", $BackupSQLDatabases)"
+foreach($database in $BackupDatabaseList)
+{
+    Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Databasename:", $database)"
+}
+Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "ExportSQLBackupData:", $ExportSQLBackupData)"
 #-----------------------------------------
 #endregion Step 3 End
 #-----------------------------------------
@@ -1941,17 +2116,26 @@ catch
 #-----------------------------------------
 #install SQL Server
 #$recoveryFile03
+Write-CMTraceLog -Message "Create: `"$recoveryFile03`""
 $sqlRecoveryInfo = @'
 Install new SQL Server if necessary. The most important SQL information can be found below.
 Use a supported version and same edition of SQL Server. 
 Do not switch from SQL Standard to SQL Enterprise or vice versa. 
-Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
-Use the "SQL Backup Metadata" shown below to find the right backup to be recovered. Only the last 30 backups are visible in the list.
 More information about how to restore databases can be found here: https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/restore-a-database-backup-using-ssms
+Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
 '@
-
-Write-CMTraceLog -Message "Create: `"$recoveryFile03`""
 $sqlRecoveryInfo  | Out-File -FilePath $recoveryFile03 -Append
+
+if ($BackupSQLDatabases -ieq 'yes')
+{
+    'Use the SQL backups in folder "SQLBackup" to restore the required databases' | Out-File -FilePath $recoveryFile03 -Append
+}
+
+if ($ExportSQLBackupData -ieq 'yes')
+{
+  'You can use the "SQL Backup Metadata" (shown below) to find the right backup to be recovered. Only the last 30 backups are visible in the list.' | Out-File -FilePath $recoveryFile03 -Append
+}
+
 $siteInfo | Select-Object SQLServerName, SQLSSBPort, SQlServicePort, SQLDatabaseName, SQLDatabase, SQLInstance | 
     Format-List * | Out-File -FilePath $recoveryFile03 -Append
 
@@ -1965,7 +2149,11 @@ else
 {
     $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
 }
-Get-SQLBackupMetadata -SQLServerName $sqlServerConnectionString | Out-File -FilePath $recoveryFile03 -Append
+
+if ($ExportSQLBackupData -ieq 'yes')
+{
+    Get-SQLBackupMetadata -SQLServerName $sqlServerConnectionString | Out-File -FilePath $recoveryFile03 -Append
+}
 #-----------------------------------------
 #endregion Recovery Step 3
 #-----------------------------------------
@@ -2274,7 +2462,43 @@ $recoverConfigMgrPasswords | Out-File -FilePath $recoveryFile13 -Append
 
 
 #-----------------------------------------
-#region Step 6
+#region Step 6 Database Backup
+#-----------------------------------------
+Write-CMTraceLog -Message "-------------------------------------"
+Write-CMTraceLog -Message "------> SQL database backup..."
+if ($BackupSQLDatabases -ieq 'yes')
+{
+    if ($siteInfo.SQLInstance -eq "Default")
+    {
+        $sqlServerConnectionString = $siteInfo.SQLServerName
+    }
+    else 
+    {
+        $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
+    }
+
+
+    if ($BackupDatabaseList.Count -eq 1)
+    {
+        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -BackupMode ($BackupDatabaseList[0])
+    }
+    else 
+    {
+        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $BackupDatabaseList    
+    }
+}
+else 
+{
+    Write-CMTraceLog -Message "------> Skipped. Not enabled."
+}
+#-----------------------------------------
+#endregion Step 6 End
+#-----------------------------------------
+
+
+
+#-----------------------------------------
+#region Step 7
 #-----------------------------------------
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Zipping custom folder..."
@@ -2300,12 +2524,12 @@ if(-NOT ($siteInfo.BackupEnabled))
     Get-item $cdLatestFolder | New-ZipFile -PathToSaveFileTo "$sitebackupPath" -TempZipFileFolder $tempZipFileFolder -UseStaticFolderName Yes -FileName "cd.Latest"
 }
 #-----------------------------------------
-#endregion Step 6 End
+#endregion Step 7 End
 #-----------------------------------------
 
 
 #-----------------------------------------
-#region Step 7
+#region Step 8
 #-----------------------------------------
 # Rename Backup Folder
 Write-CMTraceLog -Message "-------------------------------------"
@@ -2322,12 +2546,12 @@ Catch
 }
 Write-CMTraceLog -Message "Folder renamed. Old: $($sitebackupPath) New: $sitebackupPathNewName"
 #-----------------------------------------
-#endregion Step 7 End
+#endregion Step 8 End
 #-----------------------------------------
 
 
 #-----------------------------------------
-#region Step 8
+#region Step 9
 #-----------------------------------------
 
 # copy backup data to standby Server for easy recovery
@@ -2381,12 +2605,12 @@ if ($copyContentLibrary -eq 'Yes')
     
 }
 #-----------------------------------------
-#endregion Step 8 End
+#endregion Step 9 End
 #-----------------------------------------
 
 
 #-----------------------------------------
-#region Step 9
+#region Step 10
 #-----------------------------------------
 # Delete old Backup Folders
 # Exclude siteCode Backup folder and any other folder shorter then 34 caracters to prevent acidentally deletion. Not the best filter...
@@ -2411,7 +2635,7 @@ else
     $foldersToDelete | Delete-OldFolders -MaxBackupDays $maxBackupDays
 }
 #-----------------------------------------
-#endregion Step 9 End
+#endregion Step 10 End
 #-----------------------------------------
 
 $stoptWatch.Stop()
@@ -2419,7 +2643,7 @@ $scriptDurationString = "{0}h:{1}m:{2}s" -f $stoptWatch.Elapsed.Hours, $stoptWat
 Write-CMTraceLog -Message "Stopping script! Runtime: $scriptDurationString" -EventlogName Application -EventID 20 -WriteToEventLog
 
 #-----------------------------------------
-#region Step 10
+#region Step 11
 #-----------------------------------------
 # copy log and config file for easy access
 Copy-Item -Path $logFile -Destination $sccmBackupPath -Recurse -Force -ErrorAction SilentlyContinue
@@ -2431,7 +2655,7 @@ if ($copyToStandByServer -eq 'Yes')
     Copy-Item -Path $configXMLFilePath -Destination $standBybackupPath -Force -ErrorAction SilentlyContinue
 }
 #-----------------------------------------
-#endregion Step 10 End
+#endregion Step 11 End
 #-----------------------------------------
 
 

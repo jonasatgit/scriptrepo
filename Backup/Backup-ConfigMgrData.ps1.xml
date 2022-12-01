@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-XML for Script Version >= 20220701
+XML for Script Version >= 20220112
 
 Source: https://github.com/jonasatgit/scriptrepo
 
@@ -63,4 +63,13 @@ Source: https://github.com/jonasatgit/scriptrepo
     </ContentLibraryPathLive>
 	<!-- Path to which the folders configured via "ContentLibraryPathLive" should be copied. (UNC or local) -->
     <ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
+	<!-- "Yes" or "No". If "Yes" the script will use the list defined via "DatabaseList" and will try to backup each database -->
+	<BackupSQLDatabases>Yes</BackupSQLDatabases>
+	<!-- Can be a list of defined database names or just ONE entry with a value of "AllUserDatabases" (to backup all user DBs) or "AllDatabases" (To backup all DBs) -->
+	<DatabaseList>
+		<DatabaseName>AllUserDatabases</DatabaseName>
+	</DatabaseList>
+	<!-- "Yes" or "No". If "Yes" the script will export backup metadata. Like the backup date and time, file name and backup path. Can be helpful in case SQL internal backup is used -->
+	<!-- NOTE: Not required if "BackupSQLDatabases" is set to yes, but both work independently -->
+	<ExportSQLBackupData>Yes</ExportSQLBackupData>
 </sccmbackup>
