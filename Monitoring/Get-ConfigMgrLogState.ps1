@@ -88,6 +88,12 @@
 .PARAMETER LogPath
     Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
 
+.PARAMETER OutputScriptstate
+    If true, the script will output its overall state as an extra object. $true is default. 
+
+.PARAMETER TestMode
+    If true, the script will use the value of parameter -OutputTestData to output dummy data objects
+
 .PARAMETER OutputTestData
     NOT USED at the momment. Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
@@ -140,6 +146,10 @@ param
     [bool]$WriteLog = $false,
     [Parameter(Mandatory=$false)]
     [string]$LogPath,
+    [Parameter(Mandatory=$false)]
+    [bool]$OutputScriptstate = $true,
+    [Parameter(Mandatory=$false)]
+    [bool]$TestMode = $false,
     [Parameter(Mandatory=$false)]
     [ValidateRange(1,60)]
     [int]$OutputTestData=0
@@ -677,402 +687,438 @@ else
 
 #region MAIN LOG LOGIC
 $logEntrySearchResultList = New-Object System.Collections.ArrayList
-
-foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
+if ($TestMode)
 {
-    if($WriteLog){Write-CMTraceLog -Message "Working on: $($logEntryItem.LogPath)" -Component ($MyInvocation.MyCommand)}
-    Write-Verbose "$("{0,-35}-> Working on: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
-    $timeSpanObject = $null
-    $timeSpanObject = New-Object PSCustomObject | Select-Object StartTime, EndTime
-    # will be set to false if we are running the script before the calculated datetime and if IgnorePreviousEntries is set to $true
-    # IgnorePreviousEntries = $true means, if we are before the calculated datetime, we should not look one day, week or month back and test the last result instead
-    # We simply ignore the log for now in that case
-    $checkRequired = $true 
-    # Tmp object to track log parse status
-    $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
-    $tmpLogEntryObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
-    $tmpLogEntryObject.CheckType = 'LogCheck'
-    $tmpLogEntryObject.Status = "" # Set to nothing to force string format
-    $tmpLogEntryObject.Description = "" # Set to nothing to force string format
-    $tmpLogEntryObject.LogPath = $logEntryItem.LogPath
-    $tmpLogEntryObject.LogDateTime #= [datetime]::MinValue # Set to min value to force datime format
-    $tmpLogEntryObject.ProbeTime = $ProbeTime
-    $tmpLogEntryObject.StartTime #= [datetime]::MinValue # Set to min value to force datime format
-    $tmpLogEntryObject.EndTime #= [datetime]::MinValue # Set to min value to force datime format
-    $tmpLogEntryObject.Interval = $logEntryItem.Interval
-    $tmpLogEntryObject.IntervalDay = $logEntryItem.IntervalDay
-    $tmpLogEntryObject.IntervalWeek = $logEntryItem.IntervalWeek
-    $tmpLogEntryObject.SuccessString = $logEntryItem.SuccessString
-    $tmpLogEntryObject.LineNumber = 0 # Set to zero to force int format
-    $tmpLogEntryObject.Line = "" # Set to nothing to force string format
-    #$tmpLogEntryObject.Thread = "" # Set to nothing to force string format
-    $tmpLogEntryObject.TimeZoneOffset = "" # Set to nothing to force string format
-    $tmpLogEntryObject.ItemDescription = $logEntryItem.Description
-    $tmpLogEntryObject.NodeType = "" # Set to nothing to force string format
-    $tmpLogEntryObject.RunOnSystemList = $logEntryItem.RunOnSystemList
-
-
-    $DateFormat = "yyyy-MM-dd"
-    # We need to calculate the log datetime based on the definition first
-    # We then create a TimeSpan object in which the log event needs to happen
-    Switch ($logEntryItem.Interval) 
-    {
-        "Hourly" 
-        {
-            Write-Error "$("{0,-35}-> Hourly not implemented yet" -f  $($logEntryItem.Name))"
-            if($WriteLog){Write-CMTraceLog -Message "Hourly not implemented yet" -Severity Error -Component ($MyInvocation.MyCommand)}
-        }
-        "Daily" 
-        {
-            # Date and time the action should have happened
-            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
-            $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-            $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
-            # We need to check if we are running the script before or after the calculated time to not look at the wrong timeframe
-            if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
-            {
-                Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
-                # IgnorePreviousEntries = $false means, we should look one day back and test the last result instead
-                if ($logEntryItem.IgnorePreviousEntries -eq $false)
-                {
-                    Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one day back." -f  $($logEntryItem.Name))"
-                    $calculatedDateTime = (get-date($calculatedDateTime)).AddDays(-1) # Looking one day back
-                    $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-                    $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
-                }
-                # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
-                else 
-                {
-                    $checkRequired = $false
-                    Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
-                }
-            }
-            $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
-            $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
-        }
-        "Weekly" 
-        {
-            $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
-            # looking for the correct day in the past if we are not running on the specific day
-            $calculatedDateTime = (Get-Date($calculatedDateTime))
-            while ($calculatedDateTime.DayOfWeek -ine $logEntryItem.IntervalDay)
-            {
-                Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
-                # looking for the exact date of a day specified in the log definition. 
-                # Like Wednesday of the current week.
-                $calculatedDateTime = $calculatedDateTime.AddDays(-1) # going one day back and test again
-            }
-            Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
-
-            $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-            $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
-                
-            if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
-            {
-                Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
-                # IgnorePreviousEntries = $false means, we should look one week back and test the last result instead
-                if ($logEntryItem.IgnorePreviousEntries -eq $false)
-                {
-                    Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one week back." -f  $($logEntryItem.Name))"
-                    # going one week back, since we are probing before the calculated datetime and we are allowed to look one week back
-                    $calculatedDateTime = $calculatedDateTime.AddDays(-7)
-                    $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-                    $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)              
-                }
-                # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
-                else 
-                {
-                    $checkRequired = $false
-                    Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
-                }
-            }
-            $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
-            $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
-        }
-        "Monthly" 
-        {
-            $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate $ProbeTime
-            $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-            $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
-                
-            if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
-            {
-                Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
-                # IgnorePreviousEntries = $false means, we should look one day back and test the last result instead
-                if ($logEntryItem.IgnorePreviousEntries -eq $false)
-                {
-                    Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one month back." -f  $($logEntryItem.Name))"
-                    $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate ((get-date($calculatedDateTime)).AddMonths(-1))
-                    $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
-                    $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
-                }
-                # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
-                else 
-                {
-                    $checkRequired = $false
-                    Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
-                }
-            }
-            $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
-            $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
-        }
-    } 
-    # Done with time calculations
-
-    # Validate if we need to run any check
-    if ($checkRequired -eq $false)
-    {
-        # Nothing to for now for this log file
-        $tmpLogEntryObject.Status = "OK"
-        $tmpLogEntryObject.Description = "Probe time before log time. Nothing to do"
+    if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
+    # create dummy entries
+    for ($i = 1; $i -le $OutputTestData; $i++)
+    { 
+        $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
+        $tmpLogEntryObject.Name = 'DummyData:Logentry_{0}' -f $i.ToString('00')
+        $tmpLogEntryObject.CheckType = 'DummyData'
+        $tmpLogEntryObject.Status = "Error" # Set to nothing to force string format
+        $tmpLogEntryObject.Description = "This is just a dummy data object" # Set to nothing to force string format
+        $tmpLogEntryObject.LogPath = "C:\Windows\logs\CBS\CBS.log"
+        $tmpLogEntryObject.LogDateTime = (Get-Date).AddDays(-1)
+        $tmpLogEntryObject.ProbeTime = Get-Date
+        $tmpLogEntryObject.StartTime = (Get-Date).AddMinutes(-120)
+        $tmpLogEntryObject.EndTime = (Get-Date).AddMinutes(120)
+        $tmpLogEntryObject.Interval = $logEntryItem.Interval
+        $tmpLogEntryObject.IntervalDay = $logEntryItem.IntervalDay
+        $tmpLogEntryObject.IntervalWeek = 0
+        $tmpLogEntryObject.SuccessString = "(Update Installed)|(Success)"
+        $tmpLogEntryObject.LineNumber = Get-Random -Minimum 1 -Maximum 5000
+        $tmpLogEntryObject.Line = "The was Update Installed" # Set to nothing to force string format
+        #$tmpLogEntryObject.Thread = "" # Set to nothing to force string format
+        $tmpLogEntryObject.TimeZoneOffset = "60" # Set to nothing to force string format
+        $tmpLogEntryObject.ItemDescription = 'Dummy entry'
+        $tmpLogEntryObject.NodeType = "Active" # Set to nothing to force string format
+        $tmpLogEntryObject.RunOnSystemList = 'server01.contoso.local'
         [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-        Write-Verbose "$("{0,-35}-> Probetime before calculated logtime. Nothing to do." -f  $($logEntryItem.Name))"
     }
-    else 
+}
+else 
+{
+    # Parse logentries from JSON
+    foreach ($logEntryItem in $logEntryListJSONObject.LogEntries)
     {
-        # Check if we are only allowed to run the test on an active ConfigMgr site server
-        # Or if we are allowed regardless of any active passive node
-        # And only if RunOnSystemList either contains no entry or the correct servername
-        $allowedToRun = $false
-        if ([string]::IsNullOrEmpty($logEntryItem.RunOnSystemList))
-        {
-            $allowedToRun = $true      
-        }
-        else
-        {
-            if (($logEntryItem.RunOnSystemList) -match $systemName)
-            {
-                $allowedToRun = $true   
-            }
-        }
+        if($WriteLog){Write-CMTraceLog -Message "Working on: $($logEntryItem.LogPath)" -Component ($MyInvocation.MyCommand)}
+        Write-Verbose "$("{0,-35}-> Working on: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
+        $timeSpanObject = $null
+        $timeSpanObject = New-Object PSCustomObject | Select-Object StartTime, EndTime
+        # will be set to false if we are running the script before the calculated datetime and if IgnorePreviousEntries is set to $true
+        # IgnorePreviousEntries = $true means, if we are before the calculated datetime, we should not look one day, week or month back and test the last result instead
+        # We simply ignore the log for now in that case
+        $checkRequired = $true 
+        # Tmp object to track log parse status
+        $tmpLogEntryObject = New-Object PSCustomObject | Select-Object $propertyList
+        $tmpLogEntryObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
+        $tmpLogEntryObject.CheckType = 'LogCheck'
+        $tmpLogEntryObject.Status = "" # Set to nothing to force string format
+        $tmpLogEntryObject.Description = "" # Set to nothing to force string format
+        $tmpLogEntryObject.LogPath = $logEntryItem.LogPath
+        $tmpLogEntryObject.LogDateTime #= [datetime]::MinValue # Set to min value to force datime format
+        $tmpLogEntryObject.ProbeTime = $ProbeTime
+        $tmpLogEntryObject.StartTime #= [datetime]::MinValue # Set to min value to force datime format
+        $tmpLogEntryObject.EndTime #= [datetime]::MinValue # Set to min value to force datime format
+        $tmpLogEntryObject.Interval = $logEntryItem.Interval
+        $tmpLogEntryObject.IntervalDay = $logEntryItem.IntervalDay
+        $tmpLogEntryObject.IntervalWeek = $logEntryItem.IntervalWeek
+        $tmpLogEntryObject.SuccessString = $logEntryItem.SuccessString
+        $tmpLogEntryObject.LineNumber = 0 # Set to zero to force int format
+        $tmpLogEntryObject.Line = "" # Set to nothing to force string format
+        #$tmpLogEntryObject.Thread = "" # Set to nothing to force string format
+        $tmpLogEntryObject.TimeZoneOffset = "" # Set to nothing to force string format
+        $tmpLogEntryObject.ItemDescription = $logEntryItem.Description
+        $tmpLogEntryObject.NodeType = "" # Set to nothing to force string format
+        $tmpLogEntryObject.RunOnSystemList = $logEntryItem.RunOnSystemList
 
-        $isActiveNode = $false
-        $isPassiveNode = $false
-        $isNoNode = $false
-        Switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
+
+        $DateFormat = "yyyy-MM-dd"
+        # We need to calculate the log datetime based on the definition first
+        # We then create a TimeSpan object in which the log event needs to happen
+        Switch ($logEntryItem.Interval) 
         {
-            0{$isPassiveNode = $true;$nodeType = 'Passive'}
-            1{$isActiveNode = $true;$nodeType = 'Active'}
-            Default{$isNoNode = $true;$nodeType = 'NoConfigMgrNode'}
-        }
-        $tmpLogEntryObject.NodeType = $nodeType
-               
-        # Simpler representation: -> If (((RunOnActiveNodeOnly = $true -and IsActiveNode = $true) -or RunOnActiveNodeOnly = $false) -and $allowedToRun)
-        if (((($logEntryItem.RunOnActiveNodeOnly) -and ($isActiveNode)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false) -and $allowedToRun)
-        {
-            if (-NOT(Test-Path -Path $logEntryItem.LogPath))
+            "Hourly" 
             {
-                $tmpLogEntryObject.Status = "Error"
-                $tmpLogEntryObject.Description = "Path not found"
-                [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-                Write-Verbose "$("{0,-35}-> Path not found: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))" 
+                Write-Error "$("{0,-35}-> Hourly not implemented yet" -f  $($logEntryItem.Name))"
+                if($WriteLog){Write-CMTraceLog -Message "Hourly not implemented yet" -Severity Error -Component ($MyInvocation.MyCommand)}
             }
-            else 
+            "Daily" 
             {
-                if ($timeSpanObject.StartTime)
+                # Date and time the action should have happened
+                $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
+                $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
+                # We need to check if we are running the script before or after the calculated time to not look at the wrong timeframe
+                if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
                 {
-                    $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
-                    $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
-
-                    # Looking for given log entry
-                    $foundLogEntryInTimeFrame = $false
-                    $parseResult = Select-String -Path $logEntryItem.LogPath -Pattern $logEntryItem.SuccessString
-                    If ($parseResult)
+                    Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
+                    # IgnorePreviousEntries = $false means, we should look one day back and test the last result instead
+                    if ($logEntryItem.IgnorePreviousEntries -eq $false)
                     {
-                        foreach($resultLine in $parseResult)
+                        Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one day back." -f  $($logEntryItem.Name))"
+                        $calculatedDateTime = (get-date($calculatedDateTime)).AddDays(-1) # Looking one day back
+                        $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                        $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
+                    }
+                    # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
+                    else 
+                    {
+                        $checkRequired = $false
+                        Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
+                    }
+                }
+                $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
+                $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
+            }
+            "Weekly" 
+            {
+                $calculatedDateTime = Get-Date($ProbeTime) -format "$DateFormat $($logEntryItem.IntervalTime)"
+                # looking for the correct day in the past if we are not running on the specific day
+                $calculatedDateTime = (Get-Date($calculatedDateTime))
+                while ($calculatedDateTime.DayOfWeek -ine $logEntryItem.IntervalDay)
+                {
+                    Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
+                    # looking for the exact date of a day specified in the log definition. 
+                    # Like Wednesday of the current week.
+                    $calculatedDateTime = $calculatedDateTime.AddDays(-1) # going one day back and test again
+                }
+                Write-Verbose "$("{0,-35}-> Looking for the correct day. Calculated: {1} Looking for: {2}" -f  $($logEntryItem.Name), $($calculatedDateTime.DayOfWeek), $($logEntryItem.IntervalDay))"
+
+                $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
+                    
+                if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
+                {
+                    Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
+                    # IgnorePreviousEntries = $false means, we should look one week back and test the last result instead
+                    if ($logEntryItem.IgnorePreviousEntries -eq $false)
+                    {
+                        Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one week back." -f  $($logEntryItem.Name))"
+                        # going one week back, since we are probing before the calculated datetime and we are allowed to look one week back
+                        $calculatedDateTime = $calculatedDateTime.AddDays(-7)
+                        $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                        $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)              
+                    }
+                    # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
+                    else 
+                    {
+                        $checkRequired = $false
+                        Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
+                    }
+                }
+                $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
+                $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
+            }
+            "Monthly" 
+            {
+                $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate $ProbeTime
+                $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
+                    
+                if ((get-date($ProbeTime)) -lt $timeSpanObject.EndTime)
+                {
+                    Write-Verbose "$("{0,-35}-> Probetime before calculated logtime" -f  $($logEntryItem.Name))"
+                    # IgnorePreviousEntries = $false means, we should look one day back and test the last result instead
+                    if ($logEntryItem.IgnorePreviousEntries -eq $false)
+                    {
+                        Write-Verbose "$("{0,-35}-> IgnorePreviousEntries=false. Wee need to look one month back." -f  $($logEntryItem.Name))"
+                        $calculatedDateTime = Find-DayOfWeek -Weekday $logEntryItem.IntervalDay -Week $logEntryItem.IntervalWeek -Time $logEntryItem.IntervalTime -StartDate ((get-date($calculatedDateTime)).AddMonths(-1))
+                        $timeSpanObject.StartTime = (Get-Date($calculatedDateTime)).AddMinutes(-$logEntryItem.TimespanMinutes)
+                        $timeSpanObject.EndTime = (Get-Date($calculatedDateTime)).AddMinutes($logEntryItem.TimespanMinutes)
+                    }
+                    # IgnorePreviousEntries = $true means, we should NOT look one day back and skip the test for now
+                    else 
+                    {
+                        $checkRequired = $false
+                        Write-Verbose "$("{0,-35}-> No check required. Probetime before calculated logtime and IgnorePreviousEntries=true" -f  $($logEntryItem.Name))"
+                    }
+                }
+                $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
+                $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
+            }
+        } 
+        # Done with time calculations
+
+        # Validate if we need to run any check
+        if ($checkRequired -eq $false)
+        {
+            # Nothing to for now for this log file
+            $tmpLogEntryObject.Status = "OK"
+            $tmpLogEntryObject.Description = "Probe time before log time. Nothing to do"
+            [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
+            Write-Verbose "$("{0,-35}-> Probetime before calculated logtime. Nothing to do." -f  $($logEntryItem.Name))"
+        }
+        else 
+        {
+            # Check if we are only allowed to run the test on an active ConfigMgr site server
+            # Or if we are allowed regardless of any active passive node
+            # And only if RunOnSystemList either contains no entry or the correct servername
+            $allowedToRun = $false
+            if ([string]::IsNullOrEmpty($logEntryItem.RunOnSystemList))
+            {
+                $allowedToRun = $true      
+            }
+            else
+            {
+                if (($logEntryItem.RunOnSystemList) -match $systemName)
+                {
+                    $allowedToRun = $true   
+                }
+            }
+
+            $isActiveNode = $false
+            $isPassiveNode = $false
+            $isNoNode = $false
+            Switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
+            {
+                0{$isPassiveNode = $true;$nodeType = 'Passive'}
+                1{$isActiveNode = $true;$nodeType = 'Active'}
+                Default{$isNoNode = $true;$nodeType = 'NoConfigMgrNode'}
+            }
+            $tmpLogEntryObject.NodeType = $nodeType
+                
+            # Simpler representation: -> If (((RunOnActiveNodeOnly = $true -and IsActiveNode = $true) -or RunOnActiveNodeOnly = $false) -and $allowedToRun)
+            if (((($logEntryItem.RunOnActiveNodeOnly) -and ($isActiveNode)) -or $logEntryItem.RunOnActiveNodeOnly -eq $false) -and $allowedToRun)
+            {
+                if (-NOT(Test-Path -Path $logEntryItem.LogPath))
+                {
+                    $tmpLogEntryObject.Status = "Error"
+                    $tmpLogEntryObject.Description = "Path not found"
+                    [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
+                    Write-Verbose "$("{0,-35}-> Path not found: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))" 
+                }
+                else 
+                {
+                    if ($timeSpanObject.StartTime)
+                    {
+                        $tmpLogEntryObject.StartTime = $timeSpanObject.StartTime
+                        $tmpLogEntryObject.EndTime  = $timeSpanObject.EndTime
+
+                        # Looking for given log entry
+                        $foundLogEntryInTimeFrame = $false
+                        $parseResult = Select-String -Path $logEntryItem.LogPath -Pattern $logEntryItem.SuccessString
+                        If ($parseResult)
                         {
-                            # Custom object per found log entry
-                            $tmpLogLineObject = New-Object PSCustomObject | Select-Object $propertyList
-                            $tmpLogLineObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
-                            $tmpLogLineObject.CheckType = 'LogCheck'
-                            $tmpLogLineObject.Status = "" # Set to nothing to force string format
-                            $tmpLogLineObject.Description = "" # Set to nothing to force string format
-                            $tmpLogLineObject.ProbeTime = $ProbeTime
-                            $tmpLogLineObject.StartTime = $timeSpanObject.StartTime
-                            $tmpLogLineObject.EndTime  = $timeSpanObject.EndTime
-                            $tmpLogLineObject.Interval = $logEntryItem.Interval
-                            $tmpLogLineObject.IntervalDay = $logEntryItem.IntervalDay
-                            $tmpLogLineObject.IntervalWeek = $logEntryItem.IntervalWeek
-                            $tmpLogLineObject.LogPath = $logEntryItem.LogPath
-                            $tmpLogLineObject.SuccessString = $logEntryItem.SuccessString
-                            $tmpLogLineObject.Line = $resultLine.Line
-                            $tmpLogLineObject.LineNumber = $resultLine.LineNumber
-                            $tmpLogLineObject.ItemDescription = $logEntryItem.Description
-                            $tmpLogLineObject.NodeType = $nodeType
-                            $tmpLogLineObject.RunOnSystemList = $logEntryItem.RunOnSystemList
-                                                    
-                            # Parsing log line mainly to extract datetime by looking for different datetime strings
-                        
-                            # Log line example: 
-                            # <04-04-2022 02:16:54.419+420>"
-                            $Matches = $null # resetting matches
-                            $null = $resultLine.Line -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*)"
-                            if ($Matches)
+                            foreach($resultLine in $parseResult)
                             {
-                                Write-Verbose "$("{0,-35}-> DateTime extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
-                                #$tmpLogLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
+                                # Custom object per found log entry
+                                $tmpLogLineObject = New-Object PSCustomObject | Select-Object $propertyList
+                                $tmpLogLineObject.Name = 'LogCheck:{0}' -f $logEntryItem.Name
+                                $tmpLogLineObject.CheckType = 'LogCheck'
+                                $tmpLogLineObject.Status = "" # Set to nothing to force string format
+                                $tmpLogLineObject.Description = "" # Set to nothing to force string format
+                                $tmpLogLineObject.ProbeTime = $ProbeTime
+                                $tmpLogLineObject.StartTime = $timeSpanObject.StartTime
+                                $tmpLogLineObject.EndTime  = $timeSpanObject.EndTime
+                                $tmpLogLineObject.Interval = $logEntryItem.Interval
+                                $tmpLogLineObject.IntervalDay = $logEntryItem.IntervalDay
+                                $tmpLogLineObject.IntervalWeek = $logEntryItem.IntervalWeek
+                                $tmpLogLineObject.LogPath = $logEntryItem.LogPath
+                                $tmpLogLineObject.SuccessString = $logEntryItem.SuccessString
+                                $tmpLogLineObject.Line = $resultLine.Line
+                                $tmpLogLineObject.LineNumber = $resultLine.LineNumber
+                                $tmpLogLineObject.ItemDescription = $logEntryItem.Description
+                                $tmpLogLineObject.NodeType = $nodeType
+                                $tmpLogLineObject.RunOnSystemList = $logEntryItem.RunOnSystemList
+                                                        
+                                # Parsing log line mainly to extract datetime by looking for different datetime strings
                             
-                                # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
-                                $datetimeSplit = (($Matches.datetime) -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
-                                Switch ($logEntryItem.DateFormat)
-                                {
-                                    'DMY'
-                                    {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'dd-MM-yyyy HH:mm:ss', $null)
-                                    }
-                                    'MDY'
-                                    {
-                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'MM-dd-yyyy HH:mm:ss', $null)
-                                    }
-                                }
-                               
-                                # adding timezoneoffset $datetimeSplit[2] = "+ or -", $datetimeSplit[3] = minutes
-                                $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $datetimeSplit[2], $datetimeSplit[3]
-                            }
-                            
-                            if (-NOT ($tmpLogLineObject.LogDateTime))
-                            {
-                                # Log line example:
-                                # "<time="05:37:21.726-420" date="06-14-2022" component="Backup-ConfigMgrData.ps1" context="" type="1" thread="2316" file="Backup-ConfigMgrData.ps1">"
+                                # Log line example: 
+                                # <04-04-2022 02:16:54.419+420>"
                                 $Matches = $null # resetting matches
-                                $null = $resultLine.Line -match '(?<time>time="\d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<date>date="\d{1,2}-\d{1,2}-\d{4})'
+                                $null = $resultLine.Line -match "(?<datetime>\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*)"
                                 if ($Matches)
                                 {
-                                    Write-Verbose "$("{0,-35}-> Date and Time seperatly extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
-                                    #$tmpLogLineObject.Thread = (($Matches.thread) -replace '(thread=")', '')
+                                    Write-Verbose "$("{0,-35}-> DateTime extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
+                                    #$tmpLogLineObject.Thread = (($Matches.thread) -replace "(thread=)", "")
                                 
                                     # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
-                                    $timeSplit = (($Matches.time -replace '(Time=")', '') -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
-                                    $datetimeString = "{0} {1}" -f ($Matches.date -replace '(Date=")', ''), $timeSplit[0]
-
-                                    Switch -Regex ($datetimeString)
+                                    $datetimeSplit = (($Matches.datetime) -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
+                                    Switch ($logEntryItem.DateFormat)
                                     {
-                                        '\d{1}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}' 
+                                        'DMY'
                                         {
-                                            Switch ($logEntryItem.DateFormat)
-                                            {
-                                                'DMY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-MM-yyyy HH:mm:ss', $null)
-                                                }
-                                                'MDY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-dd-yyyy HH:mm:ss', $null)
-                                                }
-                                            }                                            
+                                            $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'dd-MM-yyyy HH:mm:ss', $null)
                                         }
-                                        '\d{2}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
+                                        'MDY'
                                         {
-                                            Switch ($logEntryItem.DateFormat)
-                                            {
-                                                'DMY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-M-yyyy HH:mm:ss', $null)
-                                                }
-                                                'MDY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-d-yyyy HH:mm:ss', $null)
-                                                }
-                                            }                                             
-                                        }
-                                        '\d{1}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
-                                        {
-                                            Switch ($logEntryItem.DateFormat)
-                                            {
-                                                'DMY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-M-yyyy HH:mm:ss', $null)
-                                                }
-                                                'MDY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-d-yyyy HH:mm:ss', $null)
-                                                }
-                                            }                                             
-                                        }
-                                        '\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}'
-                                        {
-                                            Switch ($logEntryItem.DateFormat)
-                                            {
-                                                'DMY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-MM-yyyy HH:mm:ss', $null)   
-                                                }
-                                                'MDY'
-                                                {
-                                                    $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
-                                                }
-                                            }                                             
+                                            $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeSplit[0], 'MM-dd-yyyy HH:mm:ss', $null)
                                         }
                                     }
-                                    # adding timezoneoffset $timeSplit[2] = "+ or -", $timeSplit[3] = minutes
-                                    $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $timeSplit[2], $timeSplit[3]
+                                
+                                    # adding timezoneoffset $datetimeSplit[2] = "+ or -", $datetimeSplit[3] = minutes
+                                    $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $datetimeSplit[2], $datetimeSplit[3]
                                 }
-                            }
+                                
+                                if (-NOT ($tmpLogLineObject.LogDateTime))
+                                {
+                                    # Log line example:
+                                    # "<time="05:37:21.726-420" date="06-14-2022" component="Backup-ConfigMgrData.ps1" context="" type="1" thread="2316" file="Backup-ConfigMgrData.ps1">"
+                                    $Matches = $null # resetting matches
+                                    $null = $resultLine.Line -match '(?<time>time="\d{2}:\d{2}:\d{2}.\d*(\+|\-)\d*).*(?<date>date="\d{1,2}-\d{1,2}-\d{4})'
+                                    if ($Matches)
+                                    {
+                                        Write-Verbose "$("{0,-35}-> Date and Time seperatly extracted from logline: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
+                                        #$tmpLogLineObject.Thread = (($Matches.thread) -replace '(thread=")', '')
+                                    
+                                        # splitting at timezone offset -> plus or minus 480 for example: '02-22-2021 03:19:10.431+480'
+                                        $timeSplit = (($Matches.time -replace '(Time=")', '') -split '(\+|\-)(\d*$)') -split '\.' # last split is to remove milliseconds
+                                        $datetimeString = "{0} {1}" -f ($Matches.date -replace '(Date=")', ''), $timeSplit[0]
 
-                            if (-NOT ($tmpLogLineObject.LogDateTime))
+                                        Switch -Regex ($datetimeString)
+                                        {
+                                            '\d{1}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}' 
+                                            {
+                                                Switch ($logEntryItem.DateFormat)
+                                                {
+                                                    'DMY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-MM-yyyy HH:mm:ss', $null)
+                                                    }
+                                                    'MDY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-dd-yyyy HH:mm:ss', $null)
+                                                    }
+                                                }                                            
+                                            }
+                                            '\d{2}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
+                                            {
+                                                Switch ($logEntryItem.DateFormat)
+                                                {
+                                                    'DMY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-M-yyyy HH:mm:ss', $null)
+                                                    }
+                                                    'MDY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-d-yyyy HH:mm:ss', $null)
+                                                    }
+                                                }                                             
+                                            }
+                                            '\d{1}-\d{1}-\d{4} \d{2}:\d{2}:\d{2}'
+                                            {
+                                                Switch ($logEntryItem.DateFormat)
+                                                {
+                                                    'DMY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'd-M-yyyy HH:mm:ss', $null)
+                                                    }
+                                                    'MDY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'M-d-yyyy HH:mm:ss', $null)
+                                                    }
+                                                }                                             
+                                            }
+                                            '\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}'
+                                            {
+                                                Switch ($logEntryItem.DateFormat)
+                                                {
+                                                    'DMY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'dd-MM-yyyy HH:mm:ss', $null)   
+                                                    }
+                                                    'MDY'
+                                                    {
+                                                        $tmpLogLineObject.LogDateTime = [Datetime]::ParseExact($datetimeString, 'MM-dd-yyyy HH:mm:ss', $null)
+                                                    }
+                                                }                                             
+                                            }
+                                        }
+                                        # adding timezoneoffset $timeSplit[2] = "+ or -", $timeSplit[3] = minutes
+                                        $tmpLogLineObject.TimeZoneOffset = "{0}{1}" -f $timeSplit[2], $timeSplit[3]
+                                    }
+                                }
+
+                                if (-NOT ($tmpLogLineObject.LogDateTime))
+                                {
+                                    $tmpLogLineObject.Status = 'Error'
+                                    $tmpLogLineObject.Description = 'DateTime could not be extracted from log! Is the correct DateFormat set?'
+                                    Write-Verbose "$("{0,-35}-> DateTime could not be extracted from log: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
+                                }
+
+                                # Check if the log line was written during the calculated "allowed" timeframe
+                                If (($tmpLogLineObject.LogDateTime -ge $timeSpanObject.StartTime) -and ($tmpLogLineObject.LogDateTime -le $timeSpanObject.EndTime))
+                                {
+                                    $tmpLogLineObject.Status = 'OK'
+                                    $foundLogEntryInTimeFrame = $true
+                                    Write-Verbose "$("{0,-35}-> Success string found in given timeframe in line: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
+                                }
+
+                                # Add log entry to output object
+                                [void]$logEntrySearchResultList.Add($tmpLogLineObject)                    
+
+                            } # end foreach $parseResult
+
+                            if (-NOT ($foundLogEntryInTimeFrame))
                             {
-                                $tmpLogLineObject.Status = 'Error'
-                                $tmpLogLineObject.Description = 'DateTime could not be extracted from log! Is the correct DateFormat set?'
-                                Write-Verbose "$("{0,-35}-> DateTime could not be extracted from log: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
+                                $tmpLogEntryObject.Status = 'Error'
+                                $tmpLogEntryObject.Description = 'Success string not found in given timeframe'
+                                [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
+                                Write-Verbose "$("{0,-35}-> Success string not found in given timeframe: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                             }
 
-                            # Check if the log line was written during the calculated "allowed" timeframe
-                            If (($tmpLogLineObject.LogDateTime -ge $timeSpanObject.StartTime) -and ($tmpLogLineObject.LogDateTime -le $timeSpanObject.EndTime))
-                            {
-                                $tmpLogLineObject.Status = 'OK'
-                                $foundLogEntryInTimeFrame = $true
-                                Write-Verbose "$("{0,-35}-> Success string found in given timeframe in line: {1} of log: {2}" -f  $($logEntryItem.Name), $($resultLine.LineNumber) ,$($logEntryItem.LogPath))"
-                            }
-
-                            # Add log entry to output object
-                            [void]$logEntrySearchResultList.Add($tmpLogLineObject)                    
-
-                        } # end foreach $parseResult
-
-                        if (-NOT ($foundLogEntryInTimeFrame))
-                        {
-                            $tmpLogEntryObject.Status = 'Error'
-                            $tmpLogEntryObject.Description = 'Success string not found in given timeframe'
-                            [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-                            Write-Verbose "$("{0,-35}-> Success string not found in given timeframe: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
                         }
+                        else 
+                        {
+                            # no result in log found
+                            $tmpLogEntryObject.Status = 'Error'
+                            $tmpLogEntryObject.Description = 'Success string not found in log!'
+                            [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
+                            Write-Verbose "$("{0,-35}-> Success string not found in log! {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
+                        } # END If ($parseResult)
 
                     }
                     else 
                     {
-                        # no result in log found
-                        $tmpLogEntryObject.Status = 'Error'
-                        $tmpLogEntryObject.Description = 'Success string not found in log!'
+                        $tmpLogEntryObject.Status = "Error"
+                        $tmpLogEntryObject.Description = "Could not calculate time"
                         [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-                        Write-Verbose "$("{0,-35}-> Success string not found in log! {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
-                    } # END If ($parseResult)
-
-                }
-                else 
-                {
-                    $tmpLogEntryObject.Status = "Error"
-                    $tmpLogEntryObject.Description = "Could not calculate time"
-                    [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-                    Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
-                } # END if ($timeSpanObject.StartTime)
-            } # end (-NOT(Test-Path -Path $logEntryItem.LogPath))
-        }
-        else 
-        {
-            $tmpLogEntryObject.Status = "OK"
-            $tmpLogEntryObject.Description = "Test only allowed to run on active node or specific system"
-            [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
-            Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"                
-        } # end Test-ConfigMgrActiveSiteSystemNode
-        
-    } # end if ($checkRequired -eq $false)
-}
+                        Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"
+                    } # END if ($timeSpanObject.StartTime)
+                } # end (-NOT(Test-Path -Path $logEntryItem.LogPath))
+            }
+            else 
+            {
+                $tmpLogEntryObject.Status = "OK"
+                $tmpLogEntryObject.Description = "Test only allowed to run on active node or specific system"
+                [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
+                Write-Verbose "$("{0,-35}-> No time calculated. Not able to test logfile: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))"                
+            } # end Test-ConfigMgrActiveSiteSystemNode
+            
+        } # end if ($checkRequired -eq $false)
+    }
+} # end Testmode
 #endregion
 
 #region limit outputlist for some output modes
 $resultObject = New-Object System.Collections.ArrayList
 # Adding overall script output
-[void]$logEntrySearchResultList.Add($tmpScriptStateObj)
+if ($OutputScriptstate)
+{
+    [void]$logEntrySearchResultList.Add($tmpScriptStateObj)
+}
 # Group the results by log name to be able to look at the overall result
 if($WriteLog){Write-CMTraceLog -Message "Grouping results to limit overall output to the latest entries" -Component ($MyInvocation.MyCommand)}
 $logEntrySearchResultListGroups = $logEntrySearchResultList | Group-Object -Property Name
@@ -1097,7 +1143,7 @@ foreach ($groupItem in $logEntrySearchResultListGroups)
 
 #region cache state
 # In case we need to know witch logs are already in error state
-# Not really required by can be helpful in case a logentry was deleted from the definition file 
+# Not really required but can be helpful in case a logentry was deleted from the definition file 
 if ($CacheState)
 {
     if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}

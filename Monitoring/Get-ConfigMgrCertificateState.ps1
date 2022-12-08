@@ -55,6 +55,12 @@
 .PARAMETER LogPath
     Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
 
+.PARAMETER OutputScriptstate
+    If true, the script will output its overall state as an extra object. $true is default. 
+
+.PARAMETER TestMode
+    If true, the script will use the value of parameter -OutputTestData to output dummy data objects
+
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
@@ -113,6 +119,10 @@ param
     [bool]$WriteLog = $false,
     [Parameter(Mandatory=$false)]
     [string]$LogPath,    
+    [Parameter(Mandatory=$false)]
+    [bool]$OutputScriptstate = $true,
+    [Parameter(Mandatory=$false)]
+    [bool]$TestMode = $false,
     [Parameter(Mandatory=$false)]
     [ValidateRange(1,60)]
     [int]$OutputTestData=0
@@ -443,7 +453,6 @@ else
 #endregion
 
 #region main certificate logic
-$resultObject = New-Object System.Collections.ArrayList
 [array]$propertyList  = $null
 $propertyList += 'CheckType' # Either Alert, EPAlert, CHAlert, Component or SiteSystem
 $propertyList += 'Name' # Has to be a unique check name. Something like the system fqdn and the check itself
@@ -468,8 +477,10 @@ $tmpScriptStateObj.CheckType = 'Script'
 $tmpScriptStateObj.Status = 'Ok'
 $tmpScriptStateObj.Description = "Overall state of script"
 #endregion
- 
-if ($OutputTestData -ge 1)
+
+#region MAIN logic
+$resultObject = New-Object System.Collections.ArrayList
+if ($TestMode)
 {
     if($WriteLog){Write-CMTraceLog -Message "Will create $OutputTestData test alarms" -Component ($MyInvocation.MyCommand)}
     # create dummy entries
@@ -670,7 +681,10 @@ else
  
  
 # Adding overall script state to list
-[void]$resultObject.Add($tmpScriptStateObj)
+if ($OutputScriptstate)
+{
+    [void]$resultObject.Add($tmpScriptStateObj)
+}
 #endregion
  
 #region cache state
