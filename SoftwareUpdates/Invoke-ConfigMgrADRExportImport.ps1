@@ -67,7 +67,9 @@ param
     [Parameter(ParameterSetName = 'Import',Mandatory=$false)]
     [switch]$ImportADRsFromFile,
     [Parameter(ParameterSetName = 'Import',Mandatory=$true)]
-    [string]$FilePath
+    [string]$FilePath,
+    [Parameter(Mandatory=$false)]
+    [bool]$AddExample = $true
 )
 
 
@@ -115,6 +117,194 @@ catch
     $cimSession | Remove-cimSession
 }
 
+
+#region XML example 
+$xmlExampleForDocumentation = @'
+<ADR-DOCUMENNTATION>
+    <!--Name of ADR -->
+    <Name>SRV-2019</Name>
+    <!--ID of ADR -->
+    <ID>1</ID>
+    <!--Run schedule string of ADR. Can be converted with "Convert-CMSchedule -ScheduleString '50E74D00001A2000'"-->
+    <Schedule>50E74D00001A2000</Schedule>
+    <!--Information about update package. Not set if ADR is set to not use a pachage and point clients to Windows Update online service -->
+    <ContentTemplate>
+        <PackageID>P0200011</PackageID>
+        <ContentLocales>
+            <Locale>Locale:9</Locale>
+            <Locale>Locale:0</Locale>
+        </ContentLocales>
+        <O365ContentLocales>
+            <Locale>Locale:1033</Locale>
+            <Locale>Locale:0</Locale>
+        </O365ContentLocales>
+        <ContentSources>
+            <Source Name="Internet" Order="1" />
+            <Source Name="WSUS" Order="2" />
+            <Source Name="UNC" Order="3" Location="" />
+        </ContentSources>
+    </ContentTemplate>
+    <DeploymentProperties>
+        <!-- DeploymentId has no value. This is just the general deployment setting for all deployments -->
+        <DeploymentId />
+        <!-- Name of deployment -->
+        <DeploymentName>SRV-2019</DeploymentName>
+        <!-- DeploymentDescription has no value -->
+        <DeploymentDescription />
+        <!-- Unique_ID of update group the ADR will update or use for deployments -->
+        <UpdateGroupId>ScopeId_0C192617-7E7D-422B-979B-31FF58D765E6/AuthList_84be3235-3bd9-47ce-999c-904671d5c94a</UpdateGroupId>
+        <!-- ADR language LocaleId -->
+        <LocaleId>1033</LocaleId>
+        <!-- If "True" the ADR will update the same update group. If "false" the ADR will create a new group each time new updates are detected -->
+        <UseSameDeployment>false</UseSameDeployment>
+        <!-- If "True" the deployment will be anabled. If "false" the deployment will be disabled -->
+        <EnableAfterCreate>true</EnableAfterCreate>
+        <NoEULAUpdates>false</NoEULAUpdates>
+        <AlignWithSyncSchedule>false</AlignWithSyncSchedule>
+        <ScopeIDs>
+            <ScopeID>SMS00UNA</ScopeID>
+        </ScopeIDs>
+        <EnableFailureAlert>true</EnableFailureAlert>
+        <IsServicingPlan>false</IsServicingPlan>
+    </DeploymentProperties>
+    <ADRDeployments>
+        <Deployment>
+            <DeploymentId>{3ca7adc3-6b15-4fec-ad86-518ec59aa270}</DeploymentId>
+            <DeploymentNumber>0</DeploymentNumber>
+            <CollectionId>SMS00001</CollectionId>
+            <IncludeSub>true</IncludeSub>
+            <Utc>false</Utc>
+            <Duration>1</Duration>
+            <DurationUnits>Days</DurationUnits>
+            <AvailableDeltaDuration>1</AvailableDeltaDuration>
+            <AvailableDeltaDurationUnits>Days</AvailableDeltaDurationUnits>
+            <SoftDeadlineEnabled>false</SoftDeadlineEnabled>
+            <SuppressServers>Unchecked</SuppressServers>
+            <SuppressWorkstations>Unchecked</SuppressWorkstations>
+            <PersistOnWriteFilterDevices>Unchecked</PersistOnWriteFilterDevices>
+            <RequirePostRebootFullScan>Checked</RequirePostRebootFullScan>
+            <AllowRestart>false</AllowRestart>
+            <DisableMomAlert>false</DisableMomAlert>
+            <GenerateMomAlert>false</GenerateMomAlert>
+            <UseRemoteDP>true</UseRemoteDP>
+            <UseUnprotectedDP>true</UseUnprotectedDP>
+            <UseBranchCache>true</UseBranchCache>
+            <EnableDeployment>true</EnableDeployment>
+            <EnableWakeOnLan>false</EnableWakeOnLan>
+            <AllowDownloadOutSW>false</AllowDownloadOutSW>
+            <AllowInstallOutSW>true</AllowInstallOutSW>
+            <EnableAlert>false</EnableAlert>
+            <AlertThresholdPercentage>0</AlertThresholdPercentage>
+            <AlertDuration>2</AlertDuration>
+            <AlertDurationUnits>Weeks</AlertDurationUnits>
+            <EnableNAPEnforcement>false</EnableNAPEnforcement>
+            <UserNotificationOption>DisplayAll</UserNotificationOption>
+            <LimitStateMessageVerbosity>true</LimitStateMessageVerbosity>
+            <StateMessageVerbosity>1</StateMessageVerbosity>
+            <AllowWUMU>true</AllowWUMU>
+            <AllowUseMeteredNetwork>true</AllowUseMeteredNetwork>
+            <PreDownloadUpdateContent>false</PreDownloadUpdateContent>
+        </Deployment>
+    </ADRDeployments>
+    <UpdateDefinition>
+        <UpdateXMLDescriptionItems>
+            <UpdateXMLDescriptionItem PropertyName="LocalizedDisplayName" UIPropertyName="">
+                <MatchRules>
+                    <string>-Itanium</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="ArticleID" UIPropertyName="">
+                <MatchRules>
+                    <string>-Kb123456</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="BulletinID" UIPropertyName="">
+                <MatchRules>
+                    <string>-MS16-100</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="ContentSize" UIPropertyName="">
+                <MatchRules>
+                    <string>&gt;=100</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="CustomSeverity" UIPropertyName="">
+                <MatchRules>
+                    <string>2</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="DateRevised" UIPropertyName="">
+                <MatchRules>
+                    <string>0:0:28:0</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="LocalizedDescription" UIPropertyName="">
+                <MatchRules>
+                    <string>-Best update ever</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="IsDeployed" UIPropertyName="">
+                <MatchRules>
+                    <string>true</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="UpdateLocales" UIPropertyName="">
+                <MatchRules>
+                    <string>Locale:5</string>
+                    <string>Locale:6</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="_Product" UIPropertyName="">
+                <MatchRules>
+                    <string>Product:12c24e87-bd40-451b-9477-2c2bf501e0d7|Visual Studio 2022</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="NumMissing" UIPropertyName="">
+                <MatchRules>
+                    <string>&lt;=40</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="Severity" UIPropertyName="">
+                <MatchRules>
+                    <string>8</string>
+                    <string>2</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="IsSuperseded" UIPropertyName="">
+                <MatchRules>
+                    <string>true</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="LocalizedDisplayName" UIPropertyName="">
+                <MatchRules>
+                    <string>-.Net</string>
+                    <string>-Security only</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="_UpdateClassification" UIPropertyName="">
+                <MatchRules>
+                    <string>UpdateClassification:0fa1201d-4330-4fa8-8ae9-b877473b6441|Security Updates</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="CMTag" UIPropertyName="">
+                <MatchRules>
+                    <string>0</string>
+                    <string>2</string>
+                    <string>3</string>
+                    <string>1</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+            <UpdateXMLDescriptionItem PropertyName="_Company" UIPropertyName="">
+                <MatchRules>
+                    <string>Company:56309036-4c77-4dd9-951a-99ee9c246a94|Microsoft</string>
+                </MatchRules>
+            </UpdateXMLDescriptionItem>
+        </UpdateXMLDescriptionItems>
+    </UpdateDefinition>
+</ADR-DOCUMENNTATION>
+'@
+#enregion
+
 #region main export logic
 if (-NOT ($ImportADRsFromFile))
 {
@@ -156,7 +346,12 @@ if (-NOT ($ImportADRsFromFile))
 
         if ($IndividualFiles)
         {
-            $adrFileName = "{0}\{1}_{2}.xml" -f $PSScriptRoot, $adr.Name, (Get-Date -f 'yyyyMMdd-hhmm')
+            # Let's remove invalid filename chars
+            [char[]]$invalidFileNameChars = [IO.Path]::GetinvalidFileNameChars()
+            $fileName = $adr.Name -replace ('[{0}]' -f ([regex]::Escape($invalidFileNameChars -join '')))
+            $fileName = $fileName.Trim()
+
+            $adrFileName = "{0}\{1}_{2}.xml" -f $PSScriptRoot, $fileName, (Get-Date -f 'yyyyMMdd-hhmm')
             $xmlWriter = New-Object System.XMl.XmlTextWriter($adrFileName,$Null)
             $xmlWriter.Formatting = 'Indented'
             $xmlWriter.Indentation = 1
@@ -166,9 +361,17 @@ if (-NOT ($ImportADRsFromFile))
             $xmlWriter.WriteStartElement('ADRList')
         }
 
+        if ($AddExample -and ($adrCounter -eq 1))
+        {
+            [xml]$tmpXMLData = $xmlExampleForDocumentation
+            $tmpXMLData.WriteContentTo($xmlWriter) 
+        }
+
         $xmlWriter.WriteComment("ADR $($adrCounter.ToString('000')) of $(($adrList.count).ToString('000')) ADRs")
         $xmlWriter.WriteStartElement('ADR')
         $xmlWriter.WriteElementString('Name',($adr.Name))
+        $xmlWriter.WriteElementString('ID',($adr.AutoDeploymentID))
+        $xmlWriter.WriteElementString('Schedule',($adr.Schedule))
         
         #region ContentTemplate
         $xmlWriter.WriteComment('ContentTemplate settings')
@@ -245,4 +448,3 @@ if (-NOT ($ImportADRsFromFile))
     # Let's remove our open session
     $cimSession | Remove-cimSession
 }
-
