@@ -151,7 +151,7 @@ param
     [Parameter(Mandatory=$false)]
     [bool]$TestMode = $false,
     [Parameter(Mandatory=$false)]
-    [ValidateRange(1,60)]
+    [ValidateRange(0,60)]
     [int]$OutputTestData=0
 )
 
