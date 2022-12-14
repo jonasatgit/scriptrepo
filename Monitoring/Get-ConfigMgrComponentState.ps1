@@ -511,21 +511,29 @@ else
                 # Trying to read SMS_ComponentSummarizer to extract component state
                 try 
                 {
-                    $wqlQuery = "SELECT * FROM SMS_ComponentSummarizer WHERE TallyInterval='0001128000100008' and ComponentType like 'Monitored%' and Status <> 0"
+                    $wqlQuery = "SELECT * FROM SMS_ComponentSummarizer WHERE TallyInterval='0001128000100008'"
                     [array]$listFromComponentSummarizer = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-                    
-                    #Status: 0=OK, 1=Warning, 2=Error 
-                    foreach ($componentState in $listFromComponentSummarizer)
+                    if ($listFromComponentSummarizer.Count -eq 0)
                     {
-                        $tmpObj = New-Object psobject | Select-Object $propertyList
-                        $tmpObj.CheckType = 'ComponentState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
-                        $tmpObj.SystemName = $componentState.MachineName
-                        $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
-                        $tmpObj.SiteCode = $componentState.SiteCode
-                        $tmpObj.Description = ""
-                        $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Component Status". Also, check the logfile of the corresponding component'
-                        [void]$resultObject.Add($tmpObj) 
+                        $tmpScriptStateObj.Status = 'Error'
+                        $tmpScriptStateObj.Description = "User running the script might not have enough rights to read class SMS_ComponentSummarizer"
+                    }
+                    else 
+                    {
+                        #ComponentType like 'Monitored%' and Status <> 0
+                        #Status: 0=OK, 1=Warning, 2=Error 
+                        foreach ($componentState in ($listFromComponentSummarizer | Where-Object {($_.ComponentType -ilike 'Monitored*') -and ($_.Status -ne 0)}))
+                        {
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            $tmpObj.CheckType = 'ComponentState'
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
+                            $tmpObj.SystemName = $componentState.MachineName
+                            $tmpObj.Status = if($componentState.Status -eq 1){'Warning'}elseif ($componentState.Status -eq 2){'Error'}
+                            $tmpObj.SiteCode = $componentState.SiteCode
+                            $tmpObj.Description = ""
+                            $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Component Status". Also, check the logfile of the corresponding component'
+                            [void]$resultObject.Add($tmpObj) 
+                        }
                     }
                 }
                 catch 
@@ -540,35 +548,40 @@ else
                 # Trying to read SMS_SiteSystemSummarizer to extract site system state
                 try 
                 {
-                    $wqlQuery = "SELECT * FROM SMS_SiteSystemSummarizer where Status <> 0"
+                    $wqlQuery = "SELECT * FROM SMS_SiteSystemSummarizer"
                     [array]$listFromSiteSystemSummarizer = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-
-                    foreach ($siteSystemState in $listFromSiteSystemSummarizer)
+                    if ($listFromSiteSystemSummarizer.Count -eq 0)
                     {
-                        # Extract systemname from string looking like this: ["Display=\\SEC01.contoso.local\"]MSWNET:["SMS_SITE=S01"]\\SEC01.contoso.local\
-                        $siteSystemName = $null
-                        $siteSystemName = [regex]::match($siteSystemState.SiteSystem, '(\\\\.+\\\"\])')
-                        if (-NOT($siteSystemName))
-                        {
-                            $siteSystemName = 'Name could not be determined'
-                        }
-                        else 
-                        {
-                            $siteSystemName = $siteSystemName -replace '\\', '' -replace '\"', '' -replace '\]', ''   
-                        }
-
-                        $tmpObj = New-Object psobject | Select-Object $propertyList
-                        $tmpObj.CheckType = 'SiteSystemState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $siteSystemState.Role, $siteSystemState.SiteCode
-                        $tmpObj.SystemName = $siteSystemName
-                        $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
-                        $tmpObj.SiteCode = $siteSystemState.SiteCode
-                        $tmpObj.Description = ""
-                        $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Site Status". Also, check the logfile of the corresponding component'
-                        [void]$resultObject.Add($tmpObj) 
+                        $tmpScriptStateObj.Status = 'Error'
+                        $tmpScriptStateObj.Description = "User running the script might not have enough rights to read class SMS_SiteSystemSummarizer"
                     }
+                    else 
+                    {
+                        foreach ($siteSystemState in ($listFromSiteSystemSummarizer | Where-Object {$_.Status -ne 0}))
+                        {
+                            # Extract systemname from string looking like this: ["Display=\\SEC01.contoso.local\"]MSWNET:["SMS_SITE=S01"]\\SEC01.contoso.local\
+                            $siteSystemName = $null
+                            $siteSystemName = [regex]::match($siteSystemState.SiteSystem, '(\\\\.+\\\"\])')
+                            if (-NOT($siteSystemName))
+                            {
+                                $siteSystemName = 'Name could not be determined'
+                            }
+                            else 
+                            {
+                                $siteSystemName = $siteSystemName -replace '\\', '' -replace '\"', '' -replace '\]', ''   
+                            }
 
-
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            $tmpObj.CheckType = 'SiteSystemState'
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $siteSystemState.Role, $siteSystemState.SiteCode
+                            $tmpObj.SystemName = $siteSystemName
+                            $tmpObj.Status = if($siteSystemState.Status -eq 1){'Warning'}elseif ($siteSystemState.Status -eq 2){'Error'}
+                            $tmpObj.SiteCode = $siteSystemState.SiteCode
+                            $tmpObj.Description = ""
+                            $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\System Status\Site Status". Also, check the logfile of the corresponding component'
+                            [void]$resultObject.Add($tmpObj) 
+                        }
+                    }
                 }
                 catch 
                 {
@@ -582,9 +595,8 @@ else
                 # Trying to read SMS_Alert to extract alert state
                 try 
                 {
-                    $wqlQuery = "select * from SMS_Alert where AlertState = 0 and IsIgnored = 0"
+                    $wqlQuery = "select * from SMS_Alert"
                     [array]$listFromSMSAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-                    #$listFromSMSAlert | ogv
                     <#
                         AlertState
                         0  Active
@@ -598,46 +610,53 @@ else
                         1  Error
                         2  Warning
                         3  Informational
-                    
                     #>
-                    foreach ($alertState in $listFromSMSAlert)
+                    if ($listFromSMSAlert.Count -eq 0)
                     {
-                        if($alertState.SourceSiteCode)
+                        $tmpScriptStateObj.Status = 'Error'
+                        $tmpScriptStateObj.Description = "User running the script might not have enough rights to read class SMS_Alert"
+                    }
+                    else 
+                    {
+                        foreach ($alertState in ($listFromSMSAlert | Where-Object {($_.AlertState -eq 0) -and ($_.IsIgnored -eq 0)}))
                         {
-                            $sourceSiteCode = $alertState.SourceSiteCode
-                        }
-                        else
-                        {
-                            $sourceSiteCode = $($ProviderInfo.SiteCode)
-                        }
-
-                        
-                        # Trying to find a unique name for the alert, since multiple duplicate entries are possible
-                        if (($alertState.Name -ieq '$RuleFailureAlertName') -or ($alertState.Name -ieq 'Rule Failure Alert'))
-                        {
-                            if($alertState.InstanceNameParam1)
+                            if($alertState.SourceSiteCode)
                             {
-                                $alertName = $alertState.InstanceNameParam1
+                                $sourceSiteCode = $alertState.SourceSiteCode
                             }
                             else
                             {
-                                $alertName = 'Rule Failure Alert'
+                                $sourceSiteCode = $($ProviderInfo.SiteCode)
                             }
-                        }
-                        else 
-                        {
-                            $alertName = $alertState.Name
-                        }
 
-                        $tmpObj = New-Object psobject | Select-Object $propertyList
-                        $tmpObj.CheckType = 'AlertState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
-                        $tmpObj.SystemName = $systemName
-                        $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
-                        $tmpObj.SiteCode = $alertState.SourceSiteCode
-                        $tmpObj.Description = ""
-                        $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
-                        [void]$resultObject.Add($tmpObj) 
+                            
+                            # Trying to find a unique name for the alert, since multiple duplicate entries are possible
+                            if (($alertState.Name -ieq '$RuleFailureAlertName') -or ($alertState.Name -ieq 'Rule Failure Alert'))
+                            {
+                                if($alertState.InstanceNameParam1)
+                                {
+                                    $alertName = $alertState.InstanceNameParam1
+                                }
+                                else
+                                {
+                                    $alertName = 'Rule Failure Alert'
+                                }
+                            }
+                            else 
+                            {
+                                $alertName = $alertState.Name
+                            }
+
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            $tmpObj.CheckType = 'AlertState'
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
+                            $tmpObj.SystemName = $systemName
+                            $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                            $tmpObj.SiteCode = $alertState.SourceSiteCode
+                            $tmpObj.Description = ""
+                            $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                            [void]$resultObject.Add($tmpObj) 
+                        }
                     }
                 }
                 catch 
