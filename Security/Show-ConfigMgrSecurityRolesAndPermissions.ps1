@@ -57,12 +57,12 @@ else
 $MECMAvailablePermissions = Get-CimInstance -CimSession $cimsession -Namespace "root\sms\site_$SiteCode" -query "Select * from SMS_AvailableOperation"
 
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Found: $($MECMSecurityRoles.Count) security roles" -ForegroundColor Green
-[array]$selectedRoles = $MECMSecurityRoles | Out-GridView -Title 'Please select ConfigMgr seurity roles' -OutputMode Multiple
+[array]$selectedRoles = $MECMSecurityRoles | Select-Object RoleName, RoleID, NumberOfAdmins, IsBuiltIn, RoleDescription | Out-GridView -Title 'Please select ConfigMgr seurity roles' -OutputMode Multiple
 
 if($selectedRoles.Count -gt 0)
 {
     $outObj = New-Object System.Collections.ArrayList
-    foreach ($roleItem in $selectedRoles) 
+    foreach ($roleItem in ($MECMSecurityRoles.Where({$_.RoleID -in ($selectedRoles.RoleID)}))) 
     {
         Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Working on role: `"$($roleItem.RoleName)`"" -ForegroundColor Green
         # create temp object for each role 
