@@ -53,8 +53,6 @@ else
     $cimSession = New-CimSession -ComputerName $ProviderMachineName  
 }
 
-$cimsession = New-CimSession -ComputerName $ProviderMachineName
-
 [array]$MECMSecurityRoles = Get-CimInstance -CimSession $cimsession -Namespace "root\sms\site_$SiteCode" -query "Select * from SMS_Role" # where IsBuiltIn = 0"
 $MECMAvailablePermissions = Get-CimInstance -CimSession $cimsession -Namespace "root\sms\site_$SiteCode" -query "Select * from SMS_AvailableOperation"
 
