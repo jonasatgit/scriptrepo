@@ -1985,17 +1985,22 @@ try
 {  
     $generalRecoveryInfo | Out-File -FilePath $recoveryFile01 -Append
 
-    'Site Server Name:' | Out-File -FilePath $recoveryFile01 -Append
+    "  " | Out-File -FilePath $recoveryFile01 -Append
+    "  " | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'LIST OF SITE SERVER SETTINGS' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'A potential new system needs to have the exact same name as the old one!' | Out-File -FilePath $recoveryFile01 -Append
     'The system also needs to have the same rights and AD group memberships as before.' | Out-File -FilePath $recoveryFile01 -Append
     '(Below is a list with AD groups if the system is/was a member of some)' | Out-File -FilePath $recoveryFile01 -Append
-    'The new system also needs rights in AD for AD publishing. Full control for folder and subfolder of the "System Management" conteiner' | Out-File -FilePath $recoveryFile01 -Append
+    'The new system also needs rights in AD for AD publishing. Full control for folder and subfolder of the "System Management" container' | Out-File -FilePath $recoveryFile01 -Append
     'More can be found here: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/network/extend-the-active-directory-schema#step-2-the-system-management-container' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    $siteInfo.SiteServerName | Out-File -FilePath $recoveryFile01 -Append
+    "Name: $($siteInfo.SiteServerName)" | Out-File -FilePath $recoveryFile01 -Append
     "  " | Out-File -FilePath $recoveryFile01 -Append
     "  " | Out-File -FilePath $recoveryFile01 -Append
 
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Local Disk configuration:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     Get-Disk | Select-Object Number, FriendlyName, ProvisioningType, @{Name='TotalSizeGB'; Expression={ $_.Size /1024/1024/1024}}, PartitionStyle | 
@@ -2003,6 +2008,8 @@ try
         Out-File -FilePath $recoveryFile01 -Append
 
 
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Local Volume configuration:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem, DriveType, @{Name='TotalSizeGB'; Expression={ $_.Size /1024/1024/1024}} | 
@@ -2010,6 +2017,8 @@ try
         Out-File -FilePath $recoveryFile01 -Append
 
 
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Local Processor configuration:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     Get-WmiObject -Namespace root\cimv2 -class win32_processor | Select-Object DeviceID, Name, CurrentClockSpeed, NumberOfCores, NumberOfLogicalProcessors | 
@@ -2017,6 +2026,8 @@ try
         Out-File -FilePath $recoveryFile01 -Append
 
 
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Local RAM configuration:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     Get-WmiObject -Namespace root\cimv2 -class Win32_PhysicalMemory | 
@@ -2024,18 +2035,108 @@ try
         Format-List * | 
         Out-File -FilePath $recoveryFile01 -Append
 
-
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Installed Updates:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     Get-WmiObject Win32_Quickfixengineering | Out-File -FilePath $recoveryFile01 -Append
 
 
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'AD Info of System:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     $computerADInfo = (New-Object System.DirectoryServices.DirectorySearcher("(&(objectCategory=computer)(objectClass=computer)(cn=$env:Computername))")).FindOne().GetDirectoryEntry()
-    $computerADInfo | Out-File -FilePath $recoveryFile01 -Append
+    "LDAP path: $($computerADInfo.Path)" | Out-File -FilePath $recoveryFile01 -Append
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
     'AD groups the system is a member of:' | Out-File -FilePath $recoveryFile01 -Append
-    $computerADInfo.memberOf | Out-File -FilePath $recoveryFile01 -Append
+    $computerADInfo.memberOf | ForEach-Object { $_ | Out-File -FilePath $recoveryFile01 -Append }
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'IP configuration:' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ipConfig = ipconfig /all
+    $ipConfig | Out-File -FilePath $recoveryFile01 -Append
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'Share configuration:' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    Get-CimInstance Win32_Share | Format-List Name, Path, Description | Out-File -FilePath $recoveryFile01 -Append
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'List of system certificates:' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $certList = Get-ChildItem -Path Cert:\LocalMachine\my -ErrorAction SilentlyContinue
+    $certList | Format-List Thumbprint, Subject, FriendlyName, Issuer, NotAfter, NotBefore, DNSNameList, EnhancedKeyUsageList | Out-File -FilePath $recoveryFile01 -Append
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'List of installed software (32Bit and 64Bit)' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $path1 = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    $path2 = 'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    Get-ItemProperty -Path $path1, $path2 |
+        Select-Object -Property DisplayName, DisplayVersion, Publisher, InstallDate | 
+        Sort-Object -Property DisplayName -Descending | Format-Table -AutoSize |
+        Out-File -FilePath $recoveryFile01 -Append
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'List of local groups and group members:' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $localGroupList = Get-LocalGroup -ErrorAction SilentlyContinue | ForEach-Object {'-------------------------------------------------------------------------------'; net localgroup $_.Name}
+    $localGroupList = $localGroupList -replace 'The command completed successfully.'
+    $localGroupList | Out-File -FilePath $recoveryFile01 -Append
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'Event-Info:' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'A list of warning and error events 25h prior to the backup can be found in additiona files called:' | Out-File -FilePath $recoveryFile01 -Append
+    
+    $ApplicationEventsFile = '{0}_AppEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
+    $SecurityEventsFile = '{0}_SecurityEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
+    $SystemEventsFile = '{0}_SystemEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
+
+    "   $($ApplicationEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
+    "   $($SecurityEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
+    "   $($SystemEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
+    'The list might helpt to analyze a problem which caused ConfigMgr to stop working' | Out-File -FilePath $recoveryFile01 -Append
+    Get-WinEvent -FilterHashTable @{LogName='Application'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
+        Format-List TimeCreated, LevelDisplayName, ProviderName, Message | out-file -FilePath $ApplicationEventsFile -Force
+    Get-WinEvent -FilterHashTable @{LogName='Security'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
+        Format-List TimeCreated, LevelDisplayName, ProviderName, Message | out-file -FilePath $SecurityEventsFile -Force
+    Get-WinEvent -FilterHashTable @{LogName='System'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
+        Format-List TimeCreated, LevelDisplayName, ProviderName, Message | out-file -FilePath $SystemEventsFile -Force
+
+
+    ' ' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'Export of CCM and SMS registry entries' | Out-File -FilePath $recoveryFile01 -Append
+    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    'Both exports are saved in seperate files and are called:' | Out-File -FilePath $recoveryFile01 -Append
+    
+    $CCMRegExportFile = '{0}_CCM-RegExport.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-99')
+    $SMSRegExportFile = '{0}_SMS-RegExport.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-99')
+
+    "   $($CCMRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
+    "   $($SMSRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
+    'They might help to identify any wrong settings or missing settings after a recovery process' | Out-File -FilePath $recoveryFile01 -Append
+   
+    $regExportParam = @('export','HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\CCM',$CCMRegExportFile)
+    Start-Process -FilePath Reg.exe -ArgumentList $regExportParam -Wait -WindowStyle Hidden 
+
+    $regExportParam = @('export','HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\SMS',$SMSRegExportFile)
+    Start-Process -FilePath Reg.exe -ArgumentList $regExportParam -Wait -WindowStyle Hidden 
+
 }
 catch
 {
