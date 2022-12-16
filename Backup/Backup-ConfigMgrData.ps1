@@ -2102,9 +2102,9 @@ try
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'A list of warning and error events 25h prior to the backup can be found in additiona files called:' | Out-File -FilePath $recoveryFile01 -Append
     
-    $ApplicationEventsFile = '{0}_AppEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
-    $SecurityEventsFile = '{0}_SecurityEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
-    $SystemEventsFile = '{0}_SystemEvents.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-98')
+    $ApplicationEventsFile = '{0}\Step-98-AppEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    $SecurityEventsFile = '{0}\Step-98-SecurityEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    $SystemEventsFile = '{0}\Step-98-SystemEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
 
     "   $($ApplicationEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
     "   $($SecurityEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
@@ -2124,8 +2124,8 @@ try
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Both exports are saved in seperate files and are called:' | Out-File -FilePath $recoveryFile01 -Append
     
-    $CCMRegExportFile = '{0}_CCM-RegExport.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-99')
-    $SMSRegExportFile = '{0}_SMS-RegExport.txt' -f ($recoveryFile01 -replace '\.txt' -replace 'Step-01','Step-99')
+    $CCMRegExportFile = '{0}\Step-99-CCM-RegExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    $SMSRegExportFile = '{0}\Step-99-SMS-RegExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
 
     "   $($CCMRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
     "   $($SMSRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
