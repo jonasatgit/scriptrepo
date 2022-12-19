@@ -85,18 +85,18 @@ if ($WebhookData)
 #region STEP 2 - secure strings
 # We use two "secure" strings to make sure we can block a runbook from running if we want to
 # With two string we can always re-new one string while the other can still work
-# First, lets see if we are running within Azure Automation or as a standalone script
+# First, let's see if we are running within Azure Automation or as a standalone script
 # That step is helpful to be able to run the script locally (in VisualStudio Code for example) without a startstring
 # We do that by testing for the Azure Automation command: Get-AutomationVariable
 [bool]$inAzureAutomationEnvironment = if (Get-Command -Name Get-AutomationVariable -ErrorAction SilentlyContinue){$true}else{$false}
 
 if ($inAzureAutomationEnvironment)
 {
-	$runbookRunString01 = Get-AutomationVariable -Name "Var-RunString1"
-	$runbookRunString02 = Get-AutomationVariable -Name "Var-RunString2"
+	$runbookStartString01 = Get-AutomationVariable -Name "Var-StartString1"
+	$runbookStartString02 = Get-AutomationVariable -Name "Var-StartString2"
 	
 	# Either startstring one or two needs to be correct in order for the runbook to proceed
-	if (-NOT ($runbookRunString01 -eq $StartString -or $runbookRunString02 -eq $StartString))
+	if (-NOT ($runbookStartString01 -eq $StartString -or $runbookStartString02 -eq $StartString))
 	{
 		throw "Wrong start-string was used. String: `"$($StartString)`""
 	}
@@ -126,14 +126,14 @@ else
 #endregion
 
 #region STEP 4 - Data validation
-# Since it is always a good idea to validate the input data lets just do that
+# Since it is always a good idea to validate the input data let's just do that
 # validate system name first
 if (-NOT ([regex]::Matches($SystemName,'^(?![0-9]{1,15}$)[a-zA-Z0-9-]{1,15}$')))
 {
     throw "No valid system name found!"
 }
 
-# validate mac addres
+# validate mac address
 $SystemMacAdress = $SystemMacAdress.Replace('-',':') # just to remove "-" and only use ":"" intead
 if (-NOT ([regex]::Matches($SystemMacAdress,'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')))
 {
