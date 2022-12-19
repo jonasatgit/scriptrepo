@@ -24,10 +24,10 @@
     
 
 .EXAMPLE
-    MECM-Runbook1.ps1
+    ConfigMgr-RunbookExample1.ps1
 
 .INPUTS
-   Azure Automation Webhook in the form of a JSON string
+   Azure Automation Webhook in the form of a JSON string or named parameters
 
 .OUTPUTS
    None
@@ -43,7 +43,7 @@ param
 	[Parameter(Mandatory=$false)]
 	[string]$SystemName,
 	[Parameter(Mandatory=$false)]
-    [string]$SystemMacAdress,
+    [string]$SystemMacAddress,
 	[Parameter(Mandatory=$false)]
 	[string]$CollectionName,
 	[Parameter(Mandatory=$false)]
@@ -70,7 +70,7 @@ if ($WebhookData)
 		# we extract the information passed via JSON
 		$StartString = $inputData.StartString
 		$SystemName = $inputData.SystemName
-    	$SystemMacAdress = $inputData.SystemMacAdress
+    	$SystemMacAddress = $inputData.SystemMacAdress
     	$CollectionName = $inputData.CollectionName
 
 	}
@@ -107,8 +107,8 @@ else
 }
 #endregion
 
-#region STEP 3 - Get MECM site information
-# In this section we read two varibles to be able to connect to the correct MECM site inc ase we are running in Azure Automation
+#region STEP 3 - Get ConfigMgr site information
+# In this section we read two varibles to be able to connect to the correct ConfigMgr site inc ase we are running in Azure Automation
 # Otehrwise we try to use the parameter values
 if ($inAzureAutomationEnvironment)
 {
@@ -134,8 +134,8 @@ if (-NOT ([regex]::Matches($SystemName,'^(?![0-9]{1,15}$)[a-zA-Z0-9-]{1,15}$')))
 }
 
 # validate mac address
-$SystemMacAdress = $SystemMacAdress.Replace('-',':') # just to remove "-" and only use ":"" intead
-if (-NOT ([regex]::Matches($SystemMacAdress,'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')))
+$SystemMacAddress = $SystemMacAddress.Replace('-',':') # just to remove "-" and only use ":"" intead
+if (-NOT ([regex]::Matches($SystemMacAddress,'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')))
 {
     throw "No valid mac address found!"
 }
@@ -165,8 +165,8 @@ if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
     New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
 }
 
-# Set the current location to be the site code to be able to connect to the MECM environment
+# Set the current location to be the site code to be able to connect to the ConfigMgr environment
 Set-Location "$($SiteCode):\" @initParams
 
-Import-CMComputerInformation -CollectionName $CollectionName -ComputerName $SystemName -MacAddress $SystemMacAdress
+Import-CMComputerInformation -CollectionName $CollectionName -ComputerName $SystemName -MacAddress $SystemMacAddress
 #endregion
