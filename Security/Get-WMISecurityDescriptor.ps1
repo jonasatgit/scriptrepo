@@ -136,14 +136,11 @@ $aceAccountType = @{
     'BA'='Administrators'
 }
 
-
-
+# Get SecurityDescriptor from WMI namespace
 $securityDescriptor = Invoke-CimMethod -Namespace $WMINameSpaceName -ClassName __SystemSecurity -MethodName GetSD
 
+# Convert binary security descriptor to SDDL string
 $currentWMISDDL = Invoke-CimMethod -Namespace root/cimv2 -ClassName Win32_SecurityDescriptorHelper -MethodName BinarySDToSDDL -Arguments @{BinarySD = $securityDescriptor.SD}
-
-$SDDLList = $currentWMISDDL.SDDL -split '\)\(' -replace '\)'
-
 
 <#
     SDDL structure:
