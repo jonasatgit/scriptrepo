@@ -14,6 +14,7 @@
 #************************************************************************************************************
 # Source: https://github.com/jonasatgit/scriptrepo
 #
+# 20221221: Changed UniqueEntries, changed some info lines, change SQL database info function
 # 20210327: Changed user info part to be more accurate
 # 20210312: Changed script to not use switch -regex since that is really slow compared to select-string
 # 20210316: Added user info for manual trigger
@@ -23,7 +24,7 @@
     Slightly overdeveloped script to visualize the last ConfigMgr collection evaluations in a GridView based on the colleval.log
 
 .DESCRIPTION
-    Version: 20210327
+    Version: 20221221
 
     Script to visualize the last ConfigMgr collection evaluations in a GridView by parsing the colleval.log and colleval.lo_ files.
     Run the script on a ConfigMgr Primary Site Server or provide a valid path to the mentioned files via parameter -CollEvalLogPath
@@ -76,6 +77,9 @@
     Example: -SQLServerAndInstanceName "cm01.contoso.local\inst01,1433"
 .PARAMETER ConfigMgrDBName
     Name of the ConfigMgr DB. Like "CM_P01" for example. 
+.PARAMETER ForceUniqueEntries
+    Switch parameter to force the script to select unique log entries. Can be helpful if multiple colleval.log files have been copied with overlapping entries
+    and parameter -CollEvalLogPath was used. 
 #>
 param
 (
@@ -92,9 +96,9 @@ param
     [Parameter(Mandatory=$false)]
     [string]$SQLServerAndInstanceName,
     [Parameter(Mandatory=$false)]
-    [string]$ConfigMgrDBName
-    #[Parameter(Mandatory=$false)]
-    #[switch]$ForceUniqueEntries
+    [string]$ConfigMgrDBName,
+    [Parameter(Mandatory=$false)]
+    [switch]$ForceUniqueEntries
 )
 
 #region Function Get-ExtendedCollectionInfoFromDB
@@ -119,10 +123,9 @@ function Get-ExtendedCollectionInfoFromDB
         [string]$DBName
     )
 
-    $commandName = $MyInvocation.MyCommand.Name
 
     $connectionString = "Server=$SQLServerName;Database=$DBName;Integrated Security=True"
-    Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Connecting to SQL: `"$connectionString`"" -ForegroundColor Green
     
     $SqlQuery = @'
                 SELECT top 1000 SM.RecordID
@@ -266,18 +269,17 @@ if ($AddUserData)
         [array]$ConfigMgrSQLServer = $ConfigMgrSQLServerProperties.values -split ','
 
         # we might need to split DBname from instancename
-        if ($ConfigMgrSQLServer[2] -contains "\") 
+        if ($ConfigMgrSQLServer[2] -match '\\') 
         {
-            $tmpSQLList = $ConfigMgrSQLServer[2].Split("\")
+            $tmpSQLList = $ConfigMgrSQLServer[2] -split '\\'
 
-
-            $SQLServerAndInstanceName = "{0}\{1}" -f $ConfigMgrSQLServer[1].Trim(), $tmpSQLList[1].Trim()
-            $ConfigMgrDBName = $tmpSQLList[0]    
+            $SQLServerAndInstanceName = "{0}\{1}" -f $ConfigMgrSQLServer[1].Trim(), $tmpSQLList[0].Trim()
+            $ConfigMgrDBName = $tmpSQLList[1].Trim()   
         }
         else
         {
             $SQLServerAndInstanceName = $ConfigMgrSQLServer[1].Trim()
-            $ConfigMgrDBName = $ConfigMgrSQLServer[2]       
+            $ConfigMgrDBName = $ConfigMgrSQLServer[2].Trim()      
         }
 
         if ($SQLServerAndInstanceName -and $ConfigMgrDBName)
@@ -339,16 +341,30 @@ if ($cimSession)
 $collEvalSearchString = "(Start to process graph with).*(?<CollectionsInQueue> \d* ).*(?<Action>(Primary|Auxiliary|Express|Single))|(Process graph with these collections )(?<CollSingle>\[.{8}\])|(Process graph with these collections )(?<CollMulti>\[(.{8}, )+(.{8}])*)|(Results refreshed for collection )(?<ChangedColl>\w(\d|\w{7})), (?<ChangeCount>\d*)|(?<Async>Waiting for async query)|(?<End>EvaluateCollectionThread thread ends)"
 
 # parsing log file/s
-$listOfLogFiles = Get-ChildItem -Path "$($CollEvalLogPath)\colleval*" | Sort-Object -Property LastWriteTime 
+[array]$listOfLogFiles = Get-ChildItem -Path "$($CollEvalLogPath)\colleval*" | Sort-Object -Property LastWriteTime
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($listOfLogFiles.Count) colleval logs found" -ForegroundColor Green
+if ($listOfLogFiles.Count -gt 2)
+{
+    if (-NOT ($ForceUniqueEntries))
+    {
+        Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - In case you see blank lines in the GridView output, try using the -ForceUniqueEntries parameter!" -ForegroundColor Yellow
+    }
+}
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Parsing logfiles" -ForegroundColor Green
 $fullEvalListTmp = $listOfLogFiles | Select-String -Pattern $collEvalSearchString
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($fullEvalListTmp.Count) log entries found" -ForegroundColor Green
-Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Selecting unique log entries, in case we have duplicates due to copied files..." -ForegroundColor Green
-# run select-string again, but only on unique lines
-$fullEvalList = $fullEvalListTmp.line | Select-Object -Unique | Select-String -Pattern $collEvalSearchString
-Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($fullEvalList.Count) UNIQUE log entries found" -ForegroundColor Green
 
+if ($ForceUniqueEntries)
+{
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Selecting unique log entries, in case we have duplicates due to copied files..." -ForegroundColor Green
+    # run select-string again, but only on unique lines
+    $fullEvalList = $fullEvalListTmp.line | Select-Object -Unique | Select-String -Pattern $collEvalSearchString
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($fullEvalList.Count) UNIQUE log entries found" -ForegroundColor Green
+}
+else 
+{
+    $fullEvalList = $fullEvalListTmp
+}
 
 Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Extracting coll eval information from log entries" -ForegroundColor Green
 $objLoglineByThread = new-object System.Collections.ArrayList
@@ -582,9 +598,12 @@ foreach ($logLineWithThreadID in $objLoglineByThreadSorted)
 #endregion
 
 
-#region adding user info if possible
-Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Trying to match user data to collection eval information" -ForegroundColor Green
-
+#region adding some additional info
+if ($manualRefreshUserDataArraylist)
+{ 
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Trying to match user data to collection eval information" -ForegroundColor Green
+}
+# adding some additional info
 foreach ($outObjItem in $outObj)
 {
       
