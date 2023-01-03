@@ -126,7 +126,6 @@ function Get-ExtendedCollectionInfoFromDB
 
     $connectionString = "Server=$SQLServerName;Database=$DBName;Integrated Security=True"
     Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Connecting to SQL: `"$connectionString`"" -ForegroundColor Green
-    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Only looking one day back." -ForegroundColor Yellow
     
     $SqlQuery = @'
         SELECT top 1000 SM.RecordID
@@ -295,7 +294,7 @@ if ($AddUserData)
         }
     }
       
-    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Getting manual refresh user data for last 24h from DB" -ForegroundColor Green
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Getting manual refresh user data for last 24h from DB" -ForegroundColor Yellow
 
     $manualRefreshUserData = Get-ExtendedCollectionInfoFromDB -SQLServerName ($SQLServerAndInstanceName) -DBName ($ConfigMgrDBName)
     Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - $($manualRefreshUserData.Count) entries for manual refreshes found" -ForegroundColor Green
