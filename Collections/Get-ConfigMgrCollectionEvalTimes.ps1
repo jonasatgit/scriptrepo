@@ -126,23 +126,23 @@ function Get-ExtendedCollectionInfoFromDB
 
     $connectionString = "Server=$SQLServerName;Database=$DBName;Integrated Security=True"
     Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Connecting to SQL: `"$connectionString`"" -ForegroundColor Green
+    Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Only looking one day back." -ForegroundColor Yellow
     
     $SqlQuery = @'
-                SELECT top 1000 SM.RecordID
-                    ,SM.Time
-                    ,SM.MachineName
-                    ,SM.Component
-                    ,SMA.AttributeValue
-                                 ,[Action] = Case 
-                                       when SM.MessageID = '30015' then 'Create'
-                                       when SM.MessageID = '30016' then 'Change'
-                                       when SM.MessageID = '30104' then 'Update'
-                                       End
-                FROM
-                StatusMessages AS SM with(nolock)
-                INNER JOIN StatusMessageAttributes AS SMA with(nolock) ON SMA.RecordID = SM.RecordID 
-                WHERE SM.time >= DATEADD(day,-1,GETDATE())
-                and SM.MessageID in ('30015','30016','30104')
+        SELECT top 1000 SM.RecordID
+            ,SM.Time
+            ,SM.MachineName
+            ,SM.Component
+            ,SMA.AttributeValue
+                        ,[Action] = Case 
+                            when SM.MessageID = '30015' then 'Create'
+                            when SM.MessageID = '30016' then 'Change'
+                            when SM.MessageID = '30104' then 'Update'
+                            End
+        FROM v_StatusMessage AS SM with(nolock)
+        INNER JOIN v_StatMsgAttributes AS SMA with(nolock) ON SMA.RecordID = SM.RecordID 
+        WHERE SM.time >= DATEADD(day,-1,GETDATE())
+        and SM.MessageID in ('30015','30016','30104')
 '@
 
 
