@@ -51,12 +51,17 @@ foreach ($cbsLogFile in $cbsLogsList)
             '.log' 
             {
                 $Matches = $null
-                [array]$searchResult = $cbsLogFile | Select-String -Pattern 'Mark store corruption flag because of package'
+                [array]$searchResult = $cbsLogFile | Select-String -Pattern '(Mark store corruption flag because of package)|(Installation fails with store corruption)'
                 if ($searchResult)
                 {
                     if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
                     {
                         $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename)
+                    }
+
+                    if ($searchResult[0].Line -match '(Installation fails with store corruption)')
+                    {
+                        $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
                     }
                 }
             }
@@ -95,12 +100,17 @@ foreach ($cbsLogFile in $cbsLogsList)
                         # Filename extension will still be CAB, but since it is a txt file after using expand.exe, select-String will be able to read it. 
                         # So, no need to rename the files to name.log
                         $extractedCabFiles = Get-ChildItem -Path $tempExtractionFolder
-                        [array]$searchResult = $extractedCabFiles | Select-String -Pattern 'Mark store corruption flag because of package'
+                        [array]$searchResult = $extractedCabFiles | Select-String -Pattern '(Mark store corruption flag because of package)|(Installation fails with store corruption)'
                         if ($searchResult)
                         {
                             if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
                             {
                                 $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename -replace '.cab', '.log')
+                            }
+                            
+                            if ($searchResult[0].Line -match '(Installation fails with store corruption)')
+                            {
+                                $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
                             }
                         }
 
