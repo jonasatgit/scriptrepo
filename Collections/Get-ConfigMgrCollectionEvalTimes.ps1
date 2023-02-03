@@ -488,8 +488,8 @@ $propertyList += 'CollectionsRefreshed'
 $propertyList += 'RunTimeInSeconds'
 $propertyList += 'ChangeCount'
 $propertyList += 'MemberCount'
-$propertyList += 'CollectionID'
-$propertyList += 'CollectionName'
+$propertyList += 'FirstCollectionID'
+$propertyList += 'FirstCollectionName'
 $propertyList += 'StartTime'
 $propertyList += 'EndTime'
 $propertyList += 'TimeZoneOffset'
@@ -523,8 +523,8 @@ foreach ($logLineWithThreadID in $objLoglineByThreadSorted)
         
         2 # Graph info
         {
-            $tmpObj.CollectionID = $logLineWithThreadID.CollectionID
-            $tmpObj.CollectionName = $logLineWithThreadID.CollectionName
+            $tmpObj.FirstCollectionID = $logLineWithThreadID.CollectionID
+            $tmpObj.FirstCollectionName = $logLineWithThreadID.CollectionName
             $tmpObj.CollectionsInQueueKnown = $logLineWithThreadID.CollectionsInQueueKnown.Count
             # always setting thread in case we don't have all steps
             $tmpObj.Thread = $logLineWithThreadID.Thread
@@ -536,17 +536,17 @@ foreach ($logLineWithThreadID in $objLoglineByThreadSorted)
                 if ($collectionNameString)
                 {
                     [array]$collectionNameAndMemberCount = $collectionNameString -split ';'
-                    $tmpObj.CollectionName = $collectionNameAndMemberCount[0]
+                    $tmpObj.FirstCollectionName = $collectionNameAndMemberCount[0]
                     $tmpObj.Membercount = $collectionNameAndMemberCount[1]
                 }
                 else
                 {
-                    $tmpObj.CollectionName = 'NOT FOUND'
+                    $tmpObj.FirstCollectionName = 'NOT FOUND'
                 }
             }
             else
             {
-                $tmpObj.CollectionName = 'NOT FOUND'
+                $tmpObj.FirstCollectionName = 'NOT FOUND'
             }
         }
 
@@ -581,7 +581,7 @@ foreach ($logLineWithThreadID in $objLoglineByThreadSorted)
         $tmpObj.ChangeCount = $changeCount
         $tmpObj.CollectionsRefreshed = $refreshCount
 
-        if (-NOT ($tmpObj.EvalType -and $tmpObj.CollectionID -and $tmpObj.EndTime))
+        if (-NOT ($tmpObj.EvalType -and $tmpObj.FirstCollectionID -and $tmpObj.EndTime))
         {
             $tmpObj.Notes = "Missing info. Logfile might be truncated"    
         }
@@ -625,7 +625,7 @@ foreach ($outObjItem in $outObj)
             $dbDateTimeTmpStart =  get-date((get-date($outObjItem.StartTime)).AddMinutes(($outObjItem.TimezoneOffset)-5))
             $dbDateTimeTmpEnd =  get-date((get-date($outObjItem.StartTime)).AddMinutes(($outObjItem.TimezoneOffset))+5)
             
-            $tmpCollectionID = $outObjItem.CollectionID
+            $tmpCollectionID = $outObjItem.FirstCollectionID
 
             # trying to find the right entry
             [array]$manualEntriesPerCollectionID = $manualRefreshUserDataArraylist.Where({($_.CollectionID -eq "$tmpCollectionID") -and (((Get-Date($_.DateTime)) -ge $dbDateTimeTmpStart) -and ((Get-Date($_.DateTime)) -le $dbDateTimeTmpEnd))})
@@ -731,7 +731,7 @@ do
             }
         }
         Write-Host "$(Get-Date -Format 'yyyyMMdd hh:mm:ss') - Output data..." -ForegroundColor Green
-        $ogvTitle2 = "Refreshed collection {0} with {1} refresh.     {2}" -f $outObjSelected.CollectionID, $outObjSelected.EvalType,  $outObjSelected.CollectionName
+        $ogvTitle2 = "Actually refreshed collections with refreshtype: {0}  - First collection in graph: {1}" -f $outObjSelected.EvalType,  $outObjSelected.FirstCollectionID
         $null = $refreschedCollections | Select-Object -Property ChangedColl, CollectionName ,ChangeCount, MemberCount, DateTime, Thread | Out-GridView -Title $ogvTitle2 -OutputMode Multiple
     }
 }
