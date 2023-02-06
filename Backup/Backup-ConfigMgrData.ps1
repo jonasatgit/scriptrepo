@@ -1793,8 +1793,7 @@ if ($CheckSQLFiles -eq 'Yes')
 if ($copyToStandByServer -eq 'Yes')
 {
     
-    $pathToCheck += $contentLibraryPathLive
-    $pathToCheck += $contentLibraryPathBackup
+    $pathToCheck += $standBybackupPath
 }
 
 if($copyContentLibrary -eq 'Yes')
