@@ -768,7 +768,7 @@ Param(
         # create one zip file for each folder to support folders with same name
         foreach ($folderName in $FolderToArchive)
         {
-            if($UseStaticFolderName -eq 'No')
+            if($UseStaticFolderName -ieq 'No')
             {
                 $i=0
                 do
@@ -1721,7 +1721,7 @@ Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "ExportSQLBackupData:", $ExportSQL
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Checking folder existence..."
 
-if ($copyToStandByServer -eq 'Yes')
+if ($copyToStandByServer -ieq 'Yes')
 {
     if ($standBybackupPath -eq $sccmBackupPath)
     {
@@ -1783,20 +1783,20 @@ else
 }
 
 # adding path to list if condition is met
-if ($CheckSQLFiles -eq 'Yes')
+if ($CheckSQLFiles -ieq 'Yes')
 {
     $pathToCheck += $sqlBackupFilepath
     $pathToCheck += $sqlBackupLogfilePath
 }
 
 # adding path to list if condition is met
-if ($copyToStandByServer -eq 'Yes')
+if ($copyToStandByServer -ieq 'Yes')
 {
     
     $pathToCheck += $standBybackupPath
 }
 
-if($copyContentLibrary -eq 'Yes')
+if($copyContentLibrary -ieq 'Yes')
 {
     $pathToCheck += $contentLibraryPathLive
     $pathToCheck += $contentLibraryPathBackup
@@ -1808,7 +1808,7 @@ $pathToCheck | ForEach-Object {
 
     if (-NOT(Test-Path $_))
     {
-        Write-CMTraceLog -Message "Path does not exist: `"$_`"" -Type Warning
+        Write-CMTraceLog -Message "Path does not exist or not enough rights: `"$_`"" -Type Warning
         $missingPath = $true
     }
     else 
@@ -1833,7 +1833,7 @@ if ($missingPath)
 # Backup Custom Items either directly to the backup folder or to a temp location to zip everything togehter
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Backing up custom folder"
-if ($zipCustomBackup -eq 'Yes')
+if ($zipCustomBackup -ieq 'Yes')
 {
     $tempCustomBackupPath = "{0}\{1}" -f $tempZipFileFolder, $custombackupFolderName
 }
@@ -2332,7 +2332,7 @@ $contentRecoveryInfo | Out-File -FilePath $recoveryFile06 -Append
 # $recoveryFile07
 # backup of IIS Config
 Write-CMTraceLog -Message "Create: `"$recoveryFile07`""
-if ($BackupIIS -eq 'Yes')
+if ($BackupIIS -ieq 'Yes')
 {
     "Run the script: `"{0}.ps1`" to recover the IIS webconfig." -f ($recoveryFile07 | Split-Path -Leaf) | Out-File -FilePath $recoveryFile07 -Append
     "Only needed if custom website configurations had been made." | Out-File -FilePath $recoveryFile07 -Append
@@ -2354,7 +2354,7 @@ else
 # $recoveryFile08
 # backup of scheduled tasks
 Write-CMTraceLog -Message "Create: `"$recoveryFile08`""
-if($BackupScheduledTasks -eq 'Yes')
+if($BackupScheduledTasks -ieq 'Yes')
 {
     "Run the script: `"{0}.ps1`" to import all scheduled tasks again." -f ($recoveryFile08 | split-Path -Leaf) | Out-File -FilePath $recoveryFile08 -Append
     "Re-enter any service account passwords if needed for a scheduled task." -f ($recoveryFile08 | split-Path -Leaf) | Out-File -FilePath $recoveryFile08 -Append
@@ -2391,7 +2391,7 @@ Write-CMTraceLog -Message "Create: `"$recoveryFile09`""
 # $recoveryFile10
 # install ssrs
 Write-CMTraceLog -Message "Create: `"$recoveryFile10`""
-if($xmlConfig.sccmbackup.BackupSSRSRDLs -eq 'Yes')
+if($xmlConfig.sccmbackup.BackupSSRSRDLs -ieq 'Yes')
 {
     Write-CMTraceLog -Message "-------------------------------------"
     Write-CMTraceLog -Message "------> Backing up SSRS reports..."
@@ -2603,7 +2603,7 @@ else
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Zipping custom folder..."
 # create zip file of custom backup
-if ($zipCustomBackup -eq 'Yes')
+if ($zipCustomBackup -ieq 'Yes')
 {
     Get-item $tempCustomBackupPath | New-ZipFile -PathToSaveFileTo "$sitebackupPath\$custombackupFolderName" -TempZipFileFolder $tempZipFileFolder -UseStaticFolderName Yes
 
@@ -2655,16 +2655,17 @@ Write-CMTraceLog -Message "Folder renamed. Old: $($sitebackupPath) New: $sitebac
 #-----------------------------------------
 
 # copy backup data to standby Server for easy recovery
-if ($copyToStandByServer -eq 'Yes')
+if ($copyToStandByServer -ieq 'Yes')
 {
     Write-CMTraceLog -Message "-------------------------------------"
     Write-CMTraceLog -Message "------> Copy content files..."
-    if ($excludeSQLFilesFromStandByCopy -eq 'Yes')
+    if ($excludeSQLFilesFromStandByCopy -ieq 'Yes')
     {
         # copy Backup data to Standby Server for easy recovery
         Write-CMTraceLog -Message "Start of Robocopy for ConfigMgr Backup Data WITHOUT SQL Files to StandBy Server..."
         Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB /XF $databaseFileName $databaseLogName"
-    } else
+    } 
+    else
     {
         Write-CMTraceLog -Message "Start of Robocopy for ConfigMgr Backup Data with SQL Files to StandBy Server..."
         Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB"
@@ -2672,7 +2673,7 @@ if ($copyToStandByServer -eq 'Yes')
 }
 
 # copy content library to standby Server or other destination for easy recovery
-if ($copyContentLibrary -eq 'Yes')
+if ($copyContentLibrary -ieq 'Yes')
 {
     Write-CMTraceLog -Message "Start of Robocopy for ContentLibrary..."
     $i = 0
@@ -2749,7 +2750,7 @@ Write-CMTraceLog -Message "Stopping script! Runtime: $scriptDurationString" -Eve
 Copy-Item -Path $logFile -Destination $sccmBackupPath -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item -Path $configXMLFilePath -Destination $sccmBackupPath -Force -ErrorAction SilentlyContinue
 
-if ($copyToStandByServer -eq 'Yes')
+if ($copyToStandByServer -ieq 'Yes')
 {
     Copy-Item -Path $logFilePath -Destination $standBybackupPath -Recurse -Force -ErrorAction SilentlyContinue
     Copy-Item -Path $configXMLFilePath -Destination $standBybackupPath -Force -ErrorAction SilentlyContinue
