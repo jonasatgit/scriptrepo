@@ -705,6 +705,23 @@
                         ]
         },
         {
+            "RuleName": "MECM Primary Site to SMS Provider",
+            "Source": "PrimarySite",
+            "Destination": "SMSProvider",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Any",
+            "Group": "MECM",
+            "Description": "https://learn.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Provider",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
             "RuleName": "MECM Secondary Site to Primary Site",
             "Source": "SecondarySite",
             "Destination": "PrimarySite",
