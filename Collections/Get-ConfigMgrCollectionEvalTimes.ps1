@@ -14,6 +14,7 @@
 #************************************************************************************************************
 # Source: https://github.com/jonasatgit/scriptrepo
 #
+# 20230208: Fixed an issue with the output data in case on collection was selected multiple times
 # 20221221: Changed UniqueEntries, changed some info lines, change SQL database info function
 # 20210327: Changed user info part to be more accurate
 # 20210312: Changed script to not use switch -regex since that is really slow compared to select-string
@@ -24,7 +25,7 @@
     Slightly overdeveloped script to visualize the last ConfigMgr collection evaluations in a GridView based on the colleval.log
 
 .DESCRIPTION
-    Version: 20221221
+    Version: 20230208
 
     Script to visualize the last ConfigMgr collection evaluations in a GridView by parsing the colleval.log and colleval.lo_ files.
     Run the script on a ConfigMgr Primary Site Server or provide a valid path to the mentioned files via parameter -CollEvalLogPath
@@ -716,9 +717,12 @@ do
                 $collectionNameString = $hashOfCollections[($refreshedItem.ChangedColl)]
                 if ($collectionNameString)
                 {
-                    [array]$collectionNameAndMemberCount = $collectionNameString -split ';'
-                    $refreshedItem.CollectionName = $collectionNameAndMemberCount[0]
-                    $refreshedItem | Add-Member NoteProperty "Membercount" -Value $collectionNameAndMemberCount[1]
+                    if ([String]::IsNullOrEmpty($refreshedItem.Membercount))
+                    {                    
+                        [array]$collectionNameAndMemberCount = $collectionNameString -split ';'
+                        $refreshedItem.CollectionName = $collectionNameAndMemberCount[0]
+                        $refreshedItem | Add-Member NoteProperty "Membercount" -Value $collectionNameAndMemberCount[1]
+                    }
                 }
                 else
                 {
