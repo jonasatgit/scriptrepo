@@ -120,7 +120,47 @@
                           "Rundll32Bit",
                           "Rundll64Bit",
                           "Wscript32Bit",
-                          "Wscript64Bit"
+                          "Wscript64Bit",
+                          "Notepad32Bit",
+                          "Notepad64Bit",
+                          "Calc32Bit",
+                          "Calc64Bit",
+                          "Mshta32Bit",
+                          "Mshta64Bit",
+                          "Runscripthelper32Bit",
+                          "Runscripthelper64Bit",
+                          "Conhost32Bit",
+                          "Conhost64Bit",
+                          "Certutil32Bit",
+                          "Certutil64Bit",
+                          "Cmstp32Bit",
+                          "Cmstp64Bit",
+                          "Esentutl32Bit",
+                          "Esentutl64Bit",
+                          "Expand32Bit",
+                          "Expand64Bit",
+                          "Extrac32Bit",
+                          "Extrac64Bit",
+                          "Wmic32Bit",
+                          "Wmic64Bit",
+                          "Findstr32Bit",
+                          "Findstr64Bit",
+                          "Hh32Bit",
+                          "Hh64Bit",
+                          "Makecab32Bit",
+                          "Makecab64Bit",
+                          "Msiexec32Bit",
+                          "Msiexec64Bit",
+                          "Nltest32Bit",
+                          "Nltest64Bit",
+                          "Pcalua32Bit",
+                          "Pcalua64Bit",
+                          "Print32Bit",
+                          "Print64Bit",
+                          "Replace32Bit",
+                          "Replace64Bit",
+                          "SyncAppvPublishingServer32Bit",
+                          "SyncAppvPublishingServer64Bit"
                        ]
       },
       {
@@ -317,7 +357,287 @@
             "Port": "Any",
             "Program": "%systemroot%\\System32\\wscript.exe",
             "Description": "Cscript process 64bit"    
-        }      
+        },
+        {
+            "Name": "Notepad32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\notepad.exe",
+            "Description": "Notepad process 32bit"    
+        },
+        {
+            "Name": "Notepad64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\notepad.exe",
+            "Description": "Notepad process 64bit"    
+        },
+        {
+            "Name": "Calc32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\calc.exe",
+            "Description": "Calc process 32bit"    
+        },
+        {
+            "Name": "Calc64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\calc.exe",
+            "Description": "Calc process 64bit"    
+        },
+        {
+            "Name": "Mshta32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\mshta.exe",
+            "Description": "Mshta process 32bit"    
+        },
+        {
+            "Name": "Mshta64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\mshta.exe",
+            "Description": "Mshta process 64bit"    
+        },
+        {
+            "Name": "Runscripthelper32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\runscripthelper.exe",
+            "Description": "Runscripthelper process 32bit"    
+        },
+        {
+            "Name": "Runscripthelper64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\runscripthelper.exe",
+            "Description": "Runscripthelper process 64bit"    
+        },
+        {
+            "Name": "Conhost32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\conhost.exe",
+            "Description": "Conhost process 32bit"    
+        },
+        {
+            "Name": "Conhost64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\conhost.exe",
+            "Description": "Conhost process 64bit"    
+        },
+        {
+            "Name": "Certutil32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\certutil.exe",
+            "Description": "Certutil process 32bit"    
+        },
+        {
+            "Name": "Certutil64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\certutil.exe",
+            "Description": "Certutil process 64bit"    
+        },
+        {
+            "Name": "Cmstp32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\cmstp.exe",
+            "Description": "Certutil process 32bit"    
+        },
+        {
+            "Name": "Cmstp64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\cmstp.exe",
+            "Description": "Cmstp process 64bit"    
+        },
+        {
+            "Name": "Esentutl32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\esentutl.exe",
+            "Description": "Esentutl process 32bit"    
+        },
+        {
+            "Name": "Esentutl64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\esentutl.exe",
+            "Description": "Esentutl process 64bit"    
+        },
+        {
+            "Name": "Expand32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\expand.exe",
+            "Description": "Esentutl process 32bit"    
+        },
+        {
+            "Name": "Expand64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\expand.exe",
+            "Description": "Expand process 64bit"    
+        },
+        {
+            "Name": "Extrac32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\extrac32.exe",
+            "Description": "Extrac32 process 32bit"    
+        },
+        {
+            "Name": "Extrac64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\extrac32.exe",
+            "Description": "Extrac32 process 64bit"    
+        },
+        {
+            "Name": "Wmic32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\wbem\\wmic.exe",
+            "Description": "Wmic process 32bit"    
+        },
+        {
+            "Name": "Wmic64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\wbem\\wmic.exe",
+            "Description": "Wmic process 64bit"    
+        },
+        {
+            "Name": "Findstr32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\findstr.exe",
+            "Description": "Findstr process 32bit"    
+        },
+        {
+            "Name": "Findstr64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\findstr.exe",
+            "Description": "Findstr process 64bit"    
+        },
+        {
+            "Name": "Hh32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\hh.exe",
+            "Description": "Hh process 32bit"    
+        },
+        {
+            "Name": "Hh64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\hh.exe",
+            "Description": "Hh process 64bit"    
+        },
+        {
+            "Name": "Makecab32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\makecab.exe",
+            "Description": "Makecab process 32bit"    
+        },
+        {
+            "Name": "Makecab64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\makecab.exe",
+            "Description": "Makecab process 64bit"    
+        },
+        {
+            "Name": "Msiexec32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\msiexec.exe",
+            "Description": "Msiexec process 32bit"    
+        },
+        {
+            "Name": "Msiexec64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\msiexec.exe",
+            "Description": "Msiexec process 64bit"    
+        },
+        {
+            "Name": "Nltest32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\nltest.exe",
+            "Description": "Nltest process 32bit"    
+        },
+        {
+            "Name": "Nltest64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\nltest.exe",
+            "Description": "Nltest process 64bit"    
+        },
+        {
+            "Name": "Pcalua32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\pcalua.exe",
+            "Description": "Pcalua process 32bit"    
+        },
+        {
+            "Name": "Pcalua64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\pcalua.exe",
+            "Description": "Pcalua process 64bit"    
+        },
+        {
+            "Name": "Print32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\print.exe",
+            "Description": "Print process 32bit"    
+        },
+        {
+            "Name": "Print64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\print.exe",
+            "Description": "Print process 64bit"    
+        },
+        {
+            "Name": "Replace32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\replace.exe",
+            "Description": "Replace process 32bit"    
+        },
+        {
+            "Name": "Replace64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\replace.exe",
+            "Description": "Replace process 64bit"    
+        },
+        {
+            "Name": "SyncAppvPublishingServer32Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\System32\\SyncAppvPublishingServer.exe",
+            "Description": "SyncAppvPublishingServer process 32bit"    
+        },
+        {
+            "Name": "SyncAppvPublishingServer64Bit",
+            "Protocol": "Any",
+            "Port": "Any",
+            "Program": "%systemroot%\\SysWOW64\\SyncAppvPublishingServer.exe",
+            "Description": "SyncAppvPublishingServer process 64bit"    
+        }        
       ]
     }
 }
