@@ -1,4 +1,16 @@
 ﻿{"FirewallRuleDefinition": {
+    "DOCUMENTATION":
+    [
+        {
+            "Main-Documentation": 
+            [
+                {
+                    "A": "THIS LIST OF RULES IS NOT BASED ON ANY OFFICIAL MICROSOFT DOCUMENTATION AND IS ONLY MEANT FOR TESTING",
+                    "B": "This sample file is not supported under any Microsoft standard support program or service. This sample script is provided AS IS without warranty of any kind."
+                }
+            ]
+        }       
+    ],
     "SystemAndRoleList": 
     [
         {
