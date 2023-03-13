@@ -522,7 +522,7 @@ else
                     {
                         #ComponentType like 'Monitored%' and Status <> 0
                         #Status: 0=OK, 1=Warning, 2=Error 
-                        foreach ($componentState in ($listFromComponentSummarizer | Where-Object {($_.ComponentType -ilike 'Monitored*') -and ($_.Status -ne 0)}))
+                        foreach ($componentState in ($listFromComponentSummarizer | Where-Object {($_.Status -ne 0)}))
                         {
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'ComponentState'
