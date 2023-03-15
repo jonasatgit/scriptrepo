@@ -100,7 +100,7 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [ValidateSet("JSON","GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored inbox counts. This email is sent every day!',
@@ -603,9 +603,21 @@ else
     if (-NOT($ConfigFilePath))
     {
         $ConfigFilePath = $PSScriptRoot
+        $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
     }
+    else 
+    {
+        # Do we have a path or a file?
+        if ($ConfigFilePath -match '\.json')
+        {
+            $configFileFullName = $ConfigFilePath
+        }
+        else 
+        {
+            $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
+        }
+    }  
     
-    $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
     if (Test-Path $configFileFullName)
     {
         $referenceDataObject = Get-Content -Path $configFileFullName | ConvertFrom-Json
@@ -813,6 +825,10 @@ switch ($OutputMode)
     "PRTGJSON"
     {
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
+    }
+    "JSON"
+    {
+        $resultObject | ConvertTo-Json -Depth 5
     }
 }
 if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}

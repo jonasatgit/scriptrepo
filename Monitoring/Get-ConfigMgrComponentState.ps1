@@ -93,7 +93,7 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [ValidateSet("JSON","GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored ConfigMgr components. This email is sent every day!',
@@ -904,6 +904,10 @@ switch ($OutputMode)
     "PRTGJSON"
     {
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
+    }
+    "JSON"
+    {
+        $resultObject | ConvertTo-Json -Depth 5
     }
 }
 if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}

@@ -128,7 +128,7 @@ param
     [parameter(Mandatory=$false,ValueFromPipeline=$false)]
     [datetime]$ProbeTime = (get-date), # Test example: (Get-Date('2022-06-14 01:00'))
     [Parameter(Mandatory=$false)]
-    [ValidateSet("GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [ValidateSet("JSON","GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
@@ -669,9 +669,21 @@ else
     if (-NOT($ConfigFilePath))
     {
         $ConfigFilePath = $PSScriptRoot
+        $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
     }
+    else 
+    {
+        # Do we have a path or a file?
+        if ($ConfigFilePath -match '\.json')
+        {
+            $configFileFullName = $ConfigFilePath
+        }
+        else 
+        {
+            $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
+        }
+    }    
     
-    $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
     if($WriteLog){Write-CMTraceLog -Message "Using: $configFileFullName" -Component ($MyInvocation.MyCommand)}
     if (Test-Path $configFileFullName)
     {
@@ -1258,6 +1270,10 @@ switch ($OutputMode)
     "PRTGJSON"
     {
         $resultObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
+    }
+    "JSON"
+    {
+        $resultObject | ConvertTo-Json -Depth 5
     }
 }
 if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
