@@ -617,7 +617,8 @@ else
             $configFileFullName = '{0}\{1}.json' -f $ConfigFilePath, ($MyInvocation.MyCommand)
         }
     }  
-    
+
+    if($WriteLog){Write-CMTraceLog -Message "Using: $configFileFullName" -Component ($MyInvocation.MyCommand)}
     if (Test-Path $configFileFullName)
     {
         $referenceDataObject = Get-Content -Path $configFileFullName | ConvertFrom-Json
