@@ -74,7 +74,7 @@
     Get-ConfigMgrCertificateState.ps1 -OutputMode GridView -OutputTestData 20
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -OutputMode LeutekJSON
+    Get-ConfigMgrCertificateState.ps1 -OutputMode MonAgentJSON
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1 -OutputMode HTMLMail
@@ -101,7 +101,7 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [ValidateSet("JSON","GridView", "LeutekJSON", "LeutekJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [ValidateSet("JSON","GridView", "MonAgentJSON", "MonAgentJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
     [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
@@ -291,7 +291,7 @@ Function ConvertTo-CustomMonitoringObject
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [object]$InputObject,
         [Parameter(Mandatory=$true)]
-        [ValidateSet("LeutekObject", "PrtgObject")]
+        [ValidateSet("MonAgentObject", "PrtgObject")]
         [string]$OutputType,
         [Parameter(Mandatory=$false)]
         [string]$PrtgLookupFileName        
@@ -302,7 +302,7 @@ Function ConvertTo-CustomMonitoringObject
         $resultsObject = New-Object System.Collections.ArrayList
         switch ($OutputType)
         {
-            'LeutekObject'
+            'MonAgentObject'
             {
                 $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
                 $outObject.InterfaceVersion = 1  
@@ -317,7 +317,7 @@ Function ConvertTo-CustomMonitoringObject
     {
         switch ($OutputType) 
         {
-            'LeutekObject' 
+            'MonAgentObject' 
             {  
                 # Format for ConfigMgrComponentState
                 # Adding infos to short description field
@@ -394,7 +394,7 @@ Function ConvertTo-CustomMonitoringObject
     {
         switch ($OutputType)
         {
-            'LeutekObject'
+            'MonAgentObject'
             {
                 $outObject.Results = $resultsObject
                 $outObject
@@ -743,13 +743,13 @@ switch ($OutputMode)
     {  
         $resultObject | Out-GridView -Title 'List of states'
     }
-    "LeutekJSON" 
+    "MonAgentJSON" 
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2
     }
-    "LeutekJSONCompressed"
+    "MonAgentJSONCompressed"
     {
-        $resultObject | ConvertTo-CustomMonitoringObject -OutputType LeutekObject | ConvertTo-Json -Depth 2 -Compress
+        $resultObject | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2 -Compress
     }
     "HTMLMail"
     {      
