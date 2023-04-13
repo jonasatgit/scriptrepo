@@ -510,7 +510,7 @@ Function ConvertTo-CustomMonitoringObject
                     }
                     Default 
                     {
-                        [string]$shortDescription = $InputObject.PossibleActions -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
                     }
                 }
 
