@@ -327,72 +327,129 @@ $referenceDataJSON = @'
     Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
 .EXAMPLE
     Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
-    function Write-CMTraceLog 
+function Write-CMTraceLog 
+{
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Global:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$true)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = 'Log'
+    )
+
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
+        {
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
     {
-        [CmdletBinding()]
-        Param
-        (
-            #Path to the log file
-            [parameter(Mandatory=$false)]
-            [String]$LogFile=$Global:LogFilePath,
-    
-            #The information to log
-            [parameter(Mandatory=$true)]
-            [String]$Message,
-    
-            #The source of the error
-            [parameter(Mandatory=$false)]
-            [String]$Component=(Split-Path $PSCommandPath -Leaf),
-    
-            #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
-            [parameter(Mandatory=$false)]
-            [ValidateSet("Information","Warning","Error")]
-            [String]$Severity="Information",
-    
-            # write to console only
-            [Parameter(Mandatory=$false)]
-            [ValidateSet("Console","Log","ConsoleAndLog")]
-            [string]$OutputMode = 'Log'
-        )
-    
-    
-        # save severity in single for cmtrace severity
-        [single]$cmSeverity=1
-        switch ($Severity)
-            {
-                "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
-                "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
-                "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
-            }
-    
-        If (($OutputMode -eq "Console") -or ($OutputMode -eq "ConsoleAndLog"))
-        {
-            Write-Host $Message -ForegroundColor $color
-        }
-       
-        If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
-        {
-            #Obtain UTC offset
-            $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
-            $DateTime.SetVarDate($(Get-Date))
-            $UtcValue = $DateTime.Value
-            $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
-    
-            #Create the line to be logged
-            $LogLine =  "<![LOG[$Message]LOG]!>" +`
-                        "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
-                        "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
-                        "component=`"$Component`" " +`
-                        "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
-                        "type=`"$cmSeverity`" " +`
-                        "thread=`"$PID`" " +`
-                        "file=`"`">"
-    
-            #Write the line to the passed log file
-            $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
-        }
+        Write-Host $Message -ForegroundColor $color
     }
-    #endregion
+    
+    If (($OutputMode -eq "Log") -or ($OutputMode -eq "ConsoleAndLog"))
+    {
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
+
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
+}
+#endregion
+
+#region Test-ConfigMgrActiveSiteSystemNode
+<# 
+.Synopsis
+   function Test-ConfigMgrActiveSiteSystemNode 
+
+.DESCRIPTION
+   Test if a given FQDN is the active ConfigMgr Site System node
+   Function to read from HKLM:\SOFTWARE\Microsoft\SMS\Identification' 'Site Servers' and determine the active site server node
+   Possible values could be: 
+        1;server1.contoso.local;
+       1;server1.contoso.local;0;server2.contoso.local;
+        0;server1.contoso.local;1;server2.contoso.local;
+
+.PARAMETER SiteSystemFQDN
+   FQDN of site system
+
+.EXAMPLE
+   Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN 'server1.contoso.local'
+#>
+function Test-ConfigMgrActiveSiteSystemNode
+{
+    param
+    (
+        [string]$SiteSystemFQDN
+    )
+
+    $siteServers = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Servers' -ErrorAction SilentlyContinue
+    if ($siteServers)
+    {
+        # Extract site system values from registry property 
+        $siteSystemHashTable = @{}
+        $siteSystems = [regex]::Matches(($siteServers.'Site Servers'),'(\d;[a-zA-Z0-9._-]+)')
+        if($siteSystems.Count -gt 1)
+        {
+            # HA site systems found
+            foreach ($SiteSystemNode in $siteSystems)
+            {
+                $tmpArray = $SiteSystemNode.value -split ';'
+                $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+            }
+        }
+        else
+        {
+            # single site system found
+            $tmpArray = $siteSystems.value -split ';'
+            $siteSystemHashTable.Add($tmpArray[1].ToLower(),$tmpArray[0]) 
+        }
+        
+        return $siteSystemHashTable[($SiteSystemFQDN).ToLower()]
+    }
+    else
+    {
+        return $null
+    }
+}
+#endregion
 
 #region ConvertTo-CustomMonitoringObject
 <# 
@@ -643,61 +700,79 @@ if ($TestMode)
 }
 else
 {
-    if($WriteLog){Write-CMTraceLog -Message "Getting data from: Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox" -Component ($MyInvocation.MyCommand)}
-    [array]$inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
-} 
-        
-if ($inboxCounterList)
-{
-    if($WriteLog){Write-CMTraceLog -Message "Found $($inboxCounterList.Count) items to work with" -Component ($MyInvocation.MyCommand)}
-    foreach ($inboxCounter in $inboxCounterList)
-    {
-        # Lets see if we have a definition for the counter
-        $referenceCounterObject = $referenceDataObject.SMSInboxPerfData.Where({$_.CounterName -eq $inboxCounter.Name})
-        if ($referenceCounterObject)
+    switch (Test-ConfigMgrActiveSiteSystemNode -SiteSystemFQDN $systemName)
+    {  
+        1 ## ACTIVE NODE FOUND. Run checks
         {
-            if ($referenceCounterObject.SkipCheck -eq $false)
+            if($WriteLog){Write-CMTraceLog -Message "Getting data from: Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox" -Component ($MyInvocation.MyCommand)}
+            [array]$inboxCounterList = Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | Select-Object Name, FileCurrentCount -ErrorAction SilentlyContinue
+            
+            if ($inboxCounterList)
             {
-                if ($inboxCounter.FileCurrentCount -gt $referenceCounterObject.MaxValue)
+                if($WriteLog){Write-CMTraceLog -Message "Found $($inboxCounterList.Count) items to work with" -Component ($MyInvocation.MyCommand)}
+                foreach ($inboxCounter in $inboxCounterList)
                 {
-                    $tmpObj = New-Object psobject | Select-Object $propertyList
-                    $tmpObj.CheckType = 'Inbox'
-                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
-                    $tmpObj.SystemName = $systemName
-                    $tmpObj.Status = 'Warning'
-                    $tmpObj.SiteCode = ""
-                    $tmpObj.Description = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $referenceCounterObject.MaxValue
-                    $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
-                    [void]$resultObject.Add($tmpObj) 
+                    # Lets see if we have a definition for the counter
+                    $referenceCounterObject = $referenceDataObject.SMSInboxPerfData.Where({$_.CounterName -eq $inboxCounter.Name})
+                    if ($referenceCounterObject)
+                    {
+                        if ($referenceCounterObject.SkipCheck -eq $false)
+                        {
+                            if ($inboxCounter.FileCurrentCount -gt $referenceCounterObject.MaxValue)
+                            {
+                                $tmpObj = New-Object psobject | Select-Object $propertyList
+                                $tmpObj.CheckType = 'Inbox'
+                                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
+                                $tmpObj.SystemName = $systemName
+                                $tmpObj.Status = 'Warning'
+                                $tmpObj.SiteCode = ""
+                                $tmpObj.Description = '{0} files in {1} over limit of {2}' -f $inboxCounter.FileCurrentCount, $inboxCounter.Name, $referenceCounterObject.MaxValue
+                                $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
+                                [void]$resultObject.Add($tmpObj) 
+                            }
+                        }
+                        else 
+                        {
+                            if($WriteLog){Write-CMTraceLog -Message "Counter set to be skipped: $($inboxCounter.Name)" -Component ($MyInvocation.MyCommand)}
+                        }
+                    }
+                    else 
+                    {
+                        $tmpObj = New-Object psobject | Select-Object $propertyList
+                        $tmpObj.CheckType = 'Inbox'
+                        $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
+                        $tmpObj.SystemName = $systemName
+                        $tmpObj.Status = 'Warning'
+                        $tmpObj.SiteCode = ""
+                        $tmpObj.Description = 'Local counter {0} not found in definition' -f $inboxCounter.Name
+                        $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
+                        [void]$resultObject.Add($tmpObj) 
+                    }
                 }
             }
             else 
             {
-                if($WriteLog){Write-CMTraceLog -Message "Counter set to be skipped: $($inboxCounter.Name)" -Component ($MyInvocation.MyCommand)}
-            }
+                if($WriteLog){Write-CMTraceLog -Message 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read' -Component -Severity Warning ($MyInvocation.MyCommand)}
+                $tmpScriptStateObj.Status = 'Warning'
+                $tmpScriptStateObj.Description = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
+                $tmpScriptStateObj.PossibleActions = 'Check locally or debug script'
+            } 
         }
-        else 
+        
+        0 ## PASSIVE NODE FOUND. Nothing to do.
         {
-            $tmpObj = New-Object psobject | Select-Object $propertyList
-            $tmpObj.CheckType = 'Inbox'
-            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $inboxCounter.Name
-            $tmpObj.SystemName = $systemName
-            $tmpObj.Status = 'Warning'
-            $tmpObj.SiteCode = ""
-            $tmpObj.Description = 'Local counter {0} not found in definition' -f $inboxCounter.Name
-            $tmpObj.PossibleActions = 'Validate inbox in ConfigMgrInstallDirectory-Inboxes and corresponding log files in ConfigMgrInstallDirectory-Logs'
-            [void]$resultObject.Add($tmpObj) 
+            if($WriteLog){Write-CMTraceLog -Message "Passive node found. No checks will run" -Component ($MyInvocation.MyCommand)}
+            $tmpScriptStateObj.Description = "Passive node found. No checks will run."
         }
-    }
-}
-else 
-{
-    if($WriteLog){Write-CMTraceLog -Message 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read' -Component -Severity Warning ($MyInvocation.MyCommand)}
-    $tmpScriptStateObj.Status = 'Warning'
-    $tmpScriptStateObj.Description = 'Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox could not be read'
-    $tmpScriptStateObj.PossibleActions = 'Check locally or debug script'
-} 
 
+        Default ## NO STATE FOUND
+        {
+            if($WriteLog){Write-CMTraceLog -Message "Error: No ConfigMgr Site System found" -Component ($MyInvocation.MyCommand)}
+            $tmpScriptStateObj.Status = 'Error'
+            $tmpScriptStateObj.Description = "Error: No ConfigMgr Site System found"
+        }        
+    }
+} 
 #endregion
 
 
