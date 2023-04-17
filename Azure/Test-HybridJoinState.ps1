@@ -83,6 +83,10 @@ $xmlQuery = @'
   }
   "$(get-date -f u) Event found. All good!" | Out-File -FilePath $logFile -Append -Force
 }
+else 
+{
+  "$(get-date -f u) The script is set to skip the Hybrid Join state check!" | Out-File -FilePath $logFile -Append -Force
+}
 #endregion
 
 
@@ -140,7 +144,7 @@ if ($runCertificateCheck)
         "$(get-date -f u) Certificate comes from correct template but name is not correct! Will delete certificate" | Out-File -FilePath $logFile -Append -Force
         Remove-Item -Path $certificateFromTemplate.PSPath -Force
         Get-ScheduledTask -TaskName "PushLaunch" | Start-ScheduledTask
-        Start-Sleep -Seconds 15
+        Start-Sleep -Seconds 20
         $certificateFromTemplate = Test-NDESCertificate -TemplateID $TemplateID -TemplateName $TemplateName
       }
     }
@@ -148,12 +152,16 @@ if ($runCertificateCheck)
     {
       "$(get-date -f u) No certificate found. Will trigger PushLaunch task to request one." | Out-File -FilePath $logFile -Append -Force
       Get-ScheduledTask -TaskName "PushLaunch" | Start-ScheduledTask
-      Start-Sleep -Seconds 15
+      Start-Sleep -Seconds 20
       $certificateFromTemplate = Test-NDESCertificate -TemplateID $TemplateID -TemplateName $TemplateName
     }
   }
   Until (($allGood) -or ($stopWatch.Elapsed.TotalMinutes -ge $maxScriptRuntimeInMinutes))
   $stopWatch.Stop()
   "$(get-date -f u) End of script!" | Out-File -FilePath $logFile -Append -Force
+}
+else 
+{
+  "$(get-date -f u) The script is set to skip the certificate check!" | Out-File -FilePath $logFile -Append -Force
 }
 #endregion
