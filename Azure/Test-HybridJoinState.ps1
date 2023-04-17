@@ -16,7 +16,8 @@
 
 <#
 .Synopsis
-   Script to wait for hybrid join and correct certificate state
+  Script to wait for hybrid join and correct certificate state
+
 .DESCRIPTION
   This script can wait for the hybrid join state if -RunHybridJoinCheck is set.
   This is to prevent the Enrollment Status Page from skipping the hybrid join process (in case it takes longer than the ESP runtime)
@@ -44,6 +45,7 @@
 
 .EXAMPLE
    Test-HybridJoinState.ps1 -RunHybridJoinCheck
+   
 .EXAMPLE
    Test-HybridJoinState.ps1 -RunHybridJoinCheck -RunCertificateCheck -MaxScriptRuntimeInMinutes 60
 #>
