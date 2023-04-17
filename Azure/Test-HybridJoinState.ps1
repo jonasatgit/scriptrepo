@@ -49,9 +49,9 @@
 [CmdletBinding()]
 param (
     [Parameter()]
-    [bool]$RunHybridJoinCheck = $true, # The script will wait for the Hybrid Join process if set to $true
+    [switch]$RunHybridJoinCheck, # The script will wait for the Hybrid Join process if parameter is set
     [Parameter()]
-    [bool]$RunCertificateCheck = $true, # The script will wait for the correct certificate if set to $true
+    [switch]$RunCertificateCheck, # The script will wait for the correct certificate if parameter is set
     [Parameter()]
     [int]$MaxScriptRuntimeInMinutes = 0, # Zero means no limit. If the script run longer than the value defined, the script will exit with an error
     [Parameter()]
