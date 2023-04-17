@@ -90,7 +90,7 @@ function Test-NDESCertificate
   foreach ($Certificate in $Certificates) 
   {
     "$(get-date -f u) Checking certificate: $($Certificate.Thumbprint)..." | Out-File -FilePath $logFile -Append -Force
-    # ID 1.3.6.1.4.1.311.21.10 matches 'Certificate Template Information' 
+    # ID 1.3.6.1.4.1.311.21.7 matches 'Certificate Template Information' 
     # Using ID to be language-independent
     $CertificateTemplateInformation = $Certificate.Extensions | Where-Object {$_.OID.Value -eq '1.3.6.1.4.1.311.21.7'} 
     if ($CertificateTemplateInformation) 
