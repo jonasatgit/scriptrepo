@@ -41,11 +41,11 @@
     Detection method: File or folder exists
     Associate with a 32-bit app on 64-bit clients: No
   - Add the new app to your Autopilot Hybrid Join Enrollment Status page as required app
-  - The the Autopilot process
+  - Start the Autopilot process
 
 .EXAMPLE
    Test-HybridJoinState.ps1 -RunHybridJoinCheck
-   
+
 .EXAMPLE
    Test-HybridJoinState.ps1 -RunHybridJoinCheck -RunCertificateCheck -MaxScriptRuntimeInMinutes 60
 #>
