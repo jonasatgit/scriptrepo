@@ -31,7 +31,7 @@
   - Prep the script with the Intune prep tool. More can be found here: https://learn.microsoft.com/en-us/mem/intune/apps/apps-win32-prepare
   - Create a Win32 App in Intune and uploda the intunewin file
   - Use the following install and uninstall commands:
-    Install command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1
+    Install command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1 -RunHybridJoinCheck -RunCertificateCheck
     Uninstall command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1
     The uninstall should never run, since the apps purpose is to only run once during Autopilot Hybrid Join. Hence the same command. 
   - Use the logfile as detection method like this:
@@ -41,8 +41,11 @@
     Associate with a 32-bit app on 64-bit clients: No
   - Add the new app to your Autopilot Hybrid Join Enrollment Status page as required app
   - The the Autopilot process
+
 .EXAMPLE
-   Test-HybridJoinState.ps1
+   Test-HybridJoinState.ps1 -RunHybridJoinCheck
+.EXAMPLE
+   Test-HybridJoinState.ps1 -RunHybridJoinCheck -RunCertificateCheck -MaxScriptRuntimeInMinutes 60
 #>
 
 #region Params
