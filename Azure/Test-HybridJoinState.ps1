@@ -18,18 +18,18 @@
 .Synopsis
    Script to wait for hybrid join and correct certificate state
 .DESCRIPTION
-  This script can wait for the hybrid join state if $runHybridJoinCheck is set to true.
+  This script can wait for the hybrid join state if -RunHybridJoinCheck is set.
   This is to prevent the Enrollment Status Page from skipping the hybrid join process (in case it takes longer than the ESP runtime)
   and to provide an end user with a seamless login experience.
 
-  It can also wait for the correct NDES certificate if $runCertificateCheck is set to true.
+  It can also wait for the correct NDES certificate if -RunCertificateCheck is set.
   This is to prevent the system from having a certificate with the wrong subject name.
   A wrong subject name can happen, if the hybrid join device rename happens after the NDES certificate enrollment.
 
   How to use:
   - Adjust the parameters to your needs
   - Prep the script with the Intune prep tool. More can be found here: https://learn.microsoft.com/en-us/mem/intune/apps/apps-win32-prepare
-  - Create a Win32 App in Intune and uploda the intunewin file
+  - Create a Win32 App in Intune and upload the intunewin file
   - Use the following install and uninstall commands:
     Install command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1 -RunHybridJoinCheck -RunCertificateCheck
     Uninstall command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1
@@ -171,6 +171,8 @@ if ($runCertificateCheck)
     "$(get-date -f u) Test certificate" | Out-File -FilePath $logFile -Append -Force
     if ($certificateFromTemplate)
     {
+      "$(get-date -f u) Certificate subject: $($certificateFromTemplate.Subject)" | Out-File -FilePath $logFile -Append -Force
+      "$(get-date -f u) Expected subject names: $($SubjectNames -join '|')" | Out-File -FilePath $logFile -Append -Force
       if ($certificateFromTemplate.Subject -match ($SubjectNames -join "|"))
       {
         "$(get-date -f u) Certificate comes from correct template and has the correct name! Stopping script!" | Out-File -FilePath $logFile -Append -Force
