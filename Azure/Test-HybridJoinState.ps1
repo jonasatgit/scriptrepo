@@ -13,7 +13,11 @@
 #
 #************************************************************************************************************
 
+
 <#
+.Synopsis
+   Script to wait for hybrid join and correct certificate state
+.DESCRIPTION
   This script can wait for the hybrid join state if $runHybridJoinCheck is set to true.
   This is to prevent the Enrollment Status Page from skipping the hybrid join process (in case it takes longer than the ESP runtime)
   and to provide an end user with a seamless login experience.
@@ -22,8 +26,23 @@
   This is to prevent the system from having a certificate with the wrong subject name.
   A wrong subject name can happen, if the hybrid join device rename happens after the NDES certificate enrollment.
 
-  Change the parameters to your needs. 
-
+  How to use:
+  - Adjust the parameters to your needs
+  - Prep the script with the Intune prep tool. More can be found here: https://learn.microsoft.com/en-us/mem/intune/apps/apps-win32-prepare
+  - Create a Win32 App in Intune and uploda the intunewin file
+  - Use the following install and uninstall commands:
+    Install command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1
+    Uninstall command: Powershell.exe -NoProfile -ExecutionPolicy ByPass -File .\Test-HybridJoinState.ps1
+    The uninstall should never run, since the apps purpose is to only run once during Autopilot Hybrid Join. Hence the same command. 
+  - Use the logfile as detection method like this:
+    Path: C:\Windows\Logs
+    File or folder: HAADJState.log
+    Detection method: File or folder exists
+    Associate with a 32-bit app on 64-bit clients: No
+  - Add the new app to your Autopilot Hybrid Join Enrollment Status page as required app
+  - The the Autopilot process
+.EXAMPLE
+   Test-HybridJoinState.ps1
 #>
 
 #region Params
@@ -53,6 +72,53 @@ if ($maxScriptRuntimeInMinutes -eq 0){$maxScriptRuntimeInMinutes = [int]::MaxVal
 $stopWatch = New-Object System.Diagnostics.Stopwatch
 $stopWatch.Start()
 #endregion
+
+
+#region Test-NDESCertificate 
+function Test-NDESCertificate 
+{
+  [CmdletBinding()]
+  param
+  (
+    $TemplateID,
+    $TemplateName
+  )
+
+  $certificateFromTemplate = $null
+  [array]$Certificates = Get-ChildItem -Path "Cert:\LocalMachine\My" 
+  "$(get-date -f u) Found $($Certificates.Count) certificates" | Out-File -FilePath $logFile -Append -Force
+  foreach ($Certificate in $Certificates) 
+  {
+    "$(get-date -f u) Checking certificate: $($Certificate.Thumbprint)..." | Out-File -FilePath $logFile -Append -Force
+    # ID 1.3.6.1.4.1.311.21.10 matches 'Certificate Template Information' 
+    # Using ID to be language-independent
+    $CertificateTemplateInformation = $Certificate.Extensions | Where-Object {$_.OID.Value -eq '1.3.6.1.4.1.311.21.7'} 
+    if ($CertificateTemplateInformation) 
+    {
+        if (($CertificateTemplateInformation).Format(0) -match $TemplateID) 
+        {
+          $certificateFromTemplate = $Certificate
+          "$(get-date -f u) Certificate matches templateID" | Out-File -FilePath $logFile -Append -Force
+        }
+        elseif (($CertificateTemplateInformation).Format(0) -match $TemplateName) 
+        {
+          $certificateFromTemplate = $Certificate
+          "$(get-date -f u) Certificate matches template name" | Out-File -FilePath $logFile -Append -Force
+        }
+        else 
+        {
+          "$(get-date -f u) Certificate does not match template ID or template name" | Out-File -FilePath $logFile -Append -Force
+        }                
+    }
+    else
+    {
+      "$(get-date -f u) ERROR: No Certificate Template Information found" | Out-File -FilePath $logFile -Append -Force
+    }
+  }
+  return $certificateFromTemplate
+}
+#endregion
+
 
 #region Detect Hybrid Join State
 if ($runHybridJoinCheck)
@@ -86,38 +152,6 @@ $xmlQuery = @'
 else 
 {
   "$(get-date -f u) The script is set to skip the Hybrid Join state check!" | Out-File -FilePath $logFile -Append -Force
-}
-#endregion
-
-
-#region Test-NDESCertificate 
-function Test-NDESCertificate 
-{
-  [CmdletBinding()]
-  param
-  (
-    $TemplateID,
-    $TemplateName
-  )
-
-  $certificateFromTemplate = $null
-  $Certificates = Get-ChildItem -Path "Cert:\LocalMachine\My" 
-  foreach ($Certificate in $Certificates) {
-      $CertificateTemplateInformation = $Certificate.Extensions | Where-Object { $_.Oid.FriendlyName -match "Certificate Template Information"}
-      if ($CertificateTemplateInformation) 
-      {
-          if (($CertificateTemplateInformation).Format(0) -match $TemplateID) 
-          {
-            $certificateFromTemplate = $Certificate
-          }
-                              
-          if (($CertificateTemplateInformation).Format(0) -match $TemplateName) 
-          {
-            $certificateFromTemplate = $Certificate
-          }                  
-      }
-  }
-  return $certificateFromTemplate
 }
 #endregion
 
