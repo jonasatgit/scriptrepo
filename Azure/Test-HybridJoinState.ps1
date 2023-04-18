@@ -185,7 +185,7 @@ if ($runCertificateCheck)
         "$(get-date -f u) Certificate comes from correct template but name is not correct! Will delete certificate" | Out-File -FilePath $logFile -Append -Force
         Remove-Item -Path $certificateFromTemplate.PSPath -Force
         Get-ScheduledTask -TaskName "PushLaunch" | Start-ScheduledTask
-        Start-Sleep -Seconds 20
+        Start-Sleep -Seconds 30
         $certificateFromTemplate = Test-NDESCertificate -TemplateID $TemplateID -TemplateName $TemplateName
       }
     }
@@ -193,7 +193,7 @@ if ($runCertificateCheck)
     {
       "$(get-date -f u) No certificate found. Will trigger PushLaunch task to request one." | Out-File -FilePath $logFile -Append -Force
       Get-ScheduledTask -TaskName "PushLaunch" | Start-ScheduledTask
-      Start-Sleep -Seconds 20
+      Start-Sleep -Seconds 30
       $certificateFromTemplate = Test-NDESCertificate -TemplateID $TemplateID -TemplateName $TemplateName
     }
   }
