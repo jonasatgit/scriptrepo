@@ -15,9 +15,13 @@
 
 # Simple script to display the ConfigMgr collections in a tree view
 # Change the $siteCode and $providerServer variables to match your environment
+[CmdletBinding()]
+param
+(
+    $siteCode = 'P02',
+    $providerServer = 'CM02.contoso.local'
+)
 
-$siteCode = 'P02'
-$providerServer = 'CM02.contoso.local'
 
 <#
 .Synopsis
@@ -36,10 +40,10 @@ function Get-Submember
         [System.Windows.Controls.TreeViewItem]$parent,
         $sub
     )
-    Write-Host "work on parent: $($parent.tag.Name)"
+    Write-Verbose "work on parent: $($parent.tag.Name)"
     foreach($subMember in ($sub | Sort-Object -Property Name))
     {
-        Write-Host "work on sub: $($subMember.Name)"
+        Write-Verbose "work on sub: $($subMember.Name)"
         [void]$parent.Items.Add(($collectionItems[($subMember.CollectionID)]))
 
         $subMembers = $collectionList.where({$_.LimitToCollectionID -eq $subMember.CollectionID}) | Sort-Object -Property Name
@@ -52,36 +56,85 @@ function Get-Submember
     }
 }
 
-
+Write-Verbose "New DCOM connection to $($providerServer)"
 $cimSessionOptions = New-CimSessionOption -Protocol Dcom
 $cimSession = New-CimSession -ComputerName $providerServer -SessionOption $cimSessionOptions
 
+Write-Verbose "Get all collections"
+$collectionHashTable = @{}
 [array]$global:collectionList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "Select * from SMS_Collection"
+$global:collectionList | ForEach-Object {
+    $collectionHashTable.add($_.CollectionID, $_.Name)
+}
 
+Write-Verbose "Get all client settings deployments"
 [array]$clientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT ClientSettingsID, CollectionID FROM SMS_ClientSettingsAssignment"
-
 $clientSettingsHashTable = @{}
 $clientSettings | Group-Object -Property CollectionID | ForEach-Object {
     [void]$clientSettingsHashTable.add($_.Name, $_.Count)
 }
 
-
+Write-Verbose "Get all deployments"
 [array]$global:collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT SoftwareName, DeploymentID, CollectionID FROM SMS_DeploymentSummary"
-
 $collectionDeploymentsHashTable = @{}
 $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
     [void]$collectionDeploymentsHashTable.add($_.Name, $_.Count)
 }
+
+Write-Verbose "Get all included or excluded collections"
+# Get all include collection rules
+$includeCollectionHashTable = @{}
+$query = "Select * from SMS_CollectionDependencies where RelationshipType = 2"
+$includeCollectionList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query $query
+$includeCollectionListClean = $includeCollectionList | ForEach-Object {
+
+            [PSCustomObject]@{
+                DependentCollectionID = $_.DependentCollectionID
+                SourceCollectionID = $_.SourceCollectionID
+                SourceCollectionName = $collectionHashTable[($_.SourceCollectionID)] 
+            }
+
+}
+
+$includeCollectionListClean | Group-Object -Property DependentCollectionID | ForEach-Object {
+    
+    [void]$includeCollectionHashTable.Add($_.Name, $_.Group)
+}
+
+# Get all exclude collection rules
+$excludeCollectionHashTable = @{}
+$query = "Select * from SMS_CollectionDependencies where RelationshipType = 3"
+$excludeCollectionList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query $query
+$excludeCollectionListClean = $excludeCollectionList | ForEach-Object {
+
+            [PSCustomObject]@{
+                DependentCollectionID = $_.DependentCollectionID
+                SourceCollectionID = $_.SourceCollectionID
+                SourceCollectionName = $collectionHashTable[($_.SourceCollectionID)] 
+            }
+
+}
+
+$excludeCollectionListClean | Group-Object -Property DependentCollectionID | ForEach-Object {
+
+    [void]$excludeCollectionHashTable.Add($_.Name, $_.Group)
+}
+
+
 
 $propertyList = ('CollectionID',
     'CollectionRefreshType',
     'ClientSettingsCount',
     'DeploymentCount',
     'CollectionVariablesCount',
-    'IncludeExcludeCollectionsCount',
+    #'IncludeExcludeCollectionsCount',
+    'IncludeCollectionsCount',
+    'ExcludeCollectionsCount',
     'MemberCount',
     'ServiceWindowsCount',
-    'UseCluster'
+    'PowerConfigsCount',
+    'UseCluster',
+    'ObjectPath'
     )
 
 
@@ -90,13 +143,16 @@ Add-Type -AssemblyName PresentationFramework
 
 # Create the window and set properties
 $window = New-Object System.Windows.Window
-$window.Title = "Collection TreeView"
+$window.Title = "Collection TreeView of $($global:collectionList.count) collections"
 
 # Create the main grid and set properties
 $mainGrid = New-Object System.Windows.Controls.Grid
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+$mainGrid.ColumnDefinitions[1].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
+
 
 # Create the TreeView and set properties
 $treeView = New-Object System.Windows.Controls.TreeView
@@ -120,7 +176,8 @@ $treeView.Add_SelectedItemChanged({
 })
 [System.Windows.Controls.Grid]::SetColumn($treeView, 0)
 
-# Create the data grid and set properties
+
+Write-Verbose "Create the data grid and set properties"
 $dataGrid = New-Object System.Windows.Controls.DataGrid
 $dataGrid.IsReadOnly = $true
 $dataGrid.HeadersVisibility = "All"
@@ -133,20 +190,21 @@ $dataGrid.Add_SelectionChanged({
 
     Switch($selectedItem.Property)
     {
-        'DeploymentCount' {
-                            $propsList = $global:collectionDeployments.where({$_.CollectionID -eq $global:selectedCollection.CollectionID}) | Select-Object SoftwareName | Sort-Object SoftwareName
-                            $properties = $propsList | ForEach-Object {
-                                [PSCustomObject]@{
-                                        Deployments = $_.SoftwareName
-                                    }
-                                }
-                          }
-    
+        'DeploymentCount' 
+        {
+            [array]$properties = $global:collectionDeployments.where({$_.CollectionID -eq $global:selectedCollection.CollectionID}) | Select-Object SoftwareName | Sort-Object SoftwareName
+        }
+        'IncludeCollectionsCount' 
+        {
+            [array]$properties = $global:selectedCollection.IncludeCollections | Select-Object SourceCollectionID, SourceCollectionName | Sort-Object SourceCollectionName
+        }
+        'ExcludeCollectionsCount' 
+        {
+            [array]$properties = $global:selectedCollection.ExcludeCollections | Select-Object SourceCollectionID, SourceCollectionName | Sort-Object SourceCollectionName
+        }
     }
 
     if ($selectedItem -ne $null) {
-        # TODO: Update this code to display the desired data in the second data grid based on the selected item in the first data grid
-        # Example:
         $dataGrid1.ItemsSource = $properties
     } else {
         $dataGrid1.ItemsSource = $null
@@ -167,9 +225,8 @@ $dataGrid1.AutoGenerateColumns = $true
 [void]$mainGrid.Children.Add($dataGrid1)
 
 
-# Create tree view items and put them in a hashtable for easy access
+Write-Verbose "Create treeview items hashtable and add additional info to collections"
 $global:collectionItems = @{}
-
 foreach($collection in $collectionList | Sort-Object -Property Name)
 {
     $clientSettingsCount = $clientSettingsHashTable[($collection.CollectionID)]
@@ -197,6 +254,11 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     }
     $collection | Add-Member -MemberType NoteProperty -Name CollectionRefreshType -Value $collectionRefreshType
 
+    $collection | Add-Member -MemberType NoteProperty -Name IncludeCollections -Value  $includeCollectionHashTable[($collection.CollectionID)]
+    $collection | Add-Member -MemberType NoteProperty -Name IncludeCollectionsCount -Value  $collection.IncludeCollections.count
+    $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollections -Value  $excludeCollectionHashTable[($collection.CollectionID)]
+    $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollectionsCount -Value  $collection.ExcludeCollections.count
+
     $item = New-Object System.Windows.Controls.TreeViewItem
     $item.Header = $collection.Name
     $item.Tag = $collection
@@ -205,7 +267,7 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
   
 }
 
-
+Write-Verbose "Add each collection item to treeview"
 foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name)
 {
 
@@ -229,4 +291,5 @@ foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitTo
 $window.Content = $mainGrid
 
 # Show the window
-$window.ShowDialog()
+$window.ShowDialog() | Out-Null
+Write-Verbose "Done"
