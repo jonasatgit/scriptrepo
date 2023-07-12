@@ -66,7 +66,7 @@ $clientSettings | Group-Object -Property CollectionID | ForEach-Object {
 }
 
 
-[array]$collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT DeploymentID, CollectionID FROM SMS_DeploymentSummary"
+[array]$global:collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT SoftwareName, DeploymentID, CollectionID FROM SMS_DeploymentSummary"
 
 $collectionDeploymentsHashTable = @{}
 $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
@@ -96,6 +96,7 @@ $window.Title = "Collection TreeView"
 $mainGrid = New-Object System.Windows.Controls.Grid
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+$mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 
 # Create the TreeView and set properties
 $treeView = New-Object System.Windows.Controls.TreeView
@@ -104,6 +105,7 @@ $treeView.Add_SelectedItemChanged({
 
     # Update the data grid with the selected item data
     $selectedItem = $e.NewValue
+    $global:selectedCollection = $selectedItem.Tag
     if ($selectedItem -ne $null) {
         $properties = $selectedItem.Tag | Select-Object -Property $propertyList | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
         $dataGrid.ItemsSource = $properties | ForEach-Object {
@@ -123,11 +125,46 @@ $dataGrid = New-Object System.Windows.Controls.DataGrid
 $dataGrid.IsReadOnly = $true
 $dataGrid.HeadersVisibility = "All"
 $dataGrid.AutoGenerateColumns = $true
+$dataGrid.Add_SelectionChanged({
+    param($sender, $e)
+
+    # Update the second data grid with the selected item data
+    $selectedItem = $e.AddedItems[0]
+
+    Switch($selectedItem.Property)
+    {
+        'DeploymentCount' {
+                            $propsList = $global:collectionDeployments.where({$_.CollectionID -eq $global:selectedCollection.CollectionID}) | Select-Object SoftwareName | Sort-Object SoftwareName
+                            $properties = $propsList | ForEach-Object {
+                                [PSCustomObject]@{
+                                        Deployments = $_.SoftwareName
+                                    }
+                                }
+                          }
+    
+    }
+
+    if ($selectedItem -ne $null) {
+        # TODO: Update this code to display the desired data in the second data grid based on the selected item in the first data grid
+        # Example:
+        $dataGrid1.ItemsSource = $properties
+    } else {
+        $dataGrid1.ItemsSource = $null
+    }
+})
 [System.Windows.Controls.Grid]::SetColumn($dataGrid, 1)
+
+$dataGrid1 = New-Object System.Windows.Controls.DataGrid
+$dataGrid1.IsReadOnly = $true
+$dataGrid1.HeadersVisibility = "All"
+$dataGrid1.AutoGenerateColumns = $true
+[System.Windows.Controls.Grid]::SetColumn($dataGrid1, 2)
+
 
 # Add the TreeView and data grid to the main grid
 [void]$mainGrid.Children.Add($treeView)
 [void]$mainGrid.Children.Add($dataGrid)
+[void]$mainGrid.Children.Add($dataGrid1)
 
 
 # Create tree view items and put them in a hashtable for easy access
