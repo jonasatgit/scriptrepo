@@ -120,8 +120,18 @@ Function Set-TreeViewItemColor
 #endregion
 
 Write-Verbose "New DCOM connection to $($providerServer)"
-$cimSessionOptions = New-CimSessionOption -Protocol Dcom
-$cimSession = New-CimSession -ComputerName $providerServer -SessionOption $cimSessionOptions
+try
+{
+    $cimSessionOptions = New-CimSessionOption -Protocol Dcom
+    $cimSession = New-CimSession -ComputerName $providerServer -SessionOption $cimSessionOptions -ErrorAction Stop
+}
+catch
+{
+    $_
+    Write-Host "Was trying to connect to: $($providerServer) via DCOM" -ForegroundColor Yellow
+    Write-Host "Need to stop script due to error" -ForegroundColor Yellow
+    Exit
+}
 
 Write-Verbose "Get all collections"
 $collectionHashTable = @{}
@@ -131,15 +141,15 @@ $global:collectionList | ForEach-Object {
 }
 
 Write-Verbose "Get all client settings deployments"
-[array]$clientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT ClientSettingsID, CollectionID FROM SMS_ClientSettingsAssignment"
 $clientSettingsHashTable = @{}
+[array]$clientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT ClientSettingsID, CollectionID FROM SMS_ClientSettingsAssignment"
 $clientSettings | Group-Object -Property CollectionID | ForEach-Object {
     [void]$clientSettingsHashTable.add($_.Name, $_.Count)
 }
 
 Write-Verbose "Get all deployments"
-[array]$global:collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT SoftwareName, DeploymentID, CollectionID FROM SMS_DeploymentSummary"
 $collectionDeploymentsHashTable = @{}
+[array]$global:collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT SoftwareName, DeploymentID, CollectionID FROM SMS_DeploymentSummary"
 $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
     [void]$collectionDeploymentsHashTable.add($_.Name, $_.Count)
 }
@@ -487,4 +497,9 @@ $window.Content = $mainGrid
 
 # Show the window
 $window.ShowDialog() | Out-Null
+if($cimSession)
+{
+    $cimSession | Remove-CimSession
+}
+
 Write-Verbose "Done"
