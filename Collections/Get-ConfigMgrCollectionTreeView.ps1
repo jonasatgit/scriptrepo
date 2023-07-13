@@ -165,6 +165,9 @@ $adminPermissionList = $adminList | ForEach-Object {
 
 }
 
+# Lets remove duplicates from different roles
+$adminPermissionList = $adminPermissionList | Sort-Object -Property LogonName, CollectionPermissions -Unique
+
 # Group permissions based on collectionID
 $adminHashTable = @{}
 $adminPermissionListGrouped = $adminPermissionList | Group-Object -Property CollectionPermissions
