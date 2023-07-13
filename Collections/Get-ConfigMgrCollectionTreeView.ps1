@@ -32,6 +32,8 @@ param
     $providerServer = 'CM02.contoso.local'
 )
 
+$version = 'v0.2'
+
 #region Get-TreeViewSubmember
 <#
 .Synopsis
@@ -118,6 +120,114 @@ Function Set-TreeViewItemColor
 
 }
 #endregion
+
+
+#region Set-TreeViewItemColor
+<#
+.Synopsis
+   Set-TreeViewItemColor
+.DESCRIPTION
+   Set-TreeViewItemColor
+.EXAMPLE
+   Set-TreeViewItemColor -items [System.Windows.Controls.TreeViewItem] -color [Red, Green, Black]
+#>
+Function Set-TreeViewItemColor2
+{
+    param
+    (
+        [System.Windows.Controls.TreeViewItem]$treeviewItem,
+        #[ValidateSet("Red", "Green","Black")]
+        [string]$color= 'Red',
+        [ValidateSet("Reset","Toggle deployments", "Toggle permissions","Toggle incremental updates","Toggle include or exclude","Toggle client settings","Toggle maintenance windows")]
+        [string]$type
+    )
+
+    switch ($type)
+    {
+        "Toggle deployments"
+        {
+            if ($treeviewItem.tag.DeploymentCount -gt 0)
+            {
+                $color = 'Green'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }
+        }
+        "Toggle permissions" 
+        {
+            if ($treeviewItem.tag.AdminCount -gt 0)
+            {
+                $color = 'Red'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }
+        }
+        "Toggle incremental updates"
+        {
+            if ($treeviewItem.tag.CollectionRefreshType -in ('Incremental','Both'))
+            {
+                $color = 'Blue'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }        
+        }
+        "Toggle include or exclude"
+        {
+            if ($treeviewItem.tag.IncludeExcludeCollectionsCount -gt 0)
+            {
+                $color = 'Coral'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }            
+        }
+        "Toggle client settings"
+        {
+            if ($treeviewItem.tag.ClientSettingsCount -gt 0)
+            {
+                $color = 'Violet'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }          
+        }
+        "Toggle maintenance windows"
+        {
+            if ($treeviewItem.tag.ServiceWindowsCount -gt 0)
+            {
+                $color = 'Violet'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }          
+        }
+        'Reset'
+        {
+            $color = 'Black'
+            $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+        }
+    }
+
+    # Load items recursive
+    foreach($item in $treeviewItem.Items)
+    {
+        Set-TreeViewItemColor2 -treeviewItem $item -type $type     
+    }
+
+}
+#endregion
+
+
+function Get-ConfigMgrCollectionSettings
+{
+    param
+    (
+        $cimsession,
+        $siteCode,
+        $collectionID
+    )
+
+    $collectionSettings = Get-CimInstance -CimSession $cimsession -Namespace "root\sms\site_$siteCode" -Query "Select * from SMS_CollectionSettings where CollectionID = '$($collectionID)'"
+    if ($collectionSettings)
+    {
+        # load lazy properties
+        $collectionSettings = $collectionSettings | Get-CimInstance
+        return $collectionSettings
+    }
+}
+
+
 
 Write-Verbose "New DCOM connection to $($providerServer)"
 try
@@ -253,7 +363,7 @@ Add-Type -AssemblyName PresentationFramework
 
 # Create the window and set properties
 $window = New-Object System.Windows.Window
-$window.Title = "v0.1 TreeView of $($global:collectionList.count) collections         --> https://github.com/jonasatgit/scriptrepo/tree/master/Collections <--"
+$window.Title = "$($version) TreeView of $($global:collectionList.count) collections         --> https://github.com/jonasatgit/scriptrepo/tree/master/Collections <--"
 
 # Create the main grid and set properties
 $mainGrid = New-Object System.Windows.Controls.Grid
@@ -266,7 +376,7 @@ $mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 #$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
-$mainGrid.RowDefinitions[0].Height = [System.Windows.GridLength]::new(40)
+$mainGrid.RowDefinitions[0].Height = [System.Windows.GridLength]::new(45)
 $mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
 #$mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(40)
 #$mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(40)
@@ -323,9 +433,72 @@ $checkBox2.Add_Unchecked({
     }
 })
 
+
+# Create the second CheckBox and set properties
+$checkBox3 = New-Object System.Windows.Controls.CheckBox
+$checkBox3.Content = "Toggle Permissions"
+$checkBox3.Margin = "10,10,10,10"
+
+# Add Checked event handler
+$checkBox3.Add_Checked({
+    
+})
+
+# Add Unchecked event handler
+$checkBox3.Add_Unchecked({
+    
+})
+
+# Create the second CheckBox and set properties
+$checkBox4 = New-Object System.Windows.Controls.CheckBox
+$checkBox4.Content = "Toggle Permissions"
+$checkBox4.Margin = "10,10,10,10"
+
+# Add Checked event handler
+$checkBox4.Add_Checked({
+    
+})
+
+# Add Unchecked event handler
+$checkBox4.Add_Unchecked({
+    
+})
+
+$comboBox = New-Object System.Windows.Controls.ComboBox
+$comboBox.Margin = "10,10,10,10"
+$comboBox.Width = 200
+$comboBox.Height = 22
+[void]$comboBox.Items.Add("Toggle deployments")
+[void]$comboBox.Items.Add("Toggle permissions")
+[void]$comboBox.Items.Add("Toggle incremental updates")
+[void]$comboBox.Items.Add("Toggle include or exclude")
+[void]$comboBox.Items.Add("Toggle client settings")
+[void]$comboBox.Items.Add("Toggle maintenance windows")
+[void]$comboBox.Items.Add("Reset")
+
+$comboBox.Add_SelectionChanged({
+    # Get the selected item from the ComboBox
+    #$selectedItem = $comboBox.SelectedItem
+    #Write-Host $comboBox.SelectedItem
+
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor2 -treeviewItem $item -type Reset
+    }
+
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor2 -treeviewItem $item -type $comboBox.SelectedItem
+    }
+})
+
+
 # Add the CheckBoxes to the StackPanel
-[void]$stackPanel.Children.Add($checkBox)
-[void]$stackPanel.Children.Add($checkBox2)
+#[void]$stackPanel.Children.Add($checkBox)
+#[void]$stackPanel.Children.Add($checkBox2)
+#[void]$stackPanel.Children.Add($checkBox3)
+#[void]$stackPanel.Children.Add($checkBox4)
+[void]$stackPanel.Children.Add($comboBox)
 
 
 # Create the TreeView and set properties
@@ -396,6 +569,51 @@ $dataGrid.Add_SelectionChanged({
                     }
             
             }
+        }
+        'ServiceWindowsCount'
+        {
+            if ($global:selectedCollection.ServiceWindowsCount -gt 0)
+            {
+                $CollectionSettings = Get-ConfigMgrCollectionSettings -cimsession $cimSession -siteCode $siteCode -collectionID ($global:selectedCollection.CollectionID)
+                if ($CollectionSettings)
+                {
+                    [array]$properties = $CollectionSettings.ServiceWindows | ForEach-Object {
+
+                        Switch($_.ServiceWindowType)
+                        {
+                            1{$ServiceWindowType = 'All deployments'}
+                            4{$ServiceWindowType = 'Updates'}
+                            5{$ServiceWindowType = 'Task sequences'}
+                            Default{$ServiceWindowType = 'Unknown'}                        
+                        }
+                            
+                        [PSCustomObject]@{
+                            ServiceWindowType = $ServiceWindowType
+                            Description = $_.Description
+                            Name = $_.Name
+                        }
+                    } 
+                
+                }
+            }
+        }
+        'CollectionVariablesCount'
+        {
+            if ($global:selectedCollection.CollectionVariablesCount -gt 0)
+            {
+                $CollectionSettings = Get-ConfigMgrCollectionSettings -cimsession $cimSession -siteCode $siteCode -collectionID ($global:selectedCollection.CollectionID)
+                if ($CollectionSettings)
+                {
+                    [array]$properties = $CollectionSettings.CollectionVariables | ForEach-Object {
+                        [PSCustomObject]@{
+                        Name = $_.Name
+                        IsMasked = $_.IsMasked
+                        Value = $_.Value
+                        }
+                    } 
+                
+                }
+            }              
         }
     }
 
