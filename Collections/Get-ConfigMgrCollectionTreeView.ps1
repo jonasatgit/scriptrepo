@@ -225,6 +225,7 @@ $propertyList = ('CollectionID',
     'DeploymentCount',
     'CollectionVariablesCount',
     'AdminCount',
+    'QueryRules',
     #'Admins',
     #'IncludeExcludeCollectionsCount',
     'IncludeCollectionsCount',
@@ -375,6 +376,17 @@ $dataGrid.Add_SelectionChanged({
 
             }
         }
+        'QueryRules'
+        {
+            $global:selectedCollection = $global:selectedCollection | Get-CimInstance 
+            [array]$properties = $global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null} | ForEach-Object {
+                    [PSCustomObject]@{
+                    RuleName = $_.RuleName
+                    Query = $_.QueryExpression
+                    }
+            
+            }
+        }
     }
 
     if ($selectedItem -ne $null) {
@@ -438,6 +450,8 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
 
     $collection | Add-Member -MemberType NoteProperty -Name Admins -value $adminHashTable[($collection.CollectionID)] 
     $collection | Add-Member -MemberType NoteProperty -Name AdminCount -Value $collection.Admins.Count
+
+    $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value 'Click to load'
 
 
     $item = New-Object System.Windows.Controls.TreeViewItem
