@@ -13,8 +13,18 @@
 #
 #************************************************************************************************************
 
-# Simple script to display the ConfigMgr collections in a tree view
-# Change the $siteCode and $providerServer variables to match your environment
+<#
+.Synopsis
+   Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
+.DESCRIPTION
+   Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
+   The code was written ~40% by Bing/GPT, GitHub CoPilot and ~60% by a human
+.EXAMPLE
+   Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
+.EXAMPLE
+   Another example of how to use this cmdlet
+#>
+
 [CmdletBinding()]
 param
 (
@@ -22,18 +32,18 @@ param
     $providerServer = 'CM02.contoso.local'
 )
 
-
+#region Get-TreeViewSubmember
 <#
 .Synopsis
-   Get-Submember
+   Get-TreeViewSubmember
 .DESCRIPTION
-   Get-Submember
+   Get-TreeViewSubmember
 .EXAMPLE
-   Get-Submember -parent
+   Get-TreeViewSubmember -parent [System.Windows.Controls.TreeViewItem] -sub [items of [System.Windows.Controls.TreeViewItem]]
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
-function Get-Submember
+function Get-TreeViewSubmember
 {
     param
     (
@@ -50,11 +60,64 @@ function Get-Submember
 
         if ($subMembers)
         {
-            Get-Submember -parent ($collectionItems[($subMember.CollectionID)]) -sub $subMembers
+            Get-TreeViewSubmember -parent ($collectionItems[($subMember.CollectionID)]) -sub $subMembers
         }
     
     }
 }
+#endregion
+
+#region Set-TreeViewItemColor
+<#
+.Synopsis
+   Set-TreeViewItemColor
+.DESCRIPTION
+   Set-TreeViewItemColor
+.EXAMPLE
+   Set-TreeViewItemColor -items [System.Windows.Controls.TreeViewItem] -color [Red, Green, Black]
+#>
+Function Set-TreeViewItemColor
+{
+    param
+    (
+        [System.Windows.Controls.TreeViewItem]$treeviewItem,
+        [ValidateSet("Red", "Green","Black")]
+        [string]$color,
+        [ValidateSet("Deployments", "Permissions","Reset")]
+        [string]$type
+    )
+
+    switch ($type)
+    {
+        'Deployments' 
+        {
+            if ($treeviewItem.tag.DeploymentCount -gt 0)
+            {
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }
+        }
+
+        'Permissions' 
+        {
+            if ($treeviewItem.tag.AdminCount -gt 0)
+            {
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }
+        }
+        'Reset'
+        {
+            $treeviewItem.Foreground = [System.Windows.Media.Brushes]::Black
+        }
+    }
+
+    # Load items recursive
+    foreach($item in $treeviewItem.Items)
+    {
+        Set-TreeViewItemColor -treeviewItem $item -color $color -type $type     
+    }
+
+}
+#endregion
 
 Write-Verbose "New DCOM connection to $($providerServer)"
 $cimSessionOptions = New-CimSessionOption -Protocol Dcom
@@ -80,6 +143,37 @@ $collectionDeploymentsHashTable = @{}
 $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
     [void]$collectionDeploymentsHashTable.add($_.Name, $_.Count)
 }
+
+
+Write-Verbose "Get all ConfigMgr admins"
+[array]$adminList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "Select * from SMS_Admin"
+
+# Load lazy properties to be able to access permissions
+$adminList = $adminList | ForEach-Object {$_ | Get-CimInstance}
+
+$adminPermissionList = $adminList | ForEach-Object {
+
+    $logonName = $_.LogonName
+
+    foreach($permission in ($_.Permissions | Where-Object {$_.CategoryTypeID -eq 1} | Select-Object -Property CategoryID))
+    {
+        [PSCustomObject]@{
+            LogonName = $logonName
+            CollectionPermissions = $permission.CategoryID
+        }
+    }
+
+}
+
+# Group permissions based on collectionID
+$adminHashTable = @{}
+$adminPermissionListGrouped = $adminPermissionList | Group-Object -Property CollectionPermissions
+foreach($groupItem in $adminPermissionListGrouped)
+{
+    $adminHashTable.add($groupItem.Name, [array]($groupItem.Group.LogonName))
+}
+
+
 
 Write-Verbose "Get all included or excluded collections"
 # Get all include collection rules
@@ -127,6 +221,8 @@ $propertyList = ('CollectionID',
     'ClientSettingsCount',
     'DeploymentCount',
     'CollectionVariablesCount',
+    'AdminCount',
+    #'Admins',
     #'IncludeExcludeCollectionsCount',
     'IncludeCollectionsCount',
     'ExcludeCollectionsCount',
@@ -143,7 +239,7 @@ Add-Type -AssemblyName PresentationFramework
 
 # Create the window and set properties
 $window = New-Object System.Windows.Window
-$window.Title = "Collection TreeView of $($global:collectionList.count) collections"
+$window.Title = "v0.1 TreeView of $($global:collectionList.count) collections         --> https://github.com/jonasatgit/scriptrepo/tree/master/Collections <--"
 
 # Create the main grid and set properties
 $mainGrid = New-Object System.Windows.Controls.Grid
@@ -152,6 +248,70 @@ $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefini
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions[1].Width = [System.Windows.GridLength]::new(400)
 $mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
+
+$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+#$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$mainGrid.RowDefinitions[0].Height = [System.Windows.GridLength]::new(40)
+$mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+#$mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(40)
+#$mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(40)
+
+
+# Create a StackPanel and set properties
+$stackPanel = New-Object System.Windows.Controls.StackPanel
+$stackPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+
+# Create the CheckBox and set properties
+$checkBox = New-Object System.Windows.Controls.CheckBox
+$checkBox.Content = "Toggle Deployed"
+$checkBox.Margin = "10,10,10,10"
+[System.Windows.Controls.Grid]::SetRow($checkBox, 0)
+
+
+# Add Checked event handler
+$checkBox.Add_Checked({
+    $checkBox2.IsChecked =$false
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor -treeviewItem $item -color Green -type Deployments
+    }
+})
+
+# Add Unchecked event handler
+$checkBox.Add_Unchecked({
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor -treeviewItem $item -color Black -type Reset
+    }
+
+})
+
+# Create the second CheckBox and set properties
+$checkBox2 = New-Object System.Windows.Controls.CheckBox
+$checkBox2.Content = "Toggle Permissions"
+$checkBox2.Margin = "10,10,10,10"
+
+# Add Checked event handler
+$checkBox2.Add_Checked({
+    $checkBox.IsChecked = $false
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor -treeviewItem $item -color Red -type Permissions
+    }
+})
+
+# Add Unchecked event handler
+$checkBox2.Add_Unchecked({
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor -treeviewItem $item -color Black -type Reset
+    }
+})
+
+# Add the CheckBoxes to the StackPanel
+[void]$stackPanel.Children.Add($checkBox)
+[void]$stackPanel.Children.Add($checkBox2)
 
 
 # Create the TreeView and set properties
@@ -175,6 +335,7 @@ $treeView.Add_SelectedItemChanged({
     }
 })
 [System.Windows.Controls.Grid]::SetColumn($treeView, 0)
+[System.Windows.Controls.Grid]::SetRow($treeView, 1)
 
 
 Write-Verbose "Create the data grid and set properties"
@@ -202,6 +363,15 @@ $dataGrid.Add_SelectionChanged({
         {
             [array]$properties = $global:selectedCollection.ExcludeCollections | Select-Object SourceCollectionID, SourceCollectionName | Sort-Object SourceCollectionName
         }
+        'AdminCount' 
+        {
+            [array]$properties = $global:selectedCollection.Admins | ForEach-Object {
+                    [PSCustomObject]@{
+                    LogonName = $_
+                    }
+
+            }
+        }
     }
 
     if ($selectedItem -ne $null) {
@@ -211,15 +381,19 @@ $dataGrid.Add_SelectionChanged({
     }
 })
 [System.Windows.Controls.Grid]::SetColumn($dataGrid, 1)
+[System.Windows.Controls.Grid]::SetRow($dataGrid, 1)
 
 $dataGrid1 = New-Object System.Windows.Controls.DataGrid
 $dataGrid1.IsReadOnly = $true
 $dataGrid1.HeadersVisibility = "All"
 $dataGrid1.AutoGenerateColumns = $true
 [System.Windows.Controls.Grid]::SetColumn($dataGrid1, 2)
+[System.Windows.Controls.Grid]::SetRow($dataGrid1, 1)
 
 
-# Add the TreeView and data grid to the main grid
+# Add the TreeView and data grid and checkbox to the main grid
+#[void]$mainGrid.Children.Add($checkBox)
+[void]$mainGrid.Children.Add($stackPanel)
 [void]$mainGrid.Children.Add($treeView)
 [void]$mainGrid.Children.Add($dataGrid)
 [void]$mainGrid.Children.Add($dataGrid1)
@@ -259,6 +433,10 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollections -Value  $excludeCollectionHashTable[($collection.CollectionID)]
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollectionsCount -Value  $collection.ExcludeCollections.count
 
+    $collection | Add-Member -MemberType NoteProperty -Name Admins -value $adminHashTable[($collection.CollectionID)] 
+    $collection | Add-Member -MemberType NoteProperty -Name AdminCount -Value $collection.Admins.Count
+
+
     $item = New-Object System.Windows.Controls.TreeViewItem
     $item.Header = $collection.Name
     $item.Tag = $collection
@@ -280,7 +458,7 @@ foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitTo
 
     if ($subMembers)
     {
-        Get-Submember -parent $item -sub $subMembers
+        Get-TreeViewSubmember -parent $item -sub $subMembers
     }
     [void]$treeView.Items.Add($item)
 
