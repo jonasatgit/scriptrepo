@@ -32,7 +32,7 @@ param
     $providerServer = 'CM02.contoso.local'
 )
 
-$version = 'v0.2'
+$version = 'v0.3'
 
 #region Get-TreeViewSubmember
 <#
@@ -138,8 +138,9 @@ Function Set-TreeViewItemColor2
         [System.Windows.Controls.TreeViewItem]$treeviewItem,
         #[ValidateSet("Red", "Green","Black")]
         [string]$color= 'Red',
-        [ValidateSet("Reset","Toggle deployments", "Toggle permissions","Toggle incremental updates","Toggle include or exclude","Toggle client settings","Toggle maintenance windows")]
-        [string]$type
+        [ValidateSet("Reset","Search","Toggle deployments", "Toggle permissions","Toggle incremental updates","Toggle include or exclude","Toggle client settings","Toggle maintenance windows")]
+        [string]$type,
+        [string]$searchString
     )
 
     switch ($type)
@@ -192,6 +193,14 @@ Function Set-TreeViewItemColor2
                 $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
             }          
         }
+        'Search'
+        {
+            if ($treeviewItem.tag.Name -ilike "*$($searchString)*")
+            {
+                $color = 'Red'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color            
+            } 
+        }
         'Reset'
         {
             $color = 'Black'
@@ -202,7 +211,14 @@ Function Set-TreeViewItemColor2
     # Load items recursive
     foreach($item in $treeviewItem.Items)
     {
-        Set-TreeViewItemColor2 -treeviewItem $item -type $type     
+        if (-NOT([string]::IsNullOrEmpty($searchString)))
+        {
+            Set-TreeViewItemColor2 -treeviewItem $item -type $type -searchString $searchString
+        }
+        else
+        {
+            Set-TreeViewItemColor2 -treeviewItem $item -type $type 
+        }
     }
 
 }
@@ -478,9 +494,6 @@ $comboBox.Height = 22
 
 $comboBox.Add_SelectionChanged({
     # Get the selected item from the ComboBox
-    #$selectedItem = $comboBox.SelectedItem
-    #Write-Host $comboBox.SelectedItem
-
     foreach($item in $treeView.Items)
     {
         Set-TreeViewItemColor2 -treeviewItem $item -type Reset
@@ -492,6 +505,62 @@ $comboBox.Add_SelectionChanged({
     }
 })
 
+# Textbox to be able to search a collection
+$defaultTextString = "Search for collection name"
+$textBox = New-Object System.Windows.Controls.TextBox
+$textBox.Margin = "10,10,2,10"
+$textBox.Width = 200
+$textBox.Height = 22
+$textBox.Text = $defaultTextString
+
+$textBox.Add_GotFocus({
+    if ($textBox.Text -eq $defaultTextString) 
+    {
+        $textBox.Clear()
+    }
+})
+
+$textBox.Add_LostFocus({
+    if ([string]::IsNullOrEmpty($textBox.Text)) 
+    {
+        $textBox.Text = $defaultTextString
+    }
+    # Lets also reset any previous color changes
+    foreach($item in $treeView.Items)
+    {
+        Set-TreeViewItemColor2 -treeviewItem $item -type Reset
+    }
+})
+
+# Button to be able to search
+$button = New-Object System.Windows.Controls.Button
+$button.Margin = "2,10,10,10"
+$button.Width = 75
+$button.Height = 22
+$button.Content = "Search"
+
+$button.Add_Click({
+    # Use textbox to search for string
+    if (([string]::IsNullOrEmpty($textBox.Text)) -or $textBox.Text -eq $defaultTextString)
+    {
+        # do nothing. Either empty or default text
+    }
+    else
+    {
+        # Reset any color first
+        foreach($item in $treeView.Items)
+        {
+            Set-TreeViewItemColor2 -treeviewItem $item -type Reset
+        }
+
+        foreach($item in $treeView.Items)
+        {
+            Set-TreeViewItemColor2 -treeviewItem $item -type Search -searchString $textBox.Text
+        }
+    }
+
+})
+
 
 # Add the CheckBoxes to the StackPanel
 #[void]$stackPanel.Children.Add($checkBox)
@@ -499,6 +568,8 @@ $comboBox.Add_SelectionChanged({
 #[void]$stackPanel.Children.Add($checkBox3)
 #[void]$stackPanel.Children.Add($checkBox4)
 [void]$stackPanel.Children.Add($comboBox)
+[void]$stackPanel.Children.Add($textBox)
+[void]$stackPanel.Children.Add($button)
 
 
 # Create the TreeView and set properties
