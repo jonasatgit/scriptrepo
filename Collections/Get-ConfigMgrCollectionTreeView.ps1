@@ -632,14 +632,25 @@ $dataGrid.Add_SelectionChanged({
         }
         'QueryRules'
         {
-            $global:selectedCollection = $global:selectedCollection | Get-CimInstance 
-            [array]$properties = $global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null} | ForEach-Object {
-                    [PSCustomObject]@{
-                    RuleName = $_.RuleName
-                    Query = $_.QueryExpression
-                    }
+            $global:selectedCollection = $global:selectedCollection | Get-CimInstance
+            if ($global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null})
+            {
+                [array]$properties = $global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null} | ForEach-Object {
+                        [PSCustomObject]@{
+                        RuleName = $_.RuleName
+                        Query = $_.QueryExpression
+                        }
             
+                }
             }
+            else
+            {
+                [array]$properties += [PSCustomObject]@{
+                        RuleName = 'No query rules set'
+                        Query = ''
+                        }
+            }
+
         }
         'ServiceWindowsCount'
         {
