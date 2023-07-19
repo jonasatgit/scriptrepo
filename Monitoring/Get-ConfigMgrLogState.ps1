@@ -911,7 +911,7 @@ else
                 if (-NOT(Test-Path -Path $logEntryItem.LogPath))
                 {
                     $tmpLogEntryObject.Status = "Error"
-                    $tmpLogEntryObject.Description = "Path not found"
+                    $tmpLogEntryObject.Description = 'Path not found: {0}' -f $logEntryItem.LogPath
                     [void]$logEntrySearchResultList.Add($tmpLogEntryObject)
                     Write-Verbose "$("{0,-35}-> Path not found: {1}" -f  $($logEntryItem.Name), $($logEntryItem.LogPath))" 
                 }
