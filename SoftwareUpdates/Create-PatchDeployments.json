@@ -38,7 +38,7 @@
       "NewCMSoftwareUpdateDeploymentProtectedType" : "RemoteDistributionPoint -> to configure distribution point download fallback behavior for neighbor boundary groups",
       "NewCMSoftwareUpdateDeploymentUnprotectedType" : "UnprotectedDistributionPoint -> to configure distribution point download fallback behavior for default site boundary group",
       "NewCMSoftwareUpdateDeploymentUseBranchCache" : "true or false without quotes -> true to enbale use of branch cache for clients",
-      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : "true or false without quotes -> true will download updates from the Internet if no DP has been found",
+      "NewCMSoftwareUpdateDeploymentDownloadFromMicrosoftUpdate" : "true or false without quotes -> true will download updates from the Internet if no DP has been found"
     }
   ],
   "DeleteUpdateGroups": 
