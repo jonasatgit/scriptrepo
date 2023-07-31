@@ -79,7 +79,7 @@ param
 
 
 #region PARAMETERS 
-[string]$ScriptVersion = "20210512"
+[string]$ScriptVersion = "20230731"
 [string]$global:Component = $MyInvocation.MyCommand
 [string]$global:LogFile = "$($PSScriptRoot)\$($global:Component).Log"
 [bool]$global:ErrorOutput = $false
@@ -652,6 +652,19 @@ function New-SCCMSoftwareUpdateDeployment
                     {
                         Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" already deployed. Will skip group!" -Severity Warning -Component $comp 
                     }
+                    elseif (($UpdateGroupObjectsSorted[0].NumberOfUpdates -eq 0) -or ($UpdateGroupObjectsSorted[0].IsProvisioned -eq $false))
+                    {
+                        Write-ScriptLog -Message "            Update group either has no updates or some or all updates are not yet downloaded. Skipping group!" -Severity Error -Component $comp
+                        # Only fail with error if the group is not an ARCHIVE group
+                        if ($UpdateGroupObjectsSorted[0].LocalizedDisplayName -ilike "ARCHIVE*")
+                        {
+                            Write-ScriptLog -Message "            Group is an ARCHIVE group. Will not fail script!" -Severity Warning -Component $comp
+                        }
+                        else
+                        {
+                            $global:ErrorOutput = $true
+                        }
+                    }
                     else
                     {
                         $tmpUpdGroupObj = New-Object psobject | Select-Object UpdateGroupCIID, LocalizedDisplayName, DeploymentName, DeploymentDescription
@@ -1014,7 +1027,26 @@ function Archive-ObsoleteUpdateGroups
                                 Write-ScriptLog -Message "        No archive updategroup found. Need to create one: `"$($ArchiveGroupName)`"" -Component $comp
                                 try
                                 {
-                                    $null = $updatesOfGroup | New-CMSoftwareUpdateGroup -Name "$ArchiveGroupName" -ErrorAction Stop
+                                    if($ArchiveGroupName -match "\.")
+                                    {
+                                        # Avoid New-CMSoftwareUpdateGroup bug with names containing "."
+                                        # Create random name to be sure to not have any problematic characters
+                                        $ArchiveGroupNameTemp = "{0}-{1}" -f "TempName", (Get-Random)
+                                    }
+                                    else
+                                    {
+                                        $ArchiveGroupNameTemp = $ArchiveGroupName
+                                    }
+
+                                    # add just one update first to avoid creation errors
+                                    $newGroupCreated =  New-CMSoftwareUpdateGroup -Name ($ArchiveGroupNameTemp) -SoftwareUpdateId ($updatesOfGroup[0].CI_ID) -ErrorAction Stop
+                                    Start-Sleep -Seconds 4
+                                    $null = $updatesOfGroup | Add-CMSoftwareUpdateToGroup -SoftwareUpdateGroupId ($newGroupCreated.CI_ID) -ErrorAction Stop
+
+                                    if($ArchiveGroupName -match "\.")
+                                    {
+                                        $newGroupCreated | Set-CMSoftwareUpdateGroup -NewName ($ArchiveGroupName)
+                                    }
                                 }
                                 Catch
                                 {
@@ -1097,8 +1129,10 @@ Function Stop-ScriptExec
 #region
 <#
 .Synopsis
-    Will try to open a logfile with cmtrace .DESCRIPTION
-   Will try to open a logfile with cmtrace .EXAMPLE
+    Will try to open a logfile with cmtrace 
+.DESCRIPTION
+   Will try to open a logfile with cmtrace 
+.EXAMPLE
    Open-LogWithCmTrace -$FilePath 'C:\Temp\outfile.log'
 #>
 Function Open-LogWithCmTrace
