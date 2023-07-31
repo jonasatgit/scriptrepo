@@ -632,7 +632,7 @@ function New-SCCMSoftwareUpdateDeployment
                 # used get-wmiobject to speed up the process, because Get-CMSoftwareUpdateGroup will also load lazy properties
                 try
                 {
-                    [array]$UpdateGroupObjects = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "Select CI_ID, LocalizedDisplayName, DateCreated from SMS_AuthorizationList where LocalizedDisplayName like '$($UpdateGroup)%'" -ErrorAction Stop
+                    [array]$UpdateGroupObjects = Get-WmiObject -Namespace "root\sms\site_$($SiteCode)" -ComputerName ($ProviderMachineName) -Query "Select CI_ID, LocalizedDisplayName, DateCreated, NumberOfUpdates, IsProvisioned from SMS_AuthorizationList where LocalizedDisplayName like '$($UpdateGroup)%'" -ErrorAction Stop
                 }
                 Catch
                 {
@@ -641,6 +641,7 @@ function New-SCCMSoftwareUpdateDeployment
                     $global:ErrorOutput = $true  
                 }                    
 
+                $skip = $false
                 if ($UpdateGroupObjects)
                 {
                     [array]$UpdateGroupObjectsSorted = $UpdateGroupObjects | Sort-Object DateCreated -Descending 
@@ -651,8 +652,10 @@ function New-SCCMSoftwareUpdateDeployment
                     if ($UpdateGroupObjectsSorted[0].CI_ID -in $updateGroupAssignmentPerCollection.AssignedUpdateGroup)
                     {
                         Write-ScriptLog -Message "            `"$($UpdateGroupObjectsSorted[0].LocalizedDisplayName)`" already deployed. Will skip group!" -Severity Warning -Component $comp 
+                        $skip = $true
                     }
-                    elseif (($UpdateGroupObjectsSorted[0].NumberOfUpdates -eq 0) -or ($UpdateGroupObjectsSorted[0].IsProvisioned -eq $false))
+
+                    if (($UpdateGroupObjectsSorted[0].NumberOfUpdates -eq 0) -or ($UpdateGroupObjectsSorted[0].IsProvisioned -eq $false))
                     {
                         Write-ScriptLog -Message "            Update group either has no updates or some or all updates are not yet downloaded. Skipping group!" -Severity Error -Component $comp
                         # Only fail with error if the group is not an ARCHIVE group
@@ -664,8 +667,10 @@ function New-SCCMSoftwareUpdateDeployment
                         {
                             $global:ErrorOutput = $true
                         }
+                        $skip = $true
                     }
-                    else
+                    
+                    if(-NOT ($skip)) 
                     {
                         $tmpUpdGroupObj = New-Object psobject | Select-Object UpdateGroupCIID, LocalizedDisplayName, DeploymentName, DeploymentDescription
                         # deploy using the first group in the list
@@ -1009,6 +1014,7 @@ function Archive-ObsoleteUpdateGroups
                             if($ArchiveUpdateGroupObject)
                             {
                                 Write-ScriptLog -Message "        Found archive updategroup: `"$($ArchiveGroupName)`"" -Component $comp
+                                Write-ScriptLog -Message "        Will add $($updatesOfGroup.Count) updates to it..." -Component $comp
                                 try
                                 {
                                     $null = $updatesOfGroup | Add-CMSoftwareUpdateToGroup -SoftwareUpdateGroupId ($ArchiveUpdateGroupObject.CI_ID) -ErrorAction Stop
@@ -1118,7 +1124,7 @@ Function Stop-ScriptExec
         Set-Location -Path $global:lastLocation -ErrorAction SilentlyContinue
     }
 
-    Write-ScriptLog -Message "Script runtime: $($stopwatch.Elapsed.TotalMinutes) total minutes"
+    Write-ScriptLog -Message "Script runtime: $([math]::Round($stopwatch.Elapsed.TotalMinutes,2)) total minutes"
     Write-ScriptLog -Message "Script end!"
     Write-ScriptLog -Message "Will stop script with exitcode: $exitCode"
     exit $exitCode 
@@ -1417,7 +1423,6 @@ try
         {
             Write-ScriptLog -Message "No collection selected. Will stop script" -Severity Warning
             $stopwatch.Stop()
-            Write-ScriptLog -Message "Script runtime: $($stopwatch.Elapsed.TotalMinutes) total minutes"
             Stop-ScriptExec -exitCode 0 
         }
     }
