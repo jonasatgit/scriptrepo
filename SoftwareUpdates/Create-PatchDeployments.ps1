@@ -840,6 +840,12 @@ function Delete-ObsoleteUpdateGroups
     [int]$MinUpdateGroupsToKeep = $deleteUpdateGroupSettings.MinUpdateGroupsToKeep
     [int]$maxUpdateGroupCreationDays = $deleteUpdateGroupSettings.MaxUpdateGroupCreationDays
 
+    if (-NOT($MinUpdateGroupsToKeep) -or $MinUpdateGroupsToKeep -eq 0)
+    {
+        $MinUpdateGroupsToKeep = 3
+        Write-ScriptLog -Message "MinUpdateGroupsToKeep not set or set to zero. Setting to 3 to prevent deletion of all groups" -Component $comp
+    }
+
     Write-ScriptLog -Message "DELETE UpdateGroups:"-Component $comp
     # pick latest update group
     foreach ($UpdateGroup in $DeleteUpdateGroupSettings.DeleteUpdateGroupList)
@@ -942,6 +948,13 @@ function Archive-ObsoleteUpdateGroups
 
     [int]$MinUpdateGroupsToKeep = $ArchiveUpdateGroupSettings.MinUpdateGroupsToKeep
     [int]$maxUpdateGroupCreationDays = $ArchiveUpdateGroupSettings.MaxUpdateGroupCreationDays
+    
+    if (-NOT($MinUpdateGroupsToKeep) -or $MinUpdateGroupsToKeep -eq 0)
+    {
+        $MinUpdateGroupsToKeep = 3
+        Write-ScriptLog -Message "MinUpdateGroupsToKeep not set or set to zero. Setting to 3 to prevent deletion of all groups" -Component $comp
+    }
+
     Write-ScriptLog -Message "ARCHIVE UpdateGroups:" -Component $comp
     
     # pick latest update group
