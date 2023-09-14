@@ -38,8 +38,9 @@
 .PARAMETER MinValidDays
     Value in days before certificate expiration
 
-.PARAMETER CacheState
-    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+.PARAMETER NoCacheState
+    Switch parameter. If set the script will NOT output its current state to a JSON file.
+    If not set the script will always cache its state to a JSON file.
     The file will be stored next to the script or a path set via parameter "CachePath"
     The filename will look like this: [name-of-script.ps1]_[Name of user running the script]_CACHE.json
 
@@ -50,16 +51,16 @@
     Name of a PRTG value lookup file. 
 
 .PARAMETER WriteLog
-    If true, the script will write a log. Helpful during testing. Default value is $false. 
+    Switch parameter If set, the script will write a log. Helpful during testing. 
 
 .PARAMETER LogPath
     Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
 
-.PARAMETER OutputScriptstate
-    If true, the script will output its overall state as an extra object. $true is default. 
+.PARAMETER DontOutputScriptstate
+    If set the script will NOT output its overall state as an extra object. Otherwise the script will output its state. 
 
 .PARAMETER TestMode
-    If true, the script will use the value of parameter -OutputTestData to output dummy data objects
+    If set, the script will use the value of parameter -OutputTestData to output dummy data objects
 
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
@@ -80,10 +81,10 @@
     Get-ConfigMgrCertificateState.ps1 -OutputMode HTMLMail
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -WriteLog $true
+    Get-ConfigMgrCertificateState.ps1 -WriteLog
 
 .EXAMPLE
-    Get-ConfigMgrCertificateState.ps1 -WriteLog $true -LogPath "C:\Temp"
+    Get-ConfigMgrCertificateState.ps1 -WriteLog -LogPath "C:\Temp"
 
 .EXAMPLE
     Get-ConfigMgrCertificateState.ps1 -TemplateSearchString '*Custom*ConfigMgr*Certificate*' -MinValidDays 30
@@ -110,19 +111,19 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored certificates. This email is sent every day!',
     [Parameter(Mandatory=$false)]
-    [bool]$CacheState = $true,
+    [switch]$NoCacheState,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
     [string]$PrtgLookupFileName,
     [Parameter(Mandatory=$false)]
-    [bool]$WriteLog = $false,
+    [switch]$WriteLog,
     [Parameter(Mandatory=$false)]
     [string]$LogPath,    
     [Parameter(Mandatory=$false)]
-    [bool]$OutputScriptstate = $true,
+    [switch]$DontOutputScriptstate,
     [Parameter(Mandatory=$false)]
-    [bool]$TestMode = $false,
+    [switch]$TestMode,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData=0
@@ -675,15 +676,15 @@ else
  
  
 # Adding overall script state to list
-if ($OutputScriptstate)
+if (-Not ($DontOutputScriptstate))
 {
     [void]$resultObject.Add($tmpScriptStateObj)
 }
 #endregion
  
 #region cache state
-# In case we need to know witch components are already in error state
-if ($CacheState)
+# In case we need to know wich components are already in error state
+if (-NOT ($NoCacheState))
 {
     if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
     # we need to store one cache file per user running the script to avoid 

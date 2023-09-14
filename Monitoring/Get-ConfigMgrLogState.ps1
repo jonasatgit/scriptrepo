@@ -58,8 +58,9 @@
     a simple PowerShell objekt PSObject or via HTMLMail.
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
-.PARAMETER CacheState
-    Boolean parameter. If set to $true, the script will output its current state to a JSON file.
+.PARAMETER NoCacheState
+    Switch parameter. If set the script will NOT output its current state to a JSON file.
+    If not set the script will always cache its state to a JSON file.
     The file will be stored next to the script or a path set via parameter "CachePath"
     The filename will look like this: [name-of-script.ps1]_[Name of user running the script]_CACHE.json
 
@@ -74,25 +75,25 @@
     Name of a PRTG value lookup file. 
 
 .PARAMETER InScriptConfigFile
-    Default value is $true and means the config file is part of this script. Embedded in a here-String as $logEntryListJSON.
+    Is set the embedded config in a here-String as $referenceDataJSON will be used instead of an external file
     This can be helpful if the script should not have an external config file.
-    If set to $false the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
+    If not set the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
     path specified via parameter -ConfigFilePath
 
 .PARAMETER ConfigFilePath
     Path to the configfile called Get-ConfigMgrInboxFileCount.ps1.json. JSON can be created using the content of the in script variable $logEntryListJSON
 
 .PARAMETER WriteLog
-    If true, the script will write a log. Helpful during testing. Default value is $false. 
+    Switch parameter If set, the script will write a log. Helpful during testing. 
 
 .PARAMETER LogPath
     Path of the log file if parameter -WriteLog $true. The script will create the logfile next to the script if no path specified.
 
-.PARAMETER OutputScriptstate
-    If true, the script will output its overall state as an extra object. $true is default. 
+.PARAMETER DontOutputScriptstate
+    If set the script will NOT output its overall state as an extra object. Otherwise the script will output its state. 
 
 .PARAMETER TestMode
-    If true, the script will use the value of parameter -OutputTestData to output dummy data objects
+    If set, the script will use the value of parameter -OutputTestData to output dummy data objects
 
 .PARAMETER OutputTestData
     NOT USED at the momment. Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
@@ -107,10 +108,10 @@
     .\Get-ConfigMgrLogState -ProbeTime (Get-Date('2022-06-14 01:00'))
 
 .EXAMPLE
-    .\Get-ConfigMgrLogState -WriteLog $true
+    .\Get-ConfigMgrLogState -WriteLog
 
 .EXAMPLE
-    .\Get-ConfigMgrLogState -WriteLog $true -LogPath "C:\Temp"
+    .\Get-ConfigMgrLogState -WriteLog-LogPath "C:\Temp"
 
 .INPUTS
    None
@@ -133,23 +134,23 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about monitored logfiles. This email is sent every day!',
     [Parameter(Mandatory=$false)]
-    [bool]$CacheState = $true,
+    [switch]$NoCacheState,
     [Parameter(Mandatory=$false)]
     [string]$CachePath,
     [Parameter(Mandatory=$false)]
     [string]$PrtgLookupFileName,
     [Parameter(Mandatory=$false)]
-    [bool]$InScriptConfigFile = $true,  
+    [switch]$InScriptConfigFile,  
     [Parameter(Mandatory=$false)]
     [string]$ConfigFilePath,     
     [Parameter(Mandatory=$false)]
-    [bool]$WriteLog = $false,
+    [switch]$WriteLog,
     [Parameter(Mandatory=$false)]
     [string]$LogPath,
     [Parameter(Mandatory=$false)]
-    [bool]$OutputScriptstate = $true,
+    [switch]$DontOutputScriptstate,
     [Parameter(Mandatory=$false)]
-    [bool]$TestMode = $false,
+    [switch]$TestMode,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
     [int]$OutputTestData=0
@@ -1121,7 +1122,7 @@ else
 #region limit outputlist for some output modes
 $resultObject = New-Object System.Collections.ArrayList
 # Adding overall script output
-if ($OutputScriptstate)
+if (-Not ($DontOutputScriptstate))
 {
     [void]$logEntrySearchResultList.Add($tmpScriptStateObj)
 }
@@ -1148,9 +1149,9 @@ foreach ($groupItem in $logEntrySearchResultListGroups)
 
 
 #region cache state
-# In case we need to know witch logs are already in error state
+# In case we need to know wich logs are already in error state
 # Not really required but can be helpful in case a logentry was deleted from the definition file 
-if ($CacheState)
+if (-NOT ($NoCacheState))
 {
     if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
     # we need to store one cache file per user running the script to avoid 

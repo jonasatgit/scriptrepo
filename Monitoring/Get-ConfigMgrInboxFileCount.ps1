@@ -43,15 +43,15 @@
     Name of a PRTG value lookup file. 
 
 .PARAMETER WriteLog
-    Switch parameter If set, the script will write a log. Helpful during testing. Default value is $false. 
+    Switch parameter If set, the script will write a log. Helpful during testing. 
 
 .PARAMETER LogPath
     Path of the log file if parameter -WriteLog is set. The script will create the logfile next to the script if no path was specified.
 
 .PARAMETER InScriptConfigFile
-    Default value is $true and means the config file is part of this script. Embedded in a here-String as $referenceDataJSON.
+    Is set the embedded config in a here-String as $referenceDataJSON will be used instead of an external file
     This can be helpful if the script should not have an external config file.
-    If set to $false the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
+    If not set the script will look for a file called Get-ConfigMgrInboxFileCount.ps1.json either next to this script or in the 
     path specified via parameter -ConfigFilePath
 
 .PARAMETER ConfigFilePath
@@ -61,7 +61,7 @@
     If set the script will NOT output its overall state as an extra object. Otherwise the script will output its state. 
 
 .PARAMETER TestMode
-    If setr, the script will use the value of parameter -OutputTestData to output dummy data objects
+    If set, the script will use the value of parameter -OutputTestData to output dummy data objects
 
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
@@ -785,7 +785,7 @@ if (-Not ($DontOutputScriptstate))
 #endregion
 
 #region cache state
-# In case we need to know witch components are already in error state
+# In case we need to know wich components are already in error state
 if (-NOT ($NoCacheState))
 {
     if($WriteLog){Write-CMTraceLog -Message "Script will cache alert states" -Component ($MyInvocation.MyCommand)}
