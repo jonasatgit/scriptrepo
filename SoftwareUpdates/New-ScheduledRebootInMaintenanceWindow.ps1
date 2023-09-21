@@ -10,15 +10,15 @@
 # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
 # if Microsoft has been advised of the possibility of such damages.
 #************************************************************************************************************
-$scriptVersion = '20200212'
+$scriptVersion = '20230921'
 #INFO: Always also use powershell 2.0 commands, in case powershell 2.0 is still in use
 #INFO: The script can be used whtin a baseline with a recurring schedule or as a script in ConfigMgr directly
 #INFO: Main purpose is to ensure 100% patch compliance
 # Source: https://github.com/jonasatgit/scriptrepo
 
 [int]$minutesToRestartBeforeMaintenanceEndTime = 10 # should be at least 4 minutes, otherwise the randomization might not work as expected
-[string]$scheduledTaskName = 'SCCM_Custom_Reboot' # name of the scheduled task
-[string]$taskDescription = "Will reboot the system around 10 minutes before the SCCM service window ends, if a reboot is still pending and the service window still available."
+[string]$scheduledTaskName = 'ConfigMgr_Custom_Reboot' # name of the scheduled task
+[string]$taskDescription = "Will reboot the system around 10 minutes before the ConfigMgr service window ends, if a reboot is still pending and the service window still available."
 [string]$scheduledTaskScriptPath = "$env:windir\ccmtools\Schedule-RebootInMaintenanceWindow.ps1" # name and path of the script the scheduled task will run. Will be the content of $scheduledTaskScript
 [string]$global:logPath = "$scheduledTaskScriptPath.log"
 
@@ -96,7 +96,7 @@ function Test-PendingReboot
         $rebootStatus = ([wmiclass]"root\ccm\clientsdk:CCM_ClientUtilities").DetermineIfRebootPending()
         if(($rebootStatus) -and ($rebootStatus.RebootPending -or $rebootStatus.IsHardRebootPending)) 
         {
-            [void]$rebootTypes.Add("SCCM")
+            [void]$rebootTypes.Add("ConfigMgr")
         }
     }catch{}
     if($rebootTypes)
@@ -147,11 +147,11 @@ if(($pendingReboot -or ($lastRebootDays -gt $maxRebootDays)) -and ($serviceWindo
     # create eventlog entry with description
     if(-NOT($pendingReboot))
     {
-        $rebootComment = "SCCM custom reboot. Reason: Too many days online! LastRebootDays: $($lastRebootDays)"   
+        $rebootComment = "ConfigMgr custom reboot. Reason: Too many days online! LastRebootDays: $($lastRebootDays)"   
     }
     else
     {
-        $rebootComment = "SCCM custom reboot. Reason: $($pendingReboot) LastRebootDays: $($lastRebootDays)"
+        $rebootComment = "ConfigMgr custom reboot. Reason: $($pendingReboot) LastRebootDays: $($lastRebootDays)"
     }
     Log-Line $rebootComment    
     Start-Process -FilePath "shutdown.exe" -ArgumentList  "/f /r /t 20 /d p:2:18 /c `"$($rebootComment)`""
