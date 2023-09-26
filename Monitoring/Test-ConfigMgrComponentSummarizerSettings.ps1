@@ -15,6 +15,8 @@
 .Synopsis
    Script to test the current ConfigMgr component summarizer settings
    Designed to run as a ConfigMgr config item on a primary site server
+
+   Soure: https://github.com/jonasatgit/scriptrepo
     
 .DESCRIPTION
 
@@ -144,7 +146,13 @@ $cimSessionOption = New-CimSessionOption -Protocol Dcom
 
 $cimSession = New-CimSession -ComputerName $env:COMPUTERNAME -SessionOption $cimSessionOption
 
-[array]$ProviderLocation = Get-CimInstance -Namespace "root\sms" -Query "SELECT * FROM SMS_ProviderLocation where ProviderForLocalSite = True" -ErrorAction SilentlyContinue
+$paramSplat = @{
+    CimSession = $cimSession
+    Namespace = "root\sms"
+    Query = "SELECT * FROM SMS_ProviderLocation where ProviderForLocalSite = True"
+}
+
+[array]$ProviderLocation = Get-CimInstance @paramSplat -ErrorAction SilentlyContinue
 
 if ($ProviderLocation)
 {
@@ -175,7 +183,14 @@ else
 }
 
 $outList = new-object System.Collections.ArrayList
-$sciComponent = Get-CimInstance -Namespace "root\sms\site_$siteCode" -Query "SELECT * FROM SMS_SCI_Component WHERE SiteCode='$($siteCode)' AND FileType=2 AND ComponentName IN ('SMS_COMPONENT_STATUS_SUMMARIZER')" -ErrorAction SilentlyContinue
+
+$paramSplat = @{
+    CimSession = $cimSession
+    Namespace = "root\sms\site_$siteCode"
+    Query = "SELECT * FROM SMS_SCI_Component WHERE SiteCode='$($siteCode)' AND FileType=2 AND ComponentName IN ('SMS_COMPONENT_STATUS_SUMMARIZER')"
+}
+
+$sciComponent = Get-CimInstance @paramSplat -ErrorAction SilentlyContinue
 if ($sciComponent)
 {
     $componentThresholds = $sciComponent.PropLists.Where({$_.PropertyListName -eq 'Component Thresholds'})
@@ -210,6 +225,11 @@ if ($sciComponent)
         }
     }
     
+}
+else 
+{
+    Write-Warning 'Not able to get wmi class SMS_SCI_Component'
+    Exit 1
 }
 $cimSession | Remove-CimSession
 
