@@ -233,11 +233,14 @@ else
 }
 $cimSession | Remove-CimSession
 
-if ($outList)
+if (-NOT ($ExportCurrentConfig))
 {
-    $outList
-}
-else
-{
-    Write-Output 'Compliant'
+    if ($outList)
+    {
+        $outList
+    }
+    else
+    {
+        Write-Output 'Compliant'
+    }
 }
