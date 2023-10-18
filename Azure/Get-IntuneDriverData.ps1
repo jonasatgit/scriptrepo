@@ -20,8 +20,20 @@
     Script to get devices and drivers from Windows Update Deployment Servive
     Source: https://github.com/jonasatgit/scriptrepo
 
-.PARAMETER WebhookData
-    
+.PARAMETER UseProxyForModuleInstall
+    Use proxy to connect to internet for module installation. If not specified, no proxy is used.
+
+.PARAMETER ProxyAddress
+    Proxy address to use with the port seperated by : (e.g. proxy.contoso.com:8080)
+
+.PARAMETER ProxyCredential
+    If proxy requires authentication, use this parameter to provide credentials get by Get-Credential.
+
+.PARAMETER ClienID
+    Entrada ClientID to use for authentication. If not specified, the script will use the default client ID of Microsoft Graph Powershell
+
+.PARAMETER TenantID
+    Entrada TenantID to use for authentication.
 
 .EXAMPLE
     
@@ -30,9 +42,24 @@
    
 
 .OUTPUTS
-   
+    Out-GridView with all drivers and corresponding devices
     
 #>
+
+param
+(
+    [CmdletBinding()]
+    [Parameter(Mandatory = $false)]
+    [switch]$UseProxyForModuleInstall,
+    [Parameter(Mandatory = $false, ParameterSetName = 'Proxy')]
+    [string]$ProxyAddress,
+    [Parameter(Mandatory = $false, ParameterSetName = 'Proxy')]
+    [pscredential]$ProxyCredential,
+    [Parameter(Mandatory = $false, ParameterSetName = 'App')]
+    [string]$ClientID,
+    [Parameter(Mandatory = $true, ParameterSetName = 'App')]
+    [string]$TenantID
+)
 
 
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -58,8 +85,25 @@ $nuget = Get-PackageProvider -ErrorAction Ignore | Where-Object {$_.Name -ieq 'n
 if (-Not($nuget))
 {
     # Changed to MSI installer as the old way could not be enforced and needs to be approved by the user
-    # Install-PackageProvider -Name NuGet -MinimumVersion $minimumVersion -Force
-    $null = Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies -MinimumVersion $minimumVersion -Force
+    # Install-PackageProvider -Name NuGet -MinimumVersion $minimumVersion -Force 
+    if ($UseProxyForModuleInstall)
+    {
+        if ($ProxyCredential)
+        {
+            Write-Host 'Need to install NuGet provider first with proxy and credential' -ForegroundColor Green
+            $null = Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies -MinimumVersion $minimumVersion -Force -Proxy $ProxyAddress -ProxyCredential $ProxyCredential
+        }
+        else 
+        {
+            Write-Host 'Need to install NuGet provider first with proxy' -ForegroundColor Green
+            $null = Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies -MinimumVersion $minimumVersion -Force -Proxy $ProxyAddress
+        }                
+    }
+    else 
+    {
+        Write-Host 'Need to install NuGet provider first' -ForegroundColor Green
+        $null = Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies -MinimumVersion $minimumVersion -Force
+    }
 }
 
 
@@ -72,22 +116,59 @@ foreach ($module in $listOfRequiredModules.GetEnumerator())
         #Write-Host "Module $($module.Name) not installed yet. Will be installed"
         if (-NOT([string]::IsNullOrEmpty($module.Value)))
         {
-            Install-Module $module.Name -Force -RequiredVersion $module.Value
+            if ($UseProxyForModuleInstall)
+            {
+                if ($ProxyCredential)
+                {
+                    Write-Host "Need to install module $($module.Value) first with proxy and proxy credentials" -ForegroundColor Green
+                    Install-Module $module.Name -Force -RequiredVersion $module.Value -Proxy $ProxyAddress -ProxyCredential $ProxyCredential
+                }
+                else 
+                {
+                    Write-Host "Need to install module $($module.Value) first with proxy" -ForegroundColor Green
+                    Install-Module $module.Name -Force -RequiredVersion $module.Value -Proxy $ProxyAddress
+                }                
+            }
+            else 
+            {
+                Write-Host "Need to install module $($module.Value) first" -ForegroundColor Green
+                Install-Module $module.Name -Force -RequiredVersion $module.Value
+            }
         }
         else 
         {
+            Write-Host "Need to install module $($module.Value) first" -ForegroundColor Green
             Install-Module $module.Name -Force
         }               
     }     
 }
 
+if ($ClientID)
+{
+    Write-Host "Connect to MIcrosoft Graph with own client ID" -ForegroundColor Green
+    Connect-MgGraph -ClientId $ClientID -TenantId $TenantID -Scopes $listOfRequiredScopes
+}
+else 
+{
+    Write-Host "Connect to MIcrosoft Graph" -ForegroundColor Green
+    Connect-MgGraph -Scopes $listOfRequiredScopes
+}
 
-Connect-MgGraph -Scopes $listOfRequiredScopes
-
+if (-NOT (Get-MgContext))
+{
+    Write-Host 'No Graph connection. Exit script' -ForegroundColor Green
+    Exit 0
+}
+else 
+{
+    Write-Host 'Current Graph context:' -ForegroundColor Green
+    Get-MgContext
+}
 
 # get all Intune devices, but limit output to the azureADDeviceID and the name to be able to generate hashtable for lookup
 # ONLY top 999 devices are returned, so if you have more than 999 devices, you need to change the $top parameter or use paging
-$uri = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=azureADDeviceId,deviceName&$top=999'
+Write-Host "Getting azureADDeviceId and deviceName of all managed Intune devices" -ForegroundColor Green
+$uri = 'https://graph.microsoft.com/{0}/deviceManagement/managedDevices?$select=azureADDeviceId,deviceName&$top=999' -f $graphApiVersion
 $managedDevices = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType psobject
 $deviceLookupTable = @{}
 $managedDevices.value | ForEach-Object {
@@ -111,16 +192,19 @@ if (-NOT ([string]::IsNullOrEmpty($managedDevices.'@odata.nextLink')))
 $out = New-Object System.Collections.ArrayList
 
 # get all deployment audiences
-$uri = 'https://graph.microsoft.com/beta/admin/windows/updates/deploymentaudiences'
+Write-Host "Getting updates deployment service deploymentaudiences" -ForegroundColor Green
+$uri = 'https://graph.microsoft.com/{0}/admin/windows/updates/deploymentaudiences' -f $graphApiVersion
 $updatesDeploymentaudiences = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
 
 # loop through all deployment audiences and get applicable content if any available
+Write-Host "Getting applicableContent of deploymentaudiences" -ForegroundColor Green
 $updatesDeploymentaudiences.value | ForEach-Object {
-    $uri = 'https://graph.microsoft.com/beta/admin/windows/updates/deploymentaudiences/{0}/applicableContent' -f $_.id 
+    $uri = 'https://graph.microsoft.com/{0}/admin/windows/updates/deploymentaudiences/{1}/applicableContent' -f $graphApiVersion, $_.id 
     $audienceID = $_.id
     $applicableContent = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
     if($applicableContent.value)
     {
+        Write-Host "Getting applicableContent of audience with ID $audienceID" -ForegroundColor Green
         foreach($item in $applicableContent.value)
         {
             $tmpObj = [PSCustomObject]@{
