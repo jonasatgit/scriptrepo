@@ -49,8 +49,7 @@
 .PARAMETER ProviderMachineName
     Name of the SMS Provider. Will use local system if nothing has been set.
 .PARAMETER Domain
-    Domain of administrative user with "\" at the end.
-    Like "CONTOSO\" if the domain is contoso.local for example
+    Domain of administrative user.
     Should be part of the config file, but is a parameter at the moment. 
 #>
 param
@@ -63,6 +62,11 @@ param
     [string]$Domain
 )
 
+# Test for training slash
+if ($Domain -inotmatch '.\\')
+{
+    $Domain = "$($Domain)\"
+}
 
 $sourcefolder = $PSCommandPath | Split-Path -Parent
 
@@ -108,7 +112,7 @@ else
         Set-Location "$($SiteCode):\" @initParams
 
         # get all built-in roles, all scopes and all Users first
-        Write-host "$(get-date -Format u) Getting AdministrativeUser, Custom Scopes and Roles from SCCM..." -ForegroundColor Green
+        Write-host "$(get-date -Format u) Getting AdministrativeUser, Custom Scopes and Roles from ConfigMgr..." -ForegroundColor Green
         [array]$existingAdministrativeUsers = Get-CMAdministrativeUser
         [array]$existingRoles = Get-CMSecurityRole | Select-Object RoleName
         # create simple array
@@ -136,7 +140,7 @@ else
             $domainAndUser = "{0}{1}" -f $Domain, $adUserOrGroup
             if ($existingAdministrativeUsers.where({$_.LogonName -eq "$domainAndUser"}))
             {
-                Write-host "$(get-date -Format u)         User or Group: `"$adUserOrGroup`" exists in SCCM already. Delete first." -ForegroundColor Yellow
+                Write-host "$(get-date -Format u)         User or Group: `"$adUserOrGroup`" exists in ConfigMgr already. Delete first." -ForegroundColor Yellow
                 $allChecksPassed = $false            
             }
 
@@ -232,7 +236,7 @@ else
             ####### Create administrative user
             if ($allChecksPassed)
             {
-                Write-host "$(get-date -Format u)     Add new administraive user: `"$($administrativeUser.AdministrativeUser)`"" -ForegroundColor Green
+                Write-host "$(get-date -Format u)     Add new administrative user: `"$($administrativeUser.AdministrativeUser)`"" -ForegroundColor Green
                 $newUser = $null
                 $newUser = New-CMAdministrativeUser -Name "$($Domain)$($administrativeUser.AdministrativeUser)" -CollectionName ($administrativeUser.CollectionList) -RoleName ($administrativeUser.RoleList) -SecurityScopeName ($administrativeUser.ScopeList)
                 if ($newUser)
@@ -253,10 +257,7 @@ else
     }
 
     Write-host "$(get-date -Format u)     Don't forget to set the correct scopes on already existing items such as: Distribution Points and the Site itself" -ForegroundColor Cyan
-    Write-host "$(get-date -Format u)     Each folder a Collection or App etc is part of" -ForegroundColor Cyan
-    Write-host "$(get-date -Format u)     Distribution Points" -ForegroundColor Cyan
-    Write-host "$(get-date -Format u)     The Site itself" -ForegroundColor Cyan
-
+    Write-host "$(get-date -Format u)     And each folder a Collection or App etc is part of" -ForegroundColor Cyan
 }
 
 
