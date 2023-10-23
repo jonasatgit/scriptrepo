@@ -145,12 +145,12 @@ foreach ($module in $listOfRequiredModules.GetEnumerator())
 
 if ($ClientID)
 {
-    Write-Host "Connect to MIcrosoft Graph with own client ID" -ForegroundColor Green
+    Write-Host "Connect to Microsoft Graph with own client ID" -ForegroundColor Green
     Connect-MgGraph -ClientId $ClientID -TenantId $TenantID -Scopes $listOfRequiredScopes
 }
 else 
 {
-    Write-Host "Connect to MIcrosoft Graph" -ForegroundColor Green
+    Write-Host "Connect to Microsoft Graph" -ForegroundColor Green
     Connect-MgGraph -Scopes $listOfRequiredScopes
 }
 
