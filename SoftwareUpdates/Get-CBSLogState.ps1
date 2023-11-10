@@ -37,12 +37,13 @@
 $tempExtractionFolderPath = "$($env:SystemRoot)\Temp"
 $cbsLogsList = Get-ChildItem -Path "$($env:SystemRoot)\Logs\CBS"
 
-$resultString = ''
+$searchString = '(Mark store corruption flag because of package)|(Installation fails with store corruption)|(CBS Failed to bulk stage deployment manifest)|(0x800f0831)|(0x80073701)|(ERROR_SXS_ASSEMBLY_MISSING)|(CBS_E_STORE_CORRUPTION)'
+$resultStringList = New-Object System.Collections.ArrayList
 $extractionFolderName = 'CAB-{0}' -f (Get-Date -Format 'yyyyMMdd-hhmm')
 $tempExtractionFolder = '{0}\{1}' -f $tempExtractionFolderPath, $extractionFolderName
 foreach ($cbsLogFile in $cbsLogsList)
 {
-    if (-NOT ($resultString))
+    if (-NOT ($resultStringList))
     {
         # Work through the files until we find a corrupt package
         switch ($cbsLogFile.Extension) 
@@ -50,18 +51,38 @@ foreach ($cbsLogFile in $cbsLogsList)
 
             '.log' 
             {
-                $Matches = $null
-                [array]$searchResult = $cbsLogFile | Select-String -Pattern '(Mark store corruption flag because of package)|(Installation fails with store corruption)'
+                
+                [array]$searchResult = $cbsLogFile | Select-String -Pattern $searchString
                 if ($searchResult)
                 {
-                    if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
+                    foreach($result in $searchResult)
                     {
-                        $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename)
-                    }
-
-                    if ($searchResult[0].Line -match '(Installation fails with store corruption)')
-                    {
-                        $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
+                        $Matches = $null
+                        if ($result.Line -match '(?<ArticleID>KB\d+)')
+                        {
+                            $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($result.Filename)
+                            [void]$resultStringList.Add($resultString)
+                        }
+                        elseif ($result.Line -match '(Installation fails with store corruption)')
+                        {
+                            $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
+                            [void]$resultStringList.Add($resultString)
+                        }
+                        elseif ($result.Line -match '(0x800f0831)')
+                        {
+                            $resultString = 'CBS store needs to be rebuild, because of error 0x800f0831'
+                            [void]$resultStringList.Add($resultString)
+                        }
+                        elseif ($result.Line -match '(0x80073701)')
+                        {
+                            $resultString = 'CBS store needs to be rebuild, because of error 0x80073701'
+                            [void]$resultStringList.Add($resultString)
+                        }
+                        else
+                        {
+                            $resultString = 'CBS store needs to be rebuild'
+                            [void]$resultStringList.Add($resultString)
+                        }
                     }
                 }
             }
@@ -94,23 +115,44 @@ foreach ($cbsLogFile in $cbsLogsList)
                         catch 
                         { 
                             $resultString = "Start-Process $($env:SystemRoot)\System32\expand.exe failed"
+                            [void]$resultStringList.Add($resultString)
                         }
 
                         $Matches = $null
                         # Filename extension will still be CAB, but since it is a txt file after using expand.exe, select-String will be able to read it. 
                         # So, no need to rename the files to name.log
                         $extractedCabFiles = Get-ChildItem -Path $tempExtractionFolder
-                        [array]$searchResult = $extractedCabFiles | Select-String -Pattern '(Mark store corruption flag because of package)|(Installation fails with store corruption)'
+                        [array]$searchResult = $extractedCabFiles | Select-String -Pattern $searchString
                         if ($searchResult)
                         {
-                            if ($searchResult[0].Line -match '(?<ArticleID>KB\d+)')
+                            foreach($result in $searchResult)
                             {
-                                $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($searchResult[0].Filename -replace '.cab', '.log')
-                            }
-                            
-                            if ($searchResult[0].Line -match '(Installation fails with store corruption)')
-                            {
-                                $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
+                                $Matches = $null
+                                if ($result.Line -match '(?<ArticleID>KB\d+)')
+                                {
+                                    $resultString = 'Missing: {0} File: {1}' -f $Matches.ArticleID, ($result.Filename)
+                                    [void]$resultStringList.Add($resultString)
+                                }
+                                elseif ($result.Line -match '(Installation fails with store corruption)')
+                                {
+                                    $resultString = 'CBS store needs to be rebuild, because installation fails with store corruption'
+                                    [void]$resultStringList.Add($resultString)
+                                }
+                                elseif ($result.Line -match '(0x800f0831)')
+                                {
+                                    $resultString = 'CBS store needs to be rebuild, because of error 0x800f0831'
+                                    [void]$resultStringList.Add($resultString)
+                                }
+                                elseif ($result.Line -match '(0x80073701)')
+                                {
+                                    $resultString = 'CBS store needs to be rebuild, because of error 0x80073701'
+                                    [void]$resultStringList.Add($resultString)
+                                }
+                                else
+                                {
+                                    $resultString = 'CBS store needs to be rebuild'
+                                    [void]$resultStringList.Add($resultString)
+                                }
                             }
                         }
 
@@ -119,11 +161,13 @@ foreach ($cbsLogFile in $cbsLogsList)
                     else 
                     {
                         $resultString = "Path not found: $($env:SystemRoot)\System32\expand.exe"
+                        [void]$resultStringList.Add($resultString)
                     }
                 }
                 else 
                 {
                     $resultString = "Not able to proceed. Too little space on $($driveLetter) left"
+                    [void]$resultStringList.Add($resultString)
                 }                
             }
         }
@@ -136,11 +180,10 @@ if (Test-Path $tempExtractionFolder)
     $null = Remove-Item -Path $tempExtractionFolder -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-if (-NOT($resultString))
+if (-NOT($resultStringList))
 {
-    $resultString = 'String not found: Mark store corruption flag because of package'   
+    $resultString = 'Search strings not found. CBS store might be okay'   
+    [void]$resultStringList.Add($resultString)
 }
 						  
-
-
-Write-Output $resultString
+Write-Output ($resultStringList -join ",")
