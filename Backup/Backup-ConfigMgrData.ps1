@@ -2663,6 +2663,8 @@ if ($copyToStandByServer -ieq 'Yes')
     {
         # copy Backup data to Standby Server for easy recovery
         Write-CMTraceLog -Message "Start of Robocopy for ConfigMgr Backup Data WITHOUT SQL Files to StandBy Server..."
+        Write-CMTraceLog -Message "WITHOUT SQL Files refers only to the default ConfigMgr SQL Files of the default ConfigMgr backup task."
+        Write-CMTraceLog -Message "Custom SQL Files are still copied."
         Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB /XF $databaseFileName $databaseLogName"
     } 
     else
