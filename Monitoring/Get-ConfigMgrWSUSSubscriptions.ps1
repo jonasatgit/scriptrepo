@@ -18,7 +18,7 @@
     
 .DESCRIPTION
     The script is intended to compare a given set of WSUS update categories and products with the current state. 
-    It will do that by using a JSON file with a name like this: [yyyyMMdd-hhmm]_[NameOfThisScript].ps1.json
+    It will do that by using a JSON file with a name like this: [NameOfThisScript]_[yyyyMMdd-hhmm].json
     to compare the state of a given ConfigMgr WSUS installation. 
     The script will use the last JSON file (based on datetime string prefix) and will compare the result with the WMI class
     "SMS_UpdateCategoryInstance". The script will then create a new JSON file for the next runtime to compare against that file 
@@ -63,6 +63,9 @@
 .PARAMETER SendMailOnlyWhenChangesFound
     Switch parameter to only send an email if the scripts detected changes. This might help to prevent avoidable emails.
 
+.PARAMETER MaxFiles
+    How many json files should be kept. Default is 10.
+
 .EXAMPLE
     Get-ConfigMgrWSUSSubscriptions.ps1
 
@@ -97,14 +100,16 @@ param
     [Parameter(Mandatory=$false)]
     [String]$MailInfotext = 'Status about WSUS subscription changes',
     [Parameter(Mandatory=$false)]
-    [switch]$SendMailOnlyWhenChangesFound
+    [switch]$SendMailOnlyWhenChangesFound,
+    [Parameter(Mandatory=$false)]
+    [int]$MaxFiles = 10
 )
 #endregion
 
 #region Initializing
 $scriptPath = $PSScriptRoot
 $scriptName = $MyInvocation.MyCommand.Name
-$jsonFileName = '{0}\{1}_{2}.json' -f $scriptPath,(Get-Date -Format 'yyyyMMdd-hhmm'), $scriptName
+$jsonFileName = '{0}\{1}_{2}.json' -f $scriptPath, ($scriptName -replace '.ps1'), (Get-Date -Format 'yyyyMMdd-hhmm')
 #endregion
 
 $VerbosePreference = 'SilentlyContinue'
@@ -153,7 +158,7 @@ if (-NOT($SMSCategoryInstance))
 
 
 #region Export JSON if script has never run or JSON was deleted
-[array]$listOfJsonFiles = Get-ChildItem -Filter "*$($scriptName).json" -Path $scriptPath
+[array]$listOfJsonFiles = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $scriptPath
 if (-NOT ($listOfJsonFiles))
 {
     $SMSCategoryInstance | Select-Object CategoryInstance_UniqueID, CategoryTypeName, LocalizedCategoryInstanceName, AllowSubscription, IsSubscribed | ConvertTo-Json | Out-File $jsonFileName -Encoding utf8 -Force
@@ -161,7 +166,6 @@ if (-NOT ($listOfJsonFiles))
 #endregion
 
 #region Cleanup old files
-$maxFiles = 10
 if ($listOfJsonFiles.count -ge $maxFiles)
 {
     write-verbose "Found more than $($maxFiles) json files. Will delete some."  
@@ -170,14 +174,18 @@ if ($listOfJsonFiles.count -ge $maxFiles)
 #endregion
 
 #region get latest json definition and output new file
-$latestJsonDefinitionFile = Get-ChildItem -Filter "*$($scriptName).json" -Path $scriptPath | Sort-Object -Property Name -Descending | Select-Object -First 1
+$latestJsonDefinitionFile = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $scriptPath | Sort-Object -Property Name -Descending | Select-Object -First 1
 $latestJsonDefinitionObject = Get-content -Path $latestJsonDefinitionFile.FullName | ConvertFrom-Json
 
 #region Test if new items have arrived or if settings have changed
 $compareResultArrayList = New-Object system.collections.arraylist
 foreach ($CategoryInstance in $SMSCategoryInstance) 
 {
-    $referenceObject = $latestJsonDefinitionObject.Where({$_.CategoryInstance_UniqueID -eq $CategoryInstance.CategoryInstance_UniqueID})
+    if ($latestJsonDefinitionObject) # in case we're running the script the first time
+    {
+        $referenceObject = $latestJsonDefinitionObject.Where({$_.CategoryInstance_UniqueID -eq $CategoryInstance.CategoryInstance_UniqueID})
+    }
+    
     if(-NOT($referenceObject))
     {
         $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, Action
