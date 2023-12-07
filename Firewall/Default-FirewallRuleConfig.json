@@ -1166,7 +1166,7 @@
         {
             "Name": "PXE",
             "Protocol": "UDP",
-            "Port": "67,68,69,4011",
+            "Port": "67,68,69,547,4011",
             "Program": "",
             "Description": "PXE boot"    
         },
