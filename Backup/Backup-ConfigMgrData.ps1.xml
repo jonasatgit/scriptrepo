@@ -76,7 +76,7 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<!-- NOTE: Each folder will be kept up to date via robocopy and the mirror parameter, therefore not following the same process as with a folder configured via "CustomFoldersToBackup" -->
 	<CopyContentLibrary>No</CopyContentLibrary>
 
-	<!-- List of local folders which needs to be copied to another server. NOT limited to the ContentLibrary -->
+	<!-- List of local folders which need to be copied to another server. NOT limited to the ContentLibrary -->
     <ContentLibraryPathLive>
         	<Folder>F:\SCCMContentLib</Folder>
         	<Folder>F:\SMSPKGF$</Folder>   
@@ -86,6 +86,7 @@ Source: https://github.com/jonasatgit/scriptrepo
     <ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
 
 	<!-- "Yes" or "No". If "Yes" the script will use the list defined via "DatabaseList" and will try to backup each database -->
+	<!-- IMPORTANT: The SQL service account needs to have write access to the path configured under "SCCMbackupPath" -->
 	<BackupSQLDatabases>Yes</BackupSQLDatabases>
 
 	<!-- Can be a list of defined database names or just ONE entry with a value of "AllUserDatabases" (to backup all user DBs) or "AllDatabases" (To backup all DBs) -->
