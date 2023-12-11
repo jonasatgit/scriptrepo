@@ -73,7 +73,7 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<!-- This setting is not limited to ContentLibrary paths. It can copy any folder -->
 	<!-- IMPORTANT: Add a folder containing an operating system and SQL Server image. Add a folder containing the required ADK as well -->
 	<!-- This will speed up the recovery process in case a system reinstall is required -->
-	<!-- NOTE: Each folder will be kept up to date via robocopy and therefore does not follow the same process as with a folder configured via "CustomFoldersToBackup" -->
+	<!-- NOTE: Each folder will be kept up to date via robocopy and the mirror parameter, therefore not following the same process as with a folder configured via "CustomFoldersToBackup" -->
 	<CopyContentLibrary>No</CopyContentLibrary>
 
 	<!-- List of local folders which needs to be copied to another server. NOT limited to the ContentLibrary -->
