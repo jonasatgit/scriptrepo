@@ -9,66 +9,90 @@ Source: https://github.com/jonasatgit/scriptrepo
 <sccmbackup>
 	<!-- ConfigMgr backup path. The one configured in the backup maintenance task. Or, if the maintenance task is not activated, a path for the backup in general -->
     <SCCMbackupPath>F:\Backup</SCCMbackupPath>
+	
 	<!-- How many days a backup can be stored before it will be deleted. Based on the folder name instead of creation date or change date -->
 	<MaxBackupDays>2</MaxBackupDays>
+	
 	<!--- The maximum number of backups to keep before older backups will be deleted. This one wins over "MaxBackupDays" to make sure to have at least some backups -->
 	<MaxBackups>2</MaxBackups>
+	
 	<!-- ConfigMgr license key. Will be added to the unattend.ini file to be able to restore in unattend mode -->
 	<LicenseKey>11111-11111-1111-11111-11111-11111</LicenseKey>
-	<!-- "Yes" or "No". If "Yes" the script will check if the SQL files are placed in the SCCM backup folder and wll fail if they are missing -->
+	
+	<!-- "Yes" or "No". If "Yes" the script will check if the SQL files are placed in the SCCM backup folder and will fail if they are missing -->
 	<!-- Only valid if the backup maintenance task is used -->
     <CheckSQLFiles>No</CheckSQLFiles>
-	<!-- List of additional folders to backup -->
-	<!-- Schould contain everything required for a recovery -->
+	
+	<!-- List of additional folders to back up -->
+	<!-- Should contain everything required for a recovery -->
 	<CustomFoldersToBackup>
 		<Folder>E:\CUSTOM\ScheduledTasks</Folder>
 		<Folder>E:\CUSTOM\Scripts</Folder>
 		<Folder>E:\CUSTOM\Tools</Folder>
 	</CustomFoldersToBackup>
+
 	<!-- Name of the folder each additional folder will be copied to. No need to change -->
     <CustomFolderBackupName>CustomBackups</CustomFolderBackupName>
+
 	<!-- "Yes" or "No". If "Yes" the script will compress the custom folder to save space -->
     <ZipCustomBackup>Yes</ZipCustomBackup>
-	<!-- We need a folder to store data we want to compress temporarily. The folder cannot be part of the "SCCMbackupPath" -->
+
+	<!-- We need a folder to store data we want to compress temporarily. The folder cannot be part of the path configured via: "SCCMbackupPath" -->
     <TempZipFileFolder>E:\CUSTOM\BackupTmpZipFolder</TempZipFileFolder>
+
 	<!-- "Yes" or "No". If "Yes" the script will backup the IIS config and will create a recovery script -->
 	<BackupIIS>Yes</BackupIIS>
-	<!-- "Yes" or "No". If "Yes" the script will backup sheduled task in a give path and will create a recovery script  -->
+
+	<!-- "Yes" or "No". If "Yes" the script will backup scheduled tasks of a given path and will create a recovery script  -->
 	<!-- NOTE: Will not backup any passwords -->
     <BackupScheduledTasks>Yes</BackupScheduledTasks>
-	<!-- Path from within Task Scheduler from where to backup tasks -->
+
+	<!-- Path from within Task Scheduler from where to back up tasks -->
     <BackupScheduledTasksRootPath>Custom</BackupScheduledTasksRootPath>
-	<!-- "Yes" or "No". If "Yes" the script will backup all SSRS reports. The backup account needs to have SSRS rights for that. -->
+
+	<!-- "Yes" or "No". If "Yes" the script will back up all SSRS reports. The backup account needs to have SSRS read rights for that. -->
 	<BackupSSRSRDLs>Yes</BackupSSRSRDLs>
-	<!-- Name of an event source for the Application eventlog -->
+
+	<!-- Name of an event source for the Application event log.-->
+	<!-- Script failures for example will be written to the event log and will use the source name configured. -->
 	<EventSource>ConfigMgr Backup Script</EventSource>
+
 	<!-- Max logfile size in KB -->
    	<MaxLogfileSize>2048</MaxLogfileSize>
+
 	<!-- "Yes" or "No". If "Yes" the script will also copy the backup to a second server -->
     <CopyToStandByServer>No</CopyToStandByServer>
+
 	<!-- Path to which the Backup should to be copied if "CopyToStandByServer" is set to "yes" -->
     <StandByBackupPath>F:\StandBy</StandByBackupPath>
+
 	<!-- "Yes" or "No". If "Yes" the script will not copy the SQL files (created via the built-in ConfigMgr backup task) to the second server-->
     <ExcludeSQLFilesFromStandByCopy>Yes</ExcludeSQLFilesFromStandByCopy>
+
 	<!-- "Yes" or "No". If "Yes" the script will copy the ContentLibrary also to another server or backup location -->
-	<!-- This seting is not limited to ContentLibrary paths. It can copy any folder -->
-	<!-- IMPORTANT: Add a folder containing a operating system and SQL Server image. Add a folder containing the required ADK as well -->
+	<!-- This setting is not limited to ContentLibrary paths. It can copy any folder -->
+	<!-- IMPORTANT: Add a folder containing an operating system and SQL Server image. Add a folder containing the required ADK as well -->
 	<!-- This will speed up the recovery process in case a system reinstall is required -->
 	<!-- NOTE: Each folder will be kept up to date via robocopy and therefore does not follow the same process as with a folder configured via "CustomFoldersToBackup" -->
 	<CopyContentLibrary>No</CopyContentLibrary>
+
 	<!-- List of local folders which needs to be copied to another server. NOT limited to the ContentLibrary -->
     <ContentLibraryPathLive>
         	<Folder>F:\SCCMContentLib</Folder>
         	<Folder>F:\SMSPKGF$</Folder>   
     </ContentLibraryPathLive>
+
 	<!-- Path to which the folders configured via "ContentLibraryPathLive" should be copied. (UNC or local) -->
     <ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
+
 	<!-- "Yes" or "No". If "Yes" the script will use the list defined via "DatabaseList" and will try to backup each database -->
 	<BackupSQLDatabases>Yes</BackupSQLDatabases>
+
 	<!-- Can be a list of defined database names or just ONE entry with a value of "AllUserDatabases" (to backup all user DBs) or "AllDatabases" (To backup all DBs) -->
 	<DatabaseList>
 		<DatabaseName>AllUserDatabases</DatabaseName>
 	</DatabaseList>
+
 	<!-- "Yes" or "No". If "Yes" the script will export backup metadata. Like the backup date and time, file name and backup path. Can be helpful in case SQL internal backup is used -->
 	<!-- NOTE: Not required if "BackupSQLDatabases" is set to yes, but both work independently -->
 	<ExportSQLBackupData>Yes</ExportSQLBackupData>

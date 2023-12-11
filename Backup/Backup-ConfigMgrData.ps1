@@ -42,7 +42,7 @@
             Step-09-Validate-Certificates.txt	        -> Instructions to validate certificates for the recovery process.
             Step-10-InstallSSRSAndImportReports.txt	    -> Instructions for the Reporting Services recovery. The script also exports all available reports from SSRS to the backup location
             Step-11-CopySourceFilesOrContentLibrary.txt -> Instructions to copy source files and ContentLibrary data back to its original location.
-            Step-12-RecoverConfigMgr.txt                -> Recovery instructions to recover ConfigMgr eitehr manually or via a unattend.ini file. 	
+            Step-12-RecoverConfigMgr.txt                -> Recovery instructions to recover ConfigMgr either manually or via a unattend.ini file. 	
             Step-13-Set-ServiceAccountPasswords.txt	    -> Instructions for post recovery tasks
 
     Step 6: If configured in "Backup-ConfigMgrData.ps1.xml" the script will backup either all SQL databases or all user databases or databases specified as "DatabaseList".
