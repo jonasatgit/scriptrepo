@@ -39,9 +39,9 @@
             Step-07-Import-IISConfig.txt.ps1	        -> Script to recover IIS configurations.
             Step-08-Import-ScheduledTasks.txt	        -> Instructions to recover scheduled tasks.
             Step-08-Import-ScheduledTasks.txt.ps1	    -> Script to recover scheduled tasks.
-            Step-09-Validate-Certificates.txt	        -> Instructions to validate certitificates for the recovery process.
+            Step-09-Validate-Certificates.txt	        -> Instructions to validate certificates for the recovery process.
             Step-10-InstallSSRSAndImportReports.txt	    -> Instructions for the Reporting Services recovery. The script also exports all available reports from SSRS to the backup location
-            Step-11-CopySourceFilesOrContentLibrary.txt -> Instructions to copy source files and ContentLibrary data back to it's original location.
+            Step-11-CopySourceFilesOrContentLibrary.txt -> Instructions to copy source files and ContentLibrary data back to its original location.
             Step-12-RecoverConfigMgr.txt                -> Recovery instructions to recover ConfigMgr eitehr manually or via a unattend.ini file. 	
             Step-13-Set-ServiceAccountPasswords.txt	    -> Instructions for post recovery tasks
 
