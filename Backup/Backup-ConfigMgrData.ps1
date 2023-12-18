@@ -63,7 +63,7 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20221101'
+$scriptVersion = '20231211'
 
 # Base variables
 [string]$scriptPath = $PSScriptRoot
@@ -1405,7 +1405,7 @@ function Get-SQLBackupMetadata
     {
         Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName)
         Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName)      
-        return "Connection to SQL server failed"    
+        return   
     }
 
     return $ds.tables[0]
@@ -1565,14 +1565,65 @@ Function Start-SQLDatabaseBackup
 }
 #endregion
 
+#region Get-SQLVersionInfo
+<#
+.Synopsis
+    Get-SQLVersionInfo
+.DESCRIPTION
+    Get-SQLVersionInfo
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName 'sql2.contoso.local\instance2'
+.PARAMETER SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+#>
+Function Get-SQLVersionInfo
+{
+    param
+    (
+        [string]$SQLServerName
+    )
 
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-CMTraceLog -Message "Get SQL version info" -Component ($commandName)
+    $connectionString = "Server=$SQLServerName;Database=msdb;Integrated Security=True"
+    Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
+    
+    $SqlQuery = 'USE msdb;SELECT @@Version as [SQLVersion]'
+
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = $connectionString
+        $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+        $SqlCmd.Connection = $SqlConnection
+        $SqlCmd.CommandText = $SqlQuery
+        $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+        Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
+        $SqlAdapter.SelectCommand = $SqlCmd
+        $ds = New-Object -TypeName System.Data.DataSet
+        $SqlAdapter.Fill($ds) | Out-Null
+        $SqlCmd.Dispose()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName)
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName)      
+        return    
+    }
+    return $ds.tables[0]
+}
+#endregion
 
 
 
 
 #-----------------------------------------
 # Main Script starts here
-#-----------------------------------------
+#-----------------------------------------SCCMbackupPath
 #region Step 1
 #-----------------------------------------
 # read config file and set variables
@@ -2029,10 +2080,10 @@ try
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Local RAM configuration:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    Get-WmiObject -Namespace root\cimv2 -class Win32_PhysicalMemory | 
-        Select-Object DeviceLocator, @{Name='TotalSizeGB'; Expression={ $_.Capacity /1024/1024/1024}} | 
-        Format-List * | 
-        Out-File -FilePath $recoveryFile01 -Append
+    $memDetails = Get-WmiObject -Namespace root\cimv2 -class Win32_PhysicalMemory | Measure-Object -Sum -Property Capacity
+    ('Memory modules: {0}' -f $memDetails.Count) | Out-File -FilePath $recoveryFile01 -Append
+    ('Total capacity: {0}GB' -f ($memDetails.Sum /1024/1024/1024)) | Out-File -FilePath $recoveryFile01 -Append
+        
 
     ' ' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
@@ -2217,6 +2268,16 @@ catch
 #install SQL Server
 #$recoveryFile03
 Write-CMTraceLog -Message "Create: `"$recoveryFile03`""
+if ($siteInfo.SQLInstance -eq "Default")
+{
+    $sqlServerConnectionString = $siteInfo.SQLServerName
+}
+else 
+{
+    $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
+}
+
+
 $sqlRecoveryInfo = @'
 Install new SQL Server if necessary. The most important SQL information can be found below.
 Use a supported version and same edition of SQL Server. 
@@ -2225,6 +2286,7 @@ More information about how to restore databases can be found here: https://docs.
 Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
 '@
 $sqlRecoveryInfo  | Out-File -FilePath $recoveryFile03 -Append
+
 
 if ($BackupSQLDatabases -ieq 'yes')
 {
@@ -2239,16 +2301,11 @@ if ($ExportSQLBackupData -ieq 'yes')
 $siteInfo | Select-Object SQLServerName, SQLSSBPort, SQlServicePort, SQLDatabaseName, SQLDatabase, SQLInstance | 
     Format-List * | Out-File -FilePath $recoveryFile03 -Append
 
+ Get-SQLVersionInfo -SQLServerName $sqlServerConnectionString | Select-Object SQLVersion -ExpandProperty SQLVersion | Out-File -FilePath $recoveryFile03 -Append
+
 'SQL Backup Metadata:' | Out-File -FilePath $recoveryFile03 -Append
 '-------------------------' | Out-File -FilePath $recoveryFile03 -Append
-if ($siteInfo.SQLInstance -eq "Default")
-{
-    $sqlServerConnectionString = $siteInfo.SQLServerName
-}
-else 
-{
-    $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
-}
+
 
 if ($ExportSQLBackupData -ieq 'yes')
 {
@@ -2601,7 +2658,7 @@ else
 #region Step 7
 #-----------------------------------------
 Write-CMTraceLog -Message "-------------------------------------"
-Write-CMTraceLog -Message "------> Zipping custom folder..."
+Write-CMTraceLog -Message "------> Compression of custom folder..."
 # create zip file of custom backup
 if ($zipCustomBackup -ieq 'Yes')
 {
@@ -2619,7 +2676,7 @@ if ($zipCustomBackup -ieq 'Yes')
 Write-CMTraceLog -Message "------"
 if(-NOT ($siteInfo.BackupEnabled))
 {
-    Write-CMTraceLog -Message "Zipping cd.latest folder. Since ConfigMgr backup task is not enabled."
+    Write-CMTraceLog -Message "Compression of cd.latest folder. Since ConfigMgr backup task is not enabled."
     # zipping cd.latest
     Get-item $cdLatestFolder | New-ZipFile -PathToSaveFileTo "$sitebackupPath" -TempZipFileFolder $tempZipFileFolder -UseStaticFolderName Yes -FileName "cd.Latest"
 }

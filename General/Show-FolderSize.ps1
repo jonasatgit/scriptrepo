@@ -18,10 +18,10 @@
 param
 (
     $pathToCheck = "C:\",
-    $pathLevel = 3, # how deep should the search go?
+    $pathLevel = 10, # how deep should the search go?
     $commandPath = "D:\CUSTOM\Tools\SysinternalsSuite\du.exe",
     $tempPath = "$($env:temp)\duoutput$(Get-Random).csv",
-    $commandParameter = "/c /l $pathLevel -noBanner $pathToCheck", # c = output as csv, l = sub directory level
+    $commandParameter = "/c /l $pathLevel -nobanner $pathToCheck", # c = output as csv, l = sub directory level
     $minFolderSize = 10
 )
 
@@ -34,7 +34,7 @@ function Show-FolderSize
         $pathLevel = 3,
         $commandPath,
         $tempPath,
-        $commandParameter = "/c /l $pathLevel -noBanner $pathToCheck", # c = output as csv, l = sub directory level
+        $commandParameter = "/c /l $pathLevel -nobanner $pathToCheck", # c = output as csv, l = sub directory level
         $minFolderSize = 10
     )
 
