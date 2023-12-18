@@ -63,7 +63,7 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20231211'
+$scriptVersion = '20231218'
 
 # Base variables
 [string]$scriptPath = $PSScriptRoot
@@ -73,7 +73,7 @@ $scriptVersion = '20231211'
 
 [string]$global:logFile = "{0}\{1}.log" -f $scriptPath, ($MyInvocation.MyCommand.Name)
 [string]$global:scriptName = $MyInvocation.MyCommand.Name
-[string]$global:Component = "ConfigMgrBackupScript"
+[string]$global:Component = "ConfigMgrBackupScript" # Eventsource for eventlog entries
 [string]$logFilePath = $PSScriptRoot
 
 
@@ -85,9 +85,9 @@ $scriptVersion = '20231211'
 .EXAMPLE
     Write-CMTraceLog -Message "Starting script" -LogFile "C:\temp\logfile.log"
 .EXAMPLE
-    Write-CMTraceLog -Message "Starting script" -LogFile "C:\temp\logfile.log" -OutputType ConsoleOnly
+    Write-CMTraceLog -Message "Starting script" -LogFile "C:\temp\logfile.log" -LogType LogOnly 
 .EXAMPLE
-    Write-CMTraceLog -Message "Script has failed" -LogFile "C:\temp\logfile.log" -EventID 30 -EventlogName "Application" -WriteToEventLog
+    Write-CMTraceLog -Message "Script has failed" -LogFile "C:\temp\logfile.log" -EventlogName "Application" -LogType 'LogAndEventlog' -Type Error
 .PARAMETER Message
     Text to be logged
 .PARAMETER Type
@@ -98,10 +98,8 @@ $scriptVersion = '20231211'
     The name of the component logging the message
 .PARAMETER EventlogName
     Either "Application" or "System". Application is default. 
-.PARAMETER EventID
-    Event ID
-.PARAMETER WriteToEventLog
-    Switch parameter to write messages to the eventlog
+.PARAMETER LogType
+    One of three possible strings: "LogOnly","EventlogOnly","LogAndEventlog"
 #>
 Function Write-CMTraceLog
 {
@@ -132,59 +130,68 @@ Function Write-CMTraceLog
         [ValidateSet("Application","System")]
         [String]$EventlogName="Application",
 
-        #EventID
+        #Type of log to write
         [parameter(Mandatory=$false)]
-        [Single]$EventID=10,
-
-        #Write to eventlog
-        [parameter(Mandatory=$false)]
-        [Switch]$WriteToEventLog
+        [ValidateSet("LogOnly","EventlogOnly","LogAndEventlog")]
+        [string]$LogType = 'LogOnly'
     )
 
-    if ($WriteToEventLog)
+    [single]$EventID=10
+    switch ($Type) 
+        { 
+            "Information" {$EventID=10} 
+            "Warning" {$EventID=20} 
+            "Error" {$EventID=30} 
+        }
+
+    if (($LogType -ieq "EventlogOnly") -or ($LogType -ieq "LogAndEventlog"))
     {
+        # always use the global component name for eventlog and nothing else
         # check if eventsource exists otherwise create eventsource
-        if ([System.Diagnostics.EventLog]::SourceExists($Component) -eq $false)
+        if ([System.Diagnostics.EventLog]::SourceExists($global:Component) -eq $false)
         {
             try
             {
-                [System.Diagnostics.EventLog]::CreateEventSource($Component, $EventlogName )
+                [System.Diagnostics.EventLog]::CreateEventSource($global:Component, $EventlogName )
             }
             catch
             {
                 exit 2
             }
          }
-        Write-EventLog -LogName $EventlogName -Source $Component -EntryType $Type -EventID $EventID -Message $Message
+        Write-EventLog -LogName $EventlogName -Source $global:Component -EntryType $Type -EventID $EventID -Message $Message
     }
 
-    # save severity in single for cmtrace severity
-    [single]$cmSeverity=1
-    switch ($Type) 
-        { 
-            "Information" {$cmSeverity=1} 
-            "Warning" {$cmSeverity=2} 
-            "Error" {$cmSeverity=3} 
-        }
+    if (($LogType -ieq "LogOnly") -or ($LogType -ieq "LogAndEventlog"))
+    {
+        # save severity in single for cmtrace severity
+        [single]$cmSeverity=1
+        switch ($Type) 
+            { 
+                "Information" {$cmSeverity=1} 
+                "Warning" {$cmSeverity=2} 
+                "Error" {$cmSeverity=3} 
+            }
 
-    #Obtain UTC offset
-    $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime 
-    $DateTime.SetVarDate($(Get-Date))
-    $UtcValue = $DateTime.Value
-    $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime 
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
 
-    #Create the line to be logged
-    $LogLine =  "<![LOG[$Message]LOG]!>" +
-                "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +
-                "date=`"$(Get-Date -Format M-d-yyyy)`" " +
-                "component=`"$Component`" " +
-                "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +
-                "type=`"$cmSeverity`" " +
-                "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " +
-                "file=`"`">"
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +
+                    "component=`"$Component`" " +
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +
+                    "type=`"$cmSeverity`" " +
+                    "thread=`"$([Threading.Thread]::CurrentThread.ManagedThreadId)`" " +
+                    "file=`"`">"
 
-    #Write the line to the passed log file
-    $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
 }
 #endregion
 
@@ -301,8 +308,8 @@ Function Start-RoboCopy
         $roboCopyPath = "C:\windows\system32\robocopy.exe"
         if(-NOT(Test-Path $roboCopyPath))
         {
-            Write-CMTraceLog -Message "Robocopy not found: `"$roboCopyPath`""
-            exit 2
+            Write-CMTraceLog -Message "Robocopy not found: `"$roboCopyPath`"" -Type Error -LogType LogAndEventlog
+            Invoke-StopScriptIfError
         }
     
         try
@@ -312,23 +319,24 @@ Function Start-RoboCopy
         Catch
         {
 
-            Write-CMTraceLog -Message "RoboCopy failed" -Type Error
-            Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error
-            Write-CMTraceLog -Message "Stopping script!" -Type Warning
-            exit 2       
+            Write-CMTraceLog -Message "RoboCopy failed" -Type Error -LogType LogAndEventlog
+            Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error -LogType LogAndEventlog
+            Invoke-StopScriptIfError      
         }
         
         $copyResult = Check-RoboCopyResultFromLog -LogFilePath $RobocopyLogPath
         Write-CMTraceLog -Message "RoboCopy result..."
         Write-CMTraceLog -Message "$copyResult"
-        if($copyResult.ResultFoundInLog -eq $true -and $copyResult.FilesFAILED -eq 0 -and $copyResult.DirsFAILED -eq 0){
-            #ok       
+        if($copyResult.ResultFoundInLog -eq $true -and $copyResult.FilesFAILED -eq 0 -and $copyResult.DirsFAILED -eq 0)
+        {    
             Write-CMTraceLog -Message "Copy process successful. Logfile: `"$RobocopyLogPath`""
             Write-CMTraceLog -Message " "
-        }else{
-            Write-CMTraceLog -Message "Copy process successful. Logfile: `"$RobocopyLogPath`"" -Type Error
+        }
+        else
+        {
+            Write-CMTraceLog -Message "Copy process failed. Logfile: `"$RobocopyLogPath`"" -Type Error -LogType LogAndEventlog
             Write-CMTraceLog -Message "Stopping script!" -Type Warning
-            exit 2   
+            Invoke-StopScriptIfError   
         }
     
     }
@@ -342,13 +350,12 @@ Function Rename-FolderCustom
 
 #Validate path and write log or eventlog
 [CmdletBinding()]
-Param(
-      #Path to test
-      [parameter(Mandatory=$True,ValueFromPipeline=$true)]
-      $Folder
-
-    )
-
+Param
+(
+    #Path to test
+    [parameter(Mandatory=$True,ValueFromPipeline=$true)]
+    $Folder
+)
 
 begin{}
     
@@ -364,9 +371,8 @@ process
                 Rename-Item -Path $folderName.Fullname -NewName $newFolderName -Force -ErrorAction Stop
             }
             Catch{
-                Write-CMTraceLog -Message "Folder -$($folderName.Fullname)- could not be renamed. Error: $($error[0].Exception)" -WriteToEventLog -EventID 30 -type error
-                Write-CMTraceLog -Message "Stop script!" -WriteToEventLog
-                exit 2
+                Write-CMTraceLog -Message "Folder -$($folderName.Fullname)- could not be renamed. Error: $($error[0].Exception)" -LogType 'LogAndEventlog' -type error
+                Invoke-StopScriptIfError
             }
             Write-CMTraceLog -Message "Rename successful. Previous: $($folderName.Fullname) New: $newFolderName"
         }
@@ -453,11 +459,10 @@ process
                     }
                     Catch
                     {
-                        Write-CMTraceLog -Message "Folder `"$($folderName.Fullname)`" delete not successful. Error: $($error[0].Exception)" -WriteToEventLog -EventID 30 -type error
-                        Write-CMTraceLog -Message "Stop script!" -WriteToEventLog
-                        exit 2
+                        Write-CMTraceLog -Message "Folder `"$($folderName.Fullname)`" delete not successful. Error: $($error[0].Exception)" -LogType 'LogAndEventlog' -type error
+                        Invoke-StopScriptIfError
                     }
-                    Write-CMTraceLog -Message "Delete successful! `"$($folderName.Fullname)`"" -WriteToEventLog
+                    Write-CMTraceLog -Message "Delete successful! `"$($folderName.Fullname)`"" -LogType 'LogAndEventlog'
                 }            
             }
         }
@@ -799,10 +804,9 @@ Param(
             }
             Catch
             {
-                Write-CMTraceLog -Message "Folder compression failed!" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog 
-                Write-CMTraceLog -Message "$($error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -Type Error
-                Write-CMTraceLog -Message "Stopping script!" -WriteToEventLog -Component ($MyInvocation.MyCommand.Name)
-                exit 2
+                Write-CMTraceLog -Message "Folder compression failed!" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType 'LogAndEventlog' 
+                Write-CMTraceLog -Message "$($error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType 'LogAndEventlog'
+                Invoke-StopScriptIfError
             }
             Write-CMTraceLog -Message "Compression of folder done!" -Component ($MyInvocation.MyCommand.Name)
         }
@@ -820,9 +824,8 @@ Param(
         }
         Catch
         {
-            Write-CMTraceLog "Error: $($error[0].Exception)" -WriteToEventLog -EventID 30 -Type Error
-            Write-CMTraceLog -Message "Script end!" -WriteToEventLog
-            exit 2
+            Write-CMTraceLog "Error: $($error[0].Exception)" -LogType 'LogAndEventlog' -Type Error -LogType 'LogAndEventlog'
+            Invoke-StopScriptIfError
         }
 
         Write-CMTraceLog -Message "Delete temp folder: `"$newTempFolder`""
@@ -832,7 +835,7 @@ Param(
         }
         Catch
         {
-            Write-CMTraceLog -Message "Error: $($error[0].Exception)" -EventID 30 -WriteToEventLog -Type Error
+            Write-CMTraceLog -Message "Error: $($error[0].Exception)" -LogType 'LogAndEventlog' -Type Error
             Write-CMTraceLog -Message "Skipping deletion..."
         }
     }
@@ -902,9 +905,8 @@ Restore-WebConfiguration -Name $BackupName
     }
     else
     {
-        Write-CMTraceLog -Message "Backup-WebConfiguration cmdlet not found" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog -EventID 30
-        Write-CMTraceLog -Message "Stopping Script" -WriteToEventLog
-        exit 2   
+        Write-CMTraceLog -Message "Backup-WebConfiguration cmdlet not found" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }
 
     $WebConfigurationBackupName = 'WebBackup_{0}' -f (Get-Date -format 'yyy-MM-ddThhmmss')
@@ -916,10 +918,9 @@ Restore-WebConfiguration -Name $BackupName
     }
     catch
     {
-        Write-CMTraceLog -Message "IIS backup failed" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog -EventID 30
+        Write-CMTraceLog -Message "IIS backup failed" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType 'LogAndEventlog'
         Write-CMTraceLog -Message "$($error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -Type Error
-        Write-CMTraceLog -Message "Stopping Script" -Component ($MyInvocation.MyCommand.Name) -WriteToEventLog
-        exit 2   
+        Invoke-StopScriptIfError 
     }
 
     try
@@ -934,17 +935,15 @@ Restore-WebConfiguration -Name $BackupName
     }
     catch
     {
-        Write-CMTraceLog -Message "Copy IIS backup failed" -Component ($MyInvocation.MyCommand.Name) -Type Error -WriteToEventLog -EventID 30
+        Write-CMTraceLog -Message "Copy IIS backup failed" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType 'LogAndEventlog'
         Write-CMTraceLog -Message "$($error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -Type Error
-        Write-CMTraceLog -Message "Stopping Script" -Component ($MyInvocation.MyCommand.Name) -WriteToEventLog
-        exit 2  
-      
+        Invoke-StopScriptIfError       
     }
 
     #delete older backups to avoid having multiple backups
     Get-ChildItem $IISBackupFolder | Where-Object {$_.name -ne $WebConfigurationBackupName} | ForEach-Object {
 
-        Write-CMTraceLog -Message "Deleting old IIS Backup: `"$($_.FullName)`"" -Component ($MyInvocation.MyCommand.Name)
+        Write-CMTraceLog -Message "Delete temp IIS Backup files: `"$($_.FullName)`"" -Component ($MyInvocation.MyCommand.Name)
         
         try
         {
@@ -953,7 +952,8 @@ Restore-WebConfiguration -Name $BackupName
         }
         Catch
         {
-            Write-CMTraceLog -Message "Delete failed: $($error[0].InnerException)" -Component ($MyInvocation.MyCommand.Name)
+            Write-CMTraceLog -Message "Delete failed: $($error[0].InnerException)" -Component ($MyInvocation.MyCommand.Name) -Type Error
+            Write-CMTraceLog -Message "Will ignore error and continue" -Component ($MyInvocation.MyCommand.Name) -Type Warning
         }
      }
 }
@@ -1021,19 +1021,36 @@ dir "$scriptPath\ScheduledTasks" -Filter '*.xml' | Import-ScheduledTasksCustom
     $ImportScript | Out-File -FilePath "$RecoveryScriptFileName" -Force
     $BackupFolder = "$BackupFolder\ScheduledTasks"
     $Tasks = Get-ScheduledTask | Where-Object {$_.Taskpath -like "*$TaskPathRoot*"} 
-    
-    $Tasks | ForEach-Object {
 
-        Write-CMTraceLog -Message "Backup of scheduled task: $($_.TaskName)" -Component ($MyInvocation.MyCommand.Name)
+    if (-NOT ($Tasks))
+    {
+        Write-CMTraceLog -Message "No scheduled tasks found in: `"$TaskPathRoot`"" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType LogAndEventlog
+        Invoke-StopScriptIfError
+    }
+    else 
+    { 
+        $Tasks | ForEach-Object {
+
+            Write-CMTraceLog -Message "Backup of scheduled task: $($_.TaskName)" -Component ($MyInvocation.MyCommand.Name)
+            
+            New-Item -ItemType directory -Path "$BackupFolder" -Force | Out-Null
+
+            $filePath = "$BackupFolder\$($_.TaskName).xml"
+
+            "TaskPath:$($_.Taskpath)" | Out-File "$BackupFolder\$($_.TaskName)_Infofile.txt"
+            
+            try 
+            {
+                Export-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath | out-file -FilePath $filePath -Force -ErrorAction Stop
+            }
+            catch 
+            {
+                Write-CMTraceLog -Message "Not able to export scheduled task: `"$($_.TaskName)`"" -Component ($MyInvocation.MyCommand.Name) -Type Error -LogType LogAndEventlog
+                Invoke-StopScriptIfError
+            }
+            
         
-        New-Item -ItemType directory -Path "$BackupFolder" -Force | Out-Null
-
-        $filePath = "$BackupFolder\$($_.TaskName).xml"
-
-        "TaskPath:$($_.Taskpath)" | Out-File "$BackupFolder\$($_.TaskName)_Infofile.txt"
-    
-        Export-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath | out-file -FilePath $filePath -Force
-       
+        }
     }
 }
 #endregion
@@ -1122,9 +1139,8 @@ function Export-SSRSReports
     }
     catch
     {
-        Write-CMTraceLog -Message "ERROR: $($error[0].Exception)" -Type Error -WriteToEventLog -EventID 30
-        Write-CMTraceLog -Message "Stopping Script!"
-        exit 1
+        Write-CMTraceLog -Message "ERROR: $($error[0].Exception)" -Type Error -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }
 }
 #endregion
@@ -1461,9 +1477,9 @@ Function Start-SQLDatabaseBackup
     }
     catch
     {
-        Write-CMTraceLog -Type Error -Message "ERROR: Folder could not be created `"$sitebackupPath`"" -Component ($MyInvocation.MyCommand.Name)
-        Write-CMTraceLog -Type Error -Message "$($Error[0].exception)" -Component ($MyInvocation.MyCommand.Name)
-        exit 1
+        Write-CMTraceLog -Type Error -Message "ERROR: Folder could not be created `"$sitebackupPath`"" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
+        Write-CMTraceLog -Type Error -Message "$($Error[0].exception)" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }
 
     Write-CMTraceLog -Message "Will connect to: $SQLServerName" -Component ($MyInvocation.MyCommand.Name)
@@ -1475,8 +1491,8 @@ Function Start-SQLDatabaseBackup
     }
     catch 
     {
-        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name)
-        Exit 1
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }
 
     # Query to get user DBs#
@@ -1511,9 +1527,9 @@ Function Start-SQLDatabaseBackup
         }
         catch 
         {
-            Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name)
-            Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($MyInvocation.MyCommand.Name)
-            Exit 1            
+            Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
+            Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
+            Invoke-StopScriptIfError           
         }
     }
 
@@ -1540,6 +1556,7 @@ Function Start-SQLDatabaseBackup
         }
         catch 
         {
+            Write-CMTraceLog -Type Error -Message "DB backup failed" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
             if ($Error[0].Exception -match '(Access is denied)|(error 5)')
             {
                 Write-CMTraceLog -Type Error -Message "Access is denied" -Component ($MyInvocation.MyCommand.Name)
@@ -1550,7 +1567,7 @@ Function Start-SQLDatabaseBackup
                 Write-CMTraceLog -Type Error -Message "Database backup failed" -Component ($MyInvocation.MyCommand.Name)
                 Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($MyInvocation.MyCommand.Name)
             }
-            exit 1      
+            Invoke-StopScriptIfError      
         }
     }
 
@@ -1610,15 +1627,587 @@ Function Get-SQLVersionInfo
     }
     catch 
     {
-        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName)
-        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName)      
-        return    
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName) -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog     
+        Invoke-StopScriptIfError   
     }
     return $ds.tables[0]
 }
 #endregion
 
+#region
+<#
+.SYNOPSIS
+    Function to export MECM site server information into a JSON file
+#>
+Function Export-SystemRoleInformation
+{
+    param
+    (
+        [parameter(Mandatory=$true)]
+        [string]$ProviderMachineName,
+        [parameter(Mandatory=$true)]
+        [string]$SiteCode,
+        [parameter(Mandatory=$true)]
+        [string]$OutputFilePath,
+        [parameter(Mandatory=$false)]
+        [string]$DefaultConfigFile = '{0}\Default-FirewallRuleConfig.json' -f $PSScriptRoot,
+        [parameter(Mandatory=$false)]
+        [ValidateSet("IPv4","IPv6","All")]
+        [string]$IPType = "IPv4"
+    )
+  
+    $defaultDefinition = $null
+    <#
+    if (-NOT (Test-Path $DefaultConfigFile))
+    {
+        Write-host "$(Get-date -Format u): Default Firewall config file not found. Output will only contain some example rules: `"$($DefaultConfigFile)`"" -ForegroundColor Yellow
+    }
+    else
+    {
+        $defaultDefinition = Get-Content $DefaultConfigFile | ConvertFrom-Json
+    }
+    #>
+    try
+    {
+        $siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -ErrorAction Stop
+        # getting sitecode and parent to have hierarchy information
+        $siteCodeHash = @{}
+        $siteCodeInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -ClassName SMS_SCI_SiteDefinition -ErrorAction Stop
+    }
+    Catch
+    {
+        Write-CMTraceLog -Type Error -Message "Could not get site info" -Component ($commandName) -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog
+        Invoke-StopScriptIfError
+    }
+    $siteCodeInfo | ForEach-Object {   
+        if ([string]::IsNullOrEmpty($_.ParentSiteCode))
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.SiteCode)
+        }
+        else
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.ParentSiteCode)
+        }
+    }
 
+    Function Get-IPAddressFromName
+    {
+        param
+        (
+            [string]$SystemName,
+            [ValidateSet("IPv4","IPv6","All")]
+            [string]$Type = "IPv4"
+        )
+        
+        $LocalSystemIPAddressList = @()
+        $dnsObject = Resolve-DnsName -Name $systemName -ErrorAction SilentlyContinue
+        if ($dnsObject)
+        {
+            switch ($Type) 
+            {
+                "All" {$LocalSystemIPAddressList += ($dnsObject).IPAddress}
+                "IPv4" {$LocalSystemIPAddressList += ($dnsObject | Where-Object {$_.Type -eq 'A'}).IPAddress}
+                "IPv6" {$LocalSystemIPAddressList += ($dnsObject | Where-Object {$_.Type -eq 'AAAA'}).IPAddress}
+            }
+            return $LocalSystemIPAddressList
+        }
+    }
+
+    # Get a list of all site servers and their sitecodes 
+    $siteCodeHashTable = @{}
+    $sqlRoleHashTable = @{}
+    $siteServerTypes = $siteSystems | Where-Object {$_.Type -in (1,2,4) -and $_.RoleName -eq 'SMS Site Server'}
+    $siteServerTypes | ForEach-Object {
+    
+        switch ($_.Type)
+        {
+            1 
+            {
+                $siteHashValue = 'SecondarySite'
+                $sqlHashValue = 'SECSQLServerRole'
+            }
+            
+            2 
+            {
+                $siteHashValue = 'PrimarySite'
+                $sqlHashValue = 'PRISQLServerRole'
+            }
+            
+            4 
+            {
+                $siteHashValue = 'CentralAdministrationSite'
+                $sqlHashValue = 'CASSQLServerRole'
+            }
+            #8 {'NotCoLocatedWithSiteServer'}
+        }
+
+        $siteCodeHashTable.Add($_.SiteCode, $siteHashValue)
+        $sqlRoleHashTable.Add($_.SiteCode, $sqlHashValue)
+    }
+    
+    
+    $outObject = New-Object System.Collections.ArrayList
+    foreach ($system in $siteSystems)
+    {
+        switch ($system.RoleName)
+        {
+            'SMS SQL Server' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode] # specific role like PRI, CAS, SEC or WSUS SQL 
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SQLServerRole'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Site Server' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = $siteCodeHashTable[$system.SiteCode] # specific role like PRI, CAS or SEC
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SiteServer'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+            }
+            'SMS Provider' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SMSProvider'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Software Update Point' 
+            {
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'CentralAdministrationSite')
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'CentralSoftwareUpdatePoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'SecondarySite')
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'SecondarySoftwareUpdatePoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+                else
+                {             
+                    $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
+                    if ($useParentWSUS.Value -eq 1)
+                    {
+                        $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                        $tmpObj.Role = 'PrimarySoftwareUpdatePoint'
+                        $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                        $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                        $tmpObj.SiteCode = $system.SiteCode
+                        $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                        [void]$outObject.Add($tmpObj)
+                    }
+                }
+
+                $supSQLServer = $system.Props | Where-Object {$_.PropertyName -eq 'DBServerName'}
+                if (-NOT ([string]::IsNullOrEmpty($supSQLServer.Value2)))
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'SUPSQLServerRole'
+                  
+                    $systemNameFromNetworkOSPath = $system.NetworkOSPath -replace '\\\\'
+                    [array]$dbServerName = $supSQLServer.Value2 -split '\\' # extract servername from server\instancename string
+                    # making sure we have a FQDN
+                    if ($systemNameFromNetworkOSPath -like "$($dbServerName[0])*")
+                    {
+                        $tmpObj.FullQualifiedDomainName = $systemNameFromNetworkOSPath
+                    }
+                    else 
+                    {
+                        if ($dbServerName[0] -notmatch '\.') # in case we don't have a FQDN, create one based on the FQDN of the initial system  
+                        {
+                            [array]$fqdnSplit =  $systemNameFromNetworkOSPath -split '\.' # split FQDN to easily replace hostname
+                            $fqdnSplit[0] = $dbServerName[0] # replace hostname
+                            $tmpObj.FullQualifiedDomainName = $fqdnSplit -join '.' # join back to FQDN
+                        }   
+                        else 
+                        {
+                            $tmpObj.FullQualifiedDomainName = $dbServerName[0] 
+                        }              
+                    }
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                    
+                }
+                
+                
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SoftwareUpdatePoint'            
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+                #Write-host "$(Get-date -Format u): If SUSDB of: `"$($tmpObj.FullQualifiedDomainName)`" is hosted on a SQL cluster, make sure to add each cluster node to the JSON config with role `"SUPSQLServerRole`" " -ForegroundColor Yellow
+
+            }
+            'SMS Endpoint Protection Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'EndpointProtectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Distribution Point' 
+            {
+
+                $isPXE = $system.Props | Where-Object {$_.PropertyName -eq 'IsPXE'}
+                if ($isPXE.Value -eq 1)
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'DistributionPointPXE'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+
+                $isPullDP = $system.Props | Where-Object {$_.PropertyName -eq 'IsPullDP'}
+                if ($isPullDP.Value -eq 1)
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'PullDistributionPoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)
+    
+                    $pullSources = $system.PropLists | Where-Object {$_.PropertyListName -eq 'SourceDistributionPoints'}
+                    if (-NOT $pullSources)
+                    {
+                        #Write-host "$(Get-date -Format u): No DP sources found for PullDP" -ForegroundColor Yellow
+                    }
+                    else
+                    {
+    
+                        $pullSources.Values | ForEach-Object {
+                                $Matches = $null
+                                $retVal = $_ -match '(DISPLAY=\\\\)(.+)(\\")'
+                                if ($retVal)
+                                {
+                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                                    $tmpObj.Role = 'PullDistributionPointSource'
+                                    $tmpObj.FullQualifiedDomainName = ($Matches[2])
+                                    $tmpObj.PullDistributionPointToSource = $system.NetworkOSPath -replace '\\\\'
+                                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($Matches[2]) -Type $IPType
+                                    $tmpObj.SiteCode = $system.SiteCode
+                                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                                    [void]$outObject.Add($tmpObj)
+                                }
+                                else
+                                {
+                                    #Write-host "$(Get-date -Format u): No DP sources found for PullDP" -ForegroundColor Yellow
+                                }
+                            }
+                    }
+                }
+    
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'DistributionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Management Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ManagementPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS SRS Reporting Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ReportingServicePoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Dmp Connector' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ServiceConnectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'Data Warehouse Service Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'DataWarehouseServicePoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Cloud Proxy Connector' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'CMGConnectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS State Migration Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'StateMigrationPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Fallback Status Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'FallbackStatusPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Component Server' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            'SMS Site System' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            'SMS Notification Server' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            <#
+            'SMS Certificate Registration Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'CertificateRegistrationPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            #>
+            Default 
+            {
+                #Write-host "$(Get-date -Format u): Role `"$($system.RoleName)`" not supported by the script at the moment. Create you own firewallrules and definitions in the config file if desired." -ForegroundColor Yellow
+            }
+    
+            <# still missing
+                SMS Device Management Point
+                SMS Multicast Service Point
+                SMS AMT Service Point
+                AI Update Service Point
+                SMS Enrollment Server
+                SMS Enrollment Web Site            
+                SMS DM Enrollment Service
+            #>
+    
+        }
+    }
+    
+    # group roles by system to have a by system list
+    $systemsArrayList = New-Object System.Collections.ArrayList
+    foreach ($itemGroup in ($outObject | Group-Object -Property FullQualifiedDomainName))
+    {
+        $roleList = @()
+        $pullDPList = @()
+        foreach ($item in $itemGroup.Group)
+        {
+            $roleList += $item.Role
+            if (-NOT ([string]::IsNullOrEmpty($item.PullDistributionPointToSource)))
+            {
+                $pullDPList += $item.PullDistributionPointToSource
+            }
+        }
+        [array]$roleList = $roleList | Select-Object -Unique
+        [array]$pullDPList = $pullDPList | Select-Object -Unique
+    
+        $itemList = [ordered]@{
+            FullQualifiedDomainName = $itemGroup.Name
+            IPAddress = $itemGroup.Group[0].IPAddress -join ','
+            SiteCode = $itemGroup.Group[0].SiteCode
+            ParentSiteCode = $itemGroup.Group[0].ParentSiteCode
+            Description = ""
+            RoleList = $roleList
+            PullDistributionPointToSourceList = $pullDPList
+        }
+      
+        [void]$systemsArrayList.Add($itemList)
+    }
+        
+    #$tmpObjRuleDefinition = New-Object pscustomobject | Select-Object FirewallRuleDefinition
+    $tmpObjDefinitions = New-Object pscustomobject | Select-Object SystemAndRoleList #, RuleDefinition, ServiceDefinition
+    
+    # Example Rule Definition
+    $tmpRuleArrayList = New-Object System.Collections.ArrayList
+    $servicesList = @("RPC","RPCUDP","RPCServicesDynamic","HTTPS")
+    $exampleRule = [ordered]@{
+                RuleName = "MECM Console to SMS provider"
+                Source = "MECMConsole"
+                Destination = "SiteServer"
+                Direction = "Inbound"
+                Action = "Allow"
+                Profile = "Any"
+                Group = "MECM"
+                Description = "Console to WMI SMS provider connection. HTTPS for AdminService"
+                Services = $servicesList
+            }
+    [void]$tmpRuleArrayList.Add($exampleRule)
+    
+    $tmpServiceArrayList = New-Object System.Collections.ArrayList
+    # Example Service Definition
+    $exampleService = [ordered]@{
+                Name = "RPC"
+                Protocol = "TCP"
+                Port = "RPCEPMAP"
+                Program = "%systemroot%\system32\svchost.exe"
+                Description = "RPC Endpoint Mapper"
+            }
+    [void]$tmpServiceArrayList.Add($exampleService)
+    
+    # Example Service Definition
+    $exampleService = [ordered]@{
+                Name = "HTTPS"
+                Protocol = "TCP"
+                Port = "443"
+                Program = ""
+                Description = "Https"
+            }
+    [void]$tmpServiceArrayList.Add($exampleService)
+    
+    if ($defaultDefinition)
+    {
+        # build object for JSON output using default config file as reference
+        $tmpObjDefinitions.SystemAndRoleList = $systemsArrayList
+        #$tmpObjDefinitions.RuleDefinition = $defaultDefinition.FirewallRuleDefinition.RuleDefinition
+        #$tmpObjDefinitions.ServiceDefinition = $defaultDefinition.FirewallRuleDefinition.ServiceDefinition
+        #$tmpObjRuleDefinition.FirewallRuleDefinition = $tmpObjDefinitions
+    }
+    else
+    {
+        # build object for JSON output
+        $tmpObjDefinitions.SystemAndRoleList = $systemsArrayList
+        #$tmpObjDefinitions.RuleDefinition = $tmpRuleArrayList
+        #$tmpObjDefinitions.ServiceDefinition = $tmpServiceArrayList
+        #$tmpObjRuleDefinition.FirewallRuleDefinition = $tmpObjDefinitions
+    }
+    
+    $tmpObjDefinitions | ConvertTo-Json -Depth 10 | Out-File -FilePath $OutputFilePath -Force
+    #Write-host "$(Get-date -Format u): Data exported to: `"$OutputFilePath`"" -ForegroundColor Green
+}
+#endregion
+
+#region Invoke-StopScript
+Function Invoke-StopScriptIfError
+{
+    param
+    (
+        [parameter(Mandatory=$false)]
+        [ValidateSet("LogOnly","EventlogOnly","LogAndEventlog")]
+        [string]$LogType = 'LogAndEventlog'
+    )
+
+    if ($global:SendErrorMail -ieq 'Yes')
+    {
+        Write-CMTraceLog -Message "Mail will be sent" -Component $global:Component -LogType $LogType
+        # Copy logfile to the same location with a different name to avoid file locking
+        $newLogFileTemp = $global:logFile -replace '\.', "-$(get-date -Format 'yyyyMMddhhmm')."
+        Copy-Item $global:logFile -Destination $newLogFileTemp -Force -ErrorAction SilentlyContinue
+
+        $paramSplatting = @{
+            SmtpServer = $global:MailServer
+            To = $global:MailTo
+            From = $global:MailFrom
+            Subject = "Backup script failed on $($env:Computername)"
+            Body = "Backup script failed on $($env:Computername). Logfile attached."
+            Priority = 'High'
+        }
+
+        # Add logfile if copy worked
+        if (Test-Path $newLogFileTemp)
+        {
+            $paramSplatting['Attachments'] = $newLogFileTemp
+        }
+
+        try 
+        {
+            Send-MailMessage @paramSplatting -ErrorAction Stop
+        }
+        catch 
+        {
+            Write-CMTraceLog -Message "Mail could not be sent" -Component $global:Component -LogType $LogType -Type Error
+            Write-CMTraceLog -Message "$($Error[0].Exception)" -Component $global:Component -LogType $LogType -Type Error
+        }        
+    }
+
+    Write-CMTraceLog -Message "Will stop script" -Component $global:Component -LogType $LogType
+    Remove-Item -Path $newLogFileTemp -Force -ErrorAction SilentlyContinue
+    exit 2
+}
+#endregion
 
 
 #-----------------------------------------
@@ -1634,9 +2223,8 @@ try
     # if config path not found, logfile will be created in script folder
     if (-NOT(Test-Path $configXMLFilePath))
     {
-        Write-CMTraceLog -Message "ConfigFile not found `"$configXMLFilePath`"!" -Type Error -WriteToEventLog -EventID 30
-        Write-CMTraceLog -Message "Stopping script!" -WriteToEventLog
-        exit 2
+        Write-CMTraceLog -Message "ConfigFile not found `"$configXMLFilePath`"!" -Type Error -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }
     else
     {
@@ -1652,7 +2240,6 @@ try
     [int]$maxLogFileSizeKB = $xmlConfig.sccmbackup.MaxLogfileSize
     [string[]]$customFoldersToBackup = $xmlConfig.sccmbackup.CustomFoldersToBackup.Folder
     [string]$custombackupFolderName = $xmlConfig.sccmbackup.CustomFolderBackupName
-    [string]$global:eventSource = $xmlConfig.sccmbackup.EventSource
     [string]$CheckSQLFiles = $xmlConfig.sccmbackup.CheckSQLFiles
     [string]$zipCustomBackup = $xmlConfig.sccmbackup.ZipCustomBackup
     [string]$tempZipFileFolder = $xmlConfig.sccmbackup.TempZipFileFolder
@@ -1666,12 +2253,21 @@ try
     [string]$BackupScheduledTasks = $xmlConfig.sccmbackup.BackupScheduledTasks
     [string]$BackupScheduledTasksRootPath = $xmlConfig.sccmbackup.BackupScheduledTasksRootPath
     [string]$BackupSQLDatabases = $xmlConfig.sccmbackup.BackupSQLDatabases
+    [string]$BackupWSUSDatabase = $xmlConfig.sccmbackup.BackupWSUSDatabase
     [string[]]$BackupDatabaseList = $xmlConfig.sccmbackup.DatabaseList.DatabaseName
     [string]$ExportSQLBackupData = $xmlConfig.sccmbackup.ExportSQLBackupData
+    [string]$ExportConfigMgrRoleData = $xmlConfig.sccmbackup.ExportConfigMgrRoleData
+    [string]$global:SendErrorMail = $xmlConfig.sccmbackup.SendErrorMail
+    [string]$global:SendSuccessMail = $xmlConfig.sccmbackup.SendSuccessMail
+    [string]$global:MailServer = $xmlConfig.sccmbackup.SMTPServer
+    [string]$global:MailFrom = $xmlConfig.sccmbackup.MailFrom
+    [string[]]$global:MailTo = $xmlConfig.sccmbackup.MailToList.MailToEntry
+    
 }
 catch
 {
-    exit 2
+    Write-CMTraceLog -Message "Not able to read config file" -Type Error -LogType 'LogAndEventlog' 
+    Invoke-StopScriptIfError
 }
 #-----------------------------------------
 #endregion Step 1 End
@@ -1692,8 +2288,7 @@ Rollover-Logfile -Logfile $global:logFile -MaxFileSizeKB $maxLogFileSizeKB
 #$scriptVersion
 Write-CMTraceLog -Message " "
 Write-CMTraceLog -Message "-------------------------------------"
-Write-CMTraceLog -Message "Starting ConfigMgr backup script version: $($scriptVersion) See logfile for more details." -WriteToEventLog
-Write-CMTraceLog -Message "Log: $logFile" -WriteToEventLog
+Write-CMTraceLog -Message "Starting ConfigMgr backup script version: $($scriptVersion) See logfile for more details. Log: $logFile" -LogType 'LogAndEventlog'
 #-----------------------------------------
 #endregion Step 2 End
 #-----------------------------------------
@@ -1707,8 +2302,8 @@ Write-CMTraceLog -Message "Log: $logFile" -WriteToEventLog
 $siteInfo = Get-ConfigMgrSiteInfo
 if (-NOT($siteInfo))
 {
-    Write-CMTraceLog -Type Error -Message 'Could not get ConfigMgrSiteInfo!'
-    Exit 1
+    Write-CMTraceLog -Type Error -Message 'Could not get ConfigMgrSiteInfo!' -LogType 'LogAndEventlog'
+    Invoke-StopScriptIfError
 }
 Write-Verbose $siteInfo
 
@@ -1753,7 +2348,8 @@ foreach($Folder in $contentLibraryPathLive)
     Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "ContentLibrary folder:", $Folder)"
 }
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Exclude SQL files from StandBy:", $excludeSQLFilesFromStandByCopy)"
-Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Event source:", $eventSource)"
+#Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Event source:", $eventSource)"
+Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "BackupWSUSDatabase:", $BackupWSUSDatabase)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "BackupSQLDatabases:", $BackupSQLDatabases)"
 foreach($database in $BackupDatabaseList)
 {
@@ -1776,22 +2372,22 @@ if ($copyToStandByServer -ieq 'Yes')
 {
     if ($standBybackupPath -eq $sccmBackupPath)
     {
-        Write-CMTraceLog -Type Error -Message "ERROR: SCCM backup path cannot be the same as StandBy backup path"
-        exit 1
+        Write-CMTraceLog -Type Error -Message "ERROR: SCCM backup path cannot be the same as StandBy backup path" -LogType LogAndEventlog
+        Invoke-StopScriptIfError
     }
 
     if ($standBybackupPath -eq $contentLibraryPathBackup)
     {
-        Write-CMTraceLog -Type Error -Message "ERROR: StandBy backup path cannot be the same as ContentLibrary backup path"
-        exit 1
+        Write-CMTraceLog -Type Error -Message "ERROR: StandBy backup path cannot be the same as ContentLibrary backup path" -LogType LogAndEventlog
+        Invoke-StopScriptIfError
     }
 }
 
 $customFoldersToBackup | ForEach-Object {
     if (($_ -eq $tempZipFileFolder) -or ($tempZipFileFolder -like "$_*"))
     {
-        Write-CMTraceLog -Type Error -Message "ERROR: ZIP temp folder cannot be part of the custom backup list"
-        exit 1
+        Write-CMTraceLog -Type Error -Message "ERROR: ZIP temp folder cannot be part of the custom backup list" -LogType LogAndEventlog
+        Invoke-StopScriptIfError
     }
 }
 
@@ -1827,9 +2423,9 @@ else
     }
     catch
     {
-        Write-CMTraceLog -Type Error -Message "ERROR: Folder could not be created `"$sitebackupPath`""
-        Write-CMTraceLog -Type Error -Message "$($Error[0].exception)"
-        exit 1
+        Write-CMTraceLog -Type Error -Message "ERROR: Folder could not be created `"$sitebackupPath`"" -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].exception)" -LogType LogAndEventlog
+        Invoke-StopScriptIfError
     }
 }
 
@@ -1870,8 +2466,8 @@ $pathToCheck | ForEach-Object {
 
 if ($missingPath)
 {
-    Write-CMTraceLog -Message "Missing path error. Stopping script!" -Type Error
-    exit 1
+    Write-CMTraceLog -Message "Missing path error. See log: $($global:LogFile) for more info" -Type Error -LogType LogAndEventlog
+    Invoke-StopScriptIfError
 }
 #-----------------------------------------
 #endregion Step 4 End
@@ -1920,9 +2516,9 @@ Get-item $customFoldersToBackup | ForEach-Object {
     }
     Catch
     {
-        Write-CMTraceLog -Message "Failed to copy folder: `"$($_.FullName)`"" -WriteToEventLog -EventID 30 -Type Error
-        Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error
-        exit 2
+        Write-CMTraceLog -Message "Failed to copy folder: `"$($_.FullName)`"" -Type Error
+        Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error -LogType 'LogAndEventlog'
+        Invoke-StopScriptIfError
     }  
 }
 #--------------
@@ -1972,13 +2568,20 @@ Disaster scenarios:
      The ConfigMgr Site Server operating system is affected and the OS needs to be re-installed.
      The database is not affected and can still be used or was recovered manually.
  Actions: 
-     Install a new server with the same name as before. The name is important!
-     Use the Step-Files to restore ConfigMgr, but skip "Step-03" and do not restore any DB.
- 
+     Install a new server with the same name as before. The name is important! 
+     SiteServerName: $($siteInfo.SiteServerName)
+     Also install a new SQL server. Could be a different supported SQL version and server name.
+     Make sure the new server has the same sizing as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same AD groups as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same administrators as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same software installed as before (can be foubnd in additiona step files 88-92).
+     Start with Step-02-install-Roles.txt and continue with the other step-files.
+     
 
  Scenario 2:
      The ConfigMgr Site Server is affected, but the operating system is still working.
  Actions:
+     SiteServerName: $($siteInfo.SiteServerName)
      Perform a sitereset with the following steps
      Run "$($siteInfo.InstallDirectory)\bin\X64\setup.exe"
      Choose "Perform site maintenance or reset this site"
@@ -1998,6 +2601,7 @@ Disaster scenarios:
  Scenario 3:
      Only the ConfigMgr database failed
  Actions:
+    SiteServerName: $($siteInfo.SiteServerName)
     To avoid any inconsistencies between the database and the installed ConfigMgr, uninstall the site before proceeding
     Run "$($siteInfo.InstallDirectory)\bin\X64\setup.exe"
     Choose "Uninstall this Configuration Manager site"
@@ -2014,6 +2618,7 @@ Disaster scenarios:
  Scenario 4:
      The ConfigMgr Site Server and the database is affected
  Actions:
+     SiteServerName: $($siteInfo.SiteServerName)
      Use Step-File 3 to recover the database
      Perform a sitereset
      Run "$($siteInfo.InstallDirectory)\bin\X64\setup.exe"
@@ -2026,140 +2631,173 @@ Disaster scenarios:
  Scenario 5: 
      The operating system of the Primary Site and the database are affected
  Actions:
-     Follow each Step-File to restore the whole site.
+     Install a new server with the same name as before. The name is important! 
+     SiteServerName: $($siteInfo.SiteServerName)
+     Also install a new SQL server. Could be a different supported SQL version and server name.
+     Make sure the new server has the same sizing as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same AD groups as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same administrators as before (can be foubnd in additiona step files 88-92).
+     Make sure the new server has the same software installed as before (can be foubnd in additiona step files 88-92).
+     Start with Step-02-install-Roles.txt and continue with the other step-files.
 "@
 
+
+# NOTE Create extra file just for the infos and change infos above
 
 Write-CMTraceLog -Message "Create: `"$recoveryFile01`""
 try 
 {  
     $generalRecoveryInfo | Out-File -FilePath $recoveryFile01 -Append
 
-    "  " | Out-File -FilePath $recoveryFile01 -Append
-    "  " | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'LIST OF SITE SERVER SETTINGS' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'A potential new system needs to have the exact same name as the old one!' | Out-File -FilePath $recoveryFile01 -Append
-    'The system also needs to have the same rights and AD group memberships as before.' | Out-File -FilePath $recoveryFile01 -Append
-    '(Below is a list with AD groups if the system is/was a member of some)' | Out-File -FilePath $recoveryFile01 -Append
-    'The new system also needs rights in AD for AD publishing. Full control for folder and subfolder of the "System Management" container' | Out-File -FilePath $recoveryFile01 -Append
-    'More can be found here: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/network/extend-the-active-directory-schema#step-2-the-system-management-container' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    "Name: $($siteInfo.SiteServerName)" | Out-File -FilePath $recoveryFile01 -Append
-    "  " | Out-File -FilePath $recoveryFile01 -Append
-    "  " | Out-File -FilePath $recoveryFile01 -Append
+@"
 
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Local Disk configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    -----------------------------------------------
+    SITE SERVER DATA
+    -----------------------------------------------'
+    A potential new system needs to have the exact same name as the old one!
+    Name: $($siteInfo.SiteServerName)
+
+    The system also needs to have the same rights and AD group memberships as before.
+    The new system also needs rights in AD for AD publishing. Full control for folder and subfolder of the "System Management" container
+    More can be found here: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/network/extend-the-active-directory-schema#step-2-the-system-management-container
+
+    Use the additional files called Step-88 or 89.. to Step-92.. to get more information about the system and its configuration.
+
+"@  | Out-File -FilePath $recoveryFile01 -Append
+
+    if ($ExportConfigMgrRoleData -ieq 'Yes')
+    {
+        $ListFileSiteSystems = '{0}\Step-88-ListOfSiteSystems.txt'  -f ($recoveryFile01 | Split-Path -Parent)
+        Export-SystemRoleInformation -SiteCode ($siteInfo.SiteCode) -ProviderMachineName ($siteInfo.SMSProvider) -OutputFilePath $ListFileSiteSystems
+    }
+
+
+    $ListFileDiskAndVolumeConfig = '{0}\Step-89-DiskAndVolumeConfig.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileDiskAndVolumeConfig`""
+    '-----------------------------------------------' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
+    'Local Disk configuration:' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
     Get-Disk | Select-Object Number, FriendlyName, ProvisioningType, @{Name='TotalSizeGB'; Expression={ $_.Size /1024/1024/1024}}, PartitionStyle | 
         Format-List * | 
-        Out-File -FilePath $recoveryFile01 -Append
+        Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
 
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Local Volume configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    ' ' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
+    'Local Volume configuration:' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
     Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem, DriveType, @{Name='TotalSizeGB'; Expression={ $_.Size /1024/1024/1024}} | 
         Format-List * | 
-        Out-File -FilePath $recoveryFile01 -Append
+        Out-File -FilePath $ListFileDiskAndVolumeConfig -Append
 
-
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Local Processor configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileRAMAndCPUConfig = '{0}\Step-90-RAMAndCPUConfig.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileRAMAndCPUConfig`""
+    ' ' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    'Local Processor configuration:' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
     Get-WmiObject -Namespace root\cimv2 -class win32_processor | Select-Object DeviceID, Name, CurrentClockSpeed, NumberOfCores, NumberOfLogicalProcessors | 
         Format-List * | 
-        Out-File -FilePath $recoveryFile01 -Append
+        Out-File -FilePath $ListFileRAMAndCPUConfig -Append
 
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Local RAM configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    ' ' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    'Local RAM configuration:' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
     $memDetails = Get-WmiObject -Namespace root\cimv2 -class Win32_PhysicalMemory | Measure-Object -Sum -Property Capacity
-    ('Memory modules: {0}' -f $memDetails.Count) | Out-File -FilePath $recoveryFile01 -Append
-    ('Total capacity: {0}GB' -f ($memDetails.Sum /1024/1024/1024)) | Out-File -FilePath $recoveryFile01 -Append
+    ('Memory modules: {0}' -f $memDetails.Count) | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
+    ('Total capacity: {0}GB' -f ($memDetails.Sum /1024/1024/1024)) | Out-File -FilePath $ListFileRAMAndCPUConfig -Append
         
+    $ListFileInstalledUpdates = '{0}\Step-91-ListOfInstalledUpdates.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileInstalledUpdates`""
+    ' ' | Out-File -FilePath $ListFileInstalledUpdates -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileInstalledUpdates -Append
+    'Installed Updates:' | Out-File -FilePath $ListFileInstalledUpdates -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileInstalledUpdates -Append
+    Get-WmiObject Win32_Quickfixengineering | Out-File -FilePath $ListFileInstalledUpdates -Append
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Installed Updates:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    Get-WmiObject Win32_Quickfixengineering | Out-File -FilePath $recoveryFile01 -Append
-
-
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'AD Info of System:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileADConfiguration = '{0}\Step-92-ADConfiguration.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileADConfiguration`""
+    ' ' | Out-File -FilePath $ListFileADConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileADConfiguration -Append
+    'AD Info of System:' | Out-File -FilePath $ListFileADConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileADConfiguration -Append
     $computerADInfo = (New-Object System.DirectoryServices.DirectorySearcher("(&(objectCategory=computer)(objectClass=computer)(cn=$env:Computername))")).FindOne().GetDirectoryEntry()
-    "LDAP path: $($computerADInfo.Path)" | Out-File -FilePath $recoveryFile01 -Append
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    'AD groups the system is a member of:' | Out-File -FilePath $recoveryFile01 -Append
-    $computerADInfo.memberOf | ForEach-Object { $_ | Out-File -FilePath $recoveryFile01 -Append }
+    "LDAP path: $($computerADInfo.Path)" | Out-File -FilePath $ListFileADConfiguration -Append
+    ' ' | Out-File -FilePath $ListFileADConfiguration -Append
+    'AD groups the system is a member of:' | Out-File -FilePath $ListFileADConfiguration -Append
+    $computerADInfo.memberOf | ForEach-Object { $_ | Out-File -FilePath $ListFileADConfiguration -Append }
 
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'IP configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileIPConfiguration = '{0}\Step-93-IPConfiguration.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileIPConfiguration`""
+    ' ' | Out-File -FilePath $ListFileIPConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileIPConfiguration -Append
+    'IP configuration:' | Out-File -FilePath $ListFileIPConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileIPConfiguration -Append
     $ipConfig = ipconfig /all
-    $ipConfig | Out-File -FilePath $recoveryFile01 -Append
+    $ipConfig | Out-File -FilePath $ListFileIPConfiguration -Append
+
+    $ListFileOfShareConfiguration = '{0}\Step-94-ShareConfiguration.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    ' ' | Out-File -FilePath $ListFileOfShareConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfShareConfiguration -Append
+    'Share configuration:' | Out-File -FilePath $ListFileOfShareConfiguration -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfShareConfiguration -Append
+    Get-CimInstance Win32_Share | Format-List Name, Path, Description | Out-File -FilePath $ListFileOfShareConfiguration -Append
 
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'Share configuration:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    Get-CimInstance Win32_Share | Format-List Name, Path, Description | Out-File -FilePath $recoveryFile01 -Append
-
-
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'List of system certificates:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileOfCertificates = '{0}\Step-95-ListOfCertificates.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileOfCertificates`""
+    ' ' | Out-File -FilePath $ListFileOfCertificates -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfCertificates -Append
+    'List of system certificates:' | Out-File -FilePath $ListFileOfCertificates -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfCertificates -Append
     $certList = Get-ChildItem -Path Cert:\LocalMachine\my -ErrorAction SilentlyContinue
-    $certList | Format-List Thumbprint, Subject, FriendlyName, Issuer, NotAfter, NotBefore, DNSNameList, EnhancedKeyUsageList | Out-File -FilePath $recoveryFile01 -Append
+    $certList | Format-List Thumbprint, Subject, FriendlyName, Issuer, NotAfter, NotBefore, DNSNameList, EnhancedKeyUsageList | Out-File -FilePath $ListFileOfCertificates -Append
 
 
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'List of installed software (32Bit and 64Bit)' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileOfInstalledSoftware = '{0}\Step-96-ListOfInstalledSoftware.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileOfInstalledSoftware`""
+    ' ' | Out-File -FilePath $ListFileOfInstalledSoftware -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfInstalledSoftware -Append
+    'List of installed software (32Bit and 64Bit)' | Out-File -FilePath $ListFileOfInstalledSoftware -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfInstalledSoftware -Append
     $path1 = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
     $path2 = 'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
     Get-ItemProperty -Path $path1, $path2 |
         Select-Object -Property DisplayName, DisplayVersion, Publisher, InstallDate | 
         Sort-Object -Property DisplayName -Descending | Format-Table -AutoSize |
-        Out-File -FilePath $recoveryFile01 -Append
+        Out-File -FilePath $ListFileOfInstalledSoftware -Append
 
-
-    ' ' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
-    'List of local groups and group members:' | Out-File -FilePath $recoveryFile01 -Append
-    '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
+    $ListFileOfLocalGroupsFile = '{0}\Step-97-ListOfLocalGroups.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ListFileOfLocalGroupsFile`""
+    ' ' | Out-File -FilePath $ListFileOfLocalGroupsFile -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfLocalGroupsFile -Append
+    'List of local groups and group members:' | Out-File -FilePath $ListFileOfLocalGroupsFile -Append
+    '-----------------------------------------------' | Out-File -FilePath $ListFileOfLocalGroupsFile -Append
     $localGroupList = Get-LocalGroup -ErrorAction SilentlyContinue | ForEach-Object {'-------------------------------------------------------------------------------'; net localgroup $_.Name}
     $localGroupList = $localGroupList -replace 'The command completed successfully.'
-    $localGroupList | Out-File -FilePath $recoveryFile01 -Append
+    $localGroupList | Out-File -FilePath $ListFileOfLocalGroupsFile -Append
 
+    <#
     ' ' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Event-Info:' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'A list of warning and error events 25h prior to the backup can be found in additiona files called:' | Out-File -FilePath $recoveryFile01 -Append
-    
-    $ApplicationEventsFile = '{0}\Step-98-AppEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
-    $SecurityEventsFile = '{0}\Step-98-SecurityEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
-    $SystemEventsFile = '{0}\Step-98-SystemEvents.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    #>
+    $ApplicationEventsFile = '{0}\Step-98-ApplicationEventsExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$ApplicationEventsFile`""
+    $SecurityEventsFile = '{0}\Step-98-SecurityEventsExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$SecurityEventsFile`""
+    $SystemEventsFile = '{0}\Step-98-SystemEventsExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$SystemEventsFile`""
 
     "   $($ApplicationEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
     "   $($SecurityEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
     "   $($SystemEventsFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
-    'The list might helpt to analyze a problem which caused ConfigMgr to stop working' | Out-File -FilePath $recoveryFile01 -Append
+    #'The list might helpt to analyze a problem which caused ConfigMgr to stop working' | Out-File -FilePath $recoveryFile01 -Append
     Get-WinEvent -FilterHashTable @{LogName='Application'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
         Format-List TimeCreated, LevelDisplayName, ProviderName, Message | out-file -FilePath $ApplicationEventsFile -Force
     Get-WinEvent -FilterHashTable @{LogName='Security'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
@@ -2167,15 +2805,18 @@ try
     Get-WinEvent -FilterHashTable @{LogName='System'; Level=2,3; StartTime=(Get-Date).AddHours(-25)} -ErrorAction SilentlyContinue | 
         Format-List TimeCreated, LevelDisplayName, ProviderName, Message | out-file -FilePath $SystemEventsFile -Force
 
-
+    <#
     ' ' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Export of CCM and SMS registry entries' | Out-File -FilePath $recoveryFile01 -Append
     '-----------------------------------------------' | Out-File -FilePath $recoveryFile01 -Append
     'Both exports are saved in seperate files and are called:' | Out-File -FilePath $recoveryFile01 -Append
+    #>
     
-    $CCMRegExportFile = '{0}\Step-99-CCM-RegExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
-    $SMSRegExportFile = '{0}\Step-99-SMS-RegExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    $CCMRegExportFile = '{0}\Step-99-CCM-RegistryExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$CCMRegExportFile`""
+    $SMSRegExportFile = '{0}\Step-99-SMS-RegistryExport.txt' -f ($recoveryFile01 | Split-Path -Parent)
+    Write-CMTraceLog -Message "Create: `"$SMSRegExportFile`""
 
     "   $($CCMRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
     "   $($SMSRegExportFile | Split-Path -Leaf)" | Out-File -FilePath $recoveryFile01 -Append
@@ -2190,7 +2831,7 @@ try
 }
 catch
 {
-    Write-CMTraceLog -Message "Not able to backup system info!" -WriteToEventLog -EventID 30 -Type Error
+    Write-CMTraceLog -Message "Not able to backup system info!" -LogType 'LogAndEventlog'  -Type Error
     Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error
     Write-CMTraceLog -Message "Not stopping script at that point..."
 }
@@ -2253,7 +2894,7 @@ try
 }
 catch
 {
-    Write-CMTraceLog -Message "Not able to get installed roles and features!" -WriteToEventLog -EventID 30 -Type Error
+    Write-CMTraceLog -Message "Not able to get installed roles and features!" -LogType 'LogAndEventlog'  -Type Error
     Write-CMTraceLog -Message "$($error[0].Exception)" -Type Error
     Write-CMTraceLog -Message "Not stopping script at that point..."
 }
@@ -2278,13 +2919,16 @@ else
 }
 
 
-$sqlRecoveryInfo = @'
+$sqlRecoveryInfo = @"
 Install new SQL Server if necessary. The most important SQL information can be found below.
 Use a supported version and same edition of SQL Server. 
 Do not switch from SQL Standard to SQL Enterprise or vice versa. 
 More information about how to restore databases can be found here: https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/restore-a-database-backup-using-ssms
 Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
-'@
+Try to use the same ports as before for the SQL Server. If you use different ports you need to use the ports during recovery in the ConfigMgr setup wizard.
+Make sure the database logins are set as logins in SQL under Security\Logins. Otherwise the login cannot be used to access the database.
+
+"@
 $sqlRecoveryInfo  | Out-File -FilePath $recoveryFile03 -Append
 
 
@@ -2301,6 +2945,8 @@ if ($ExportSQLBackupData -ieq 'yes')
 $siteInfo | Select-Object SQLServerName, SQLSSBPort, SQlServicePort, SQLDatabaseName, SQLDatabase, SQLInstance | 
     Format-List * | Out-File -FilePath $recoveryFile03 -Append
 
+'SQL Version:' | Out-File -FilePath $recoveryFile03 -Append
+'-------------------------' | Out-File -FilePath $recoveryFile03 -Append
  Get-SQLVersionInfo -SQLServerName $sqlServerConnectionString | Select-Object SQLVersion -ExpandProperty SQLVersion | Out-File -FilePath $recoveryFile03 -Append
 
 'SQL Backup Metadata:' | Out-File -FilePath $recoveryFile03 -Append
@@ -2324,6 +2970,8 @@ Write-CMTraceLog -Message "Create: `"$recoveryFile04`""
 try
 {
     'Install the same ADK version as before.' | Out-File -FilePath $recoveryFile04 -Append
+    #'You can use a command with the list of features like this:' | Out-File -FilePath $recoveryFile04 -Append
+    #'adksetup.exe /quiet /installpath c:\ADK /features OptionId.DeploymentTools ' | Out-File -FilePath $recoveryFile04 -Append
     'Installed ADK Version and components:' | Out-File -FilePath $recoveryFile04 -Append
     '-----------------------------------------------'  | Out-File -FilePath $recoveryFile04 -Append
     $InstalledADKInfo = Get-InstalledADKInfo
@@ -2352,14 +3000,20 @@ catch
 # $recoveryFile05
 # configure WSUS
 Write-CMTraceLog -Message "Create: `"$recoveryFile05`""
-"Configure WSUS before proceeding if WSUS was installed on the failed machine." | Out-File -FilePath $recoveryFile05 -Append
-"Make sure to configure WSUS to use SSL in case that was set before." | Out-File -FilePath $recoveryFile05 -Append
-"More details can be found here:" | Out-File -FilePath $recoveryFile05 -Append
-"https://docs.microsoft.com/en-us/windows-server/administration/windows-server-update-services/deploy/2-configure-wsus#23-secure-wsus-with-the-secure-sockets-layer-protocol" | Out-File -FilePath $recoveryFile05 -Append
-"Skip this step if the WSUS server has not been affected by a failure." | Out-File -FilePath $recoveryFile05 -Append
-"WSUS Infos:" | Out-File -FilePath $recoveryFile05 -Append
-$siteInfo.SUPList | Format-List * | Out-File -FilePath $recoveryFile05 -Append
+$tempTextString = @"
+Configure WSUS before proceeding if WSUS was installed on the failed machine.
+Make sure to configure WSUS to use SSL in case that was set before.
+More details can be found here:
+https://docs.microsoft.com/en-us/windows-server/administration/windows-server-update-services/deploy/2-configure-wsus#23-secure-wsus-with-the-secure-sockets-layer-protocol
+Skip this step if the WSUS server has not been affected by a failure.
 
+The SQL backup folder might also contain the SUSDB database backup depending on the configuration.
+
+WSUS Infos:
+"@ 
+$tempTextString | Out-File -FilePath $recoveryFile05 -Append
+
+$siteInfo.SUPList | Format-List * | Out-File -FilePath $recoveryFile05 -Append
 #-----------------------------------------
 #endregion Recovery Step 5
 #-----------------------------------------
@@ -2435,6 +3089,7 @@ else
 # validate certs
 Write-CMTraceLog -Message "Create: `"$recoveryFile09`""
 "Validate certificates before proceeding. The site might need certificates in order to function correctly" | Out-File -FilePath $recoveryFile09 -Append
+"A list of certificates can be found in the certificate info file or the first step file." | Out-File -FilePath $recoveryFile09 -Append
 
 #-----------------------------------------
 #endregion Recovery Step 9
@@ -2454,7 +3109,22 @@ if($xmlConfig.sccmbackup.BackupSSRSRDLs -ieq 'Yes')
     Write-CMTraceLog -Message "------> Backing up SSRS reports..."
     "Install and configure SSRS. Refer to the original installation guide. " | Out-File -FilePath $recoveryFile10 -Append
     "Import as many reports as you need into SSRS by using the files in the backup folders." | Out-File -FilePath $recoveryFile10 -Append
+    
     Export-SSRSReports -SiteInfo $siteInfo -BackupPath $tempCustomBackupPath
+}
+else 
+{
+$tempTextString = @"
+SSRS report backup is disabled in config file.
+Steps to recover SSRS:
+Install a new operating system
+Install the same SSRS version as shown below
+Restore the SSRS database (in case you made a backup)
+Reconfigure SSRS. Use the info below to create the same report server URI etc.
+SSRS Install doku: https://learn.microsoft.com/en-us/sql/reporting-services/install-windows/install-reporting-services?view=sql-server-ver16
+NOTE: The encryption key is only required if you restored the SSRS database and if you need to use the same report subscriptions as before. 
+"@
+    $tempTextString  | Out-File -FilePath $recoveryFile10 -Append
 }
 "SSRS Infos:" | Out-File -FilePath $recoveryFile10 -Append
 $siteInfo.SSRSList | Format-List * | Out-File -FilePath $recoveryFile10 -Append
@@ -2474,6 +3144,8 @@ Copy the backup source files to the source directory.
 Copy the ContentLibrary onto the system if the ContentLibrary was backed up before. 
 Otherwise invoke a content update after the last step of the process on all packages, 
 apps and other items to restore the ContentLibrary from the source files.
+Without the ContentLibrary on a primary site no content can be distributed or re-distributed to distribution points
+and a content update is required. 
 '@
 
 $contentRecoveryInfo| Out-File -FilePath $recoveryFile11 -Append
@@ -2510,6 +3182,7 @@ Type: "{0}\{1}\CD.Latest\SMSSETUP\BIN\X64.setup.exe /script {2}\{3}\{4}\00-Recov
 
 
 $recoverConfigMgrInfo = @"
+Unzip the cd.latest.zip file onto the new site server or into the same folder as the backup.
 Start ConfigMgr Setup from the cd.Latest folder of the backup via splash.hta.
 NOTE: Change the paths if you renamed the backup or copied the backup to another location.
 Backup path: "{0}\{1}\CD.Latest\splash.hta" 
@@ -2517,17 +3190,20 @@ Click on "Install" and "Next"
 Choose "Recover a site"
 Choose the option: "Use a site database that has been manually recovered"
 Since the database should be recovered during step 3 using SQL methods. 
-Use the below inofrmation to set the correct values for the recovery process
+Use the below information to set the correct values for the recovery process
 Note: Make sure the latest ConfigMgr client is installed on the site server.
 
-Or 
+OR
+
 use the "00-Recover-Site-without-SQL-unattended.ini" to recover the site without user interaction or the need to provide the correct values.
+NOTE: Make sure the correct key is used in the INI file!
 NOTE: Change the paths if you renamed the backup or copied the backup to another location. Do the same in the INI file. 
 Start the setup process by opening a CMD as administrator
 {2}
 
 "@ -f $sccmBackupPath, $sitebackupPathNewName, $cmdCommand
 
+"ConfigMgr installation key: $($LicenseKey)" | Out-File -FilePath $recoveryFile12 -Append 
 $recoverConfigMgrInfo | Out-File -FilePath $recoveryFile12 -Append
 $siteInfo | Out-File -FilePath $recoveryFile12 -Append
 #-----------------------------------------
@@ -2555,18 +3231,22 @@ Reenter PXE passwords
     In the Configuration Manager console, go to the Administration workspace, and select the Distribution Points node. 
     Any on-premises distribution point with Yes in the PXE column is enabled for PXE and may have a password set.
 
+Validate shared folder
+    Make sure to share all required folders again. Use the share info file to verify the shares.
+    One of the Step-88 to Step-92... files contains the share info.
+
 Configure SSL for site system roles that use IIS
     When you recover site systems that run IIS that are configured for HTTPS, reconfigure IIS to use the correct web server certificate.
 
 Update content
     If the whole ContentLibrary has previously been recovered, there might be no need to update each content.
     But if the ContentLibrary has NOT been recovered and only the source files are available, each package, app, image, bootmedia, 
-    driver package etc. needs to be updated in the console.
+    driver package etc. needs to be updated in the console. This will result in traffic to each Distribution Point.
     
 Regenerate the certificates for distribution points
     After you restore a site, the distmgr.log might list the following entry for one or more distribution points: 
     Failed to decrypt cert PFX data. This entry indicates that the distribution point certificate data can't be decrypted by the site. 
-    To resolve this issue, regenerate or reimport the certificate for affected distribution points.
+    To resolve this issue, regenerate or reimport the certificate for affected distribution points in th Distribution Point PXE settings.
 
 Recreate bootable media and prestaged media
     Re-create any task sequence boot media such as ISO files or USB drives
@@ -2623,18 +3303,20 @@ $recoverConfigMgrPasswords | Out-File -FilePath $recoveryFile13 -Append
 #-----------------------------------------
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> SQL database backup..."
+
+#create connection string for SQL Server
+if ($siteInfo.SQLInstance -eq "Default")
+{
+    $sqlServerConnectionString = $siteInfo.SQLServerName
+}
+else 
+{
+    $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
+}
+
+# Actual backup of SQL databases
 if ($BackupSQLDatabases -ieq 'yes')
 {
-    if ($siteInfo.SQLInstance -eq "Default")
-    {
-        $sqlServerConnectionString = $siteInfo.SQLServerName
-    }
-    else 
-    {
-        $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
-    }
-
-
     if ($BackupDatabaseList.Count -eq 1)
     {
         Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -BackupMode ($BackupDatabaseList[0])
@@ -2647,6 +3329,56 @@ if ($BackupSQLDatabases -ieq 'yes')
 else 
 {
     Write-CMTraceLog -Message "------> Skipped. Not enabled."
+}
+
+Write-CMTraceLog -Message "-------------------------------------"
+Write-CMTraceLog -Message "------> WSUS database backup..."
+
+# We dont want to backup the database twice in case it runs on the same SQL Server as the ConfigMgr db
+# In case we need to compare netbios name and DB we need to extract that from something like this: CM02.contoso.local
+$sqlServerNetbiosOnly = $siteInfo.SQLServerName -replace '\..*'
+[bool]$supDBRunsOnSameSQLServer = $false
+
+if ($siteInfo.SQLInstance -eq "Default")
+{
+    # we just need to check the servername
+    if ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLServerName) 
+    {
+        $supDBRunsOnSameSQLServer = $true
+    }
+    elseif ($siteInfo.SUPList.DBServerName -imatch $sqlServerNetbiosOnly)
+    {
+        $supDBRunsOnSameSQLServer = $true
+    }
+}
+else
+{
+    # we also need to check the instancename, could be different
+    if (($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLServerName) -and ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLInstance)) 
+    {
+        $supDBRunsOnSameSQLServer = $true
+    }
+    elseif (($siteInfo.SUPList.DBServerName -imatch $sqlServerNetbiosOnly) -and ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLInstance))
+    {
+        $supDBRunsOnSameSQLServer = $true
+    }
+}
+
+if ($BackupWSUSDatabase -ieq 'Yes')
+{
+    if ($supDBRunsOnSameSQLServer)
+    {
+        Write-CMTraceLog -Message "WSUS database runs on the same SQL Server as the ConfigMgr database. Skipping WSUS database backup." -Type Warning
+        Write-CMTraceLog -Message "WSUS database should be part of the normal SQL backup in that case" -Type Warning
+    }
+    else
+    {
+        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName ($siteInfo.SUPList.dbservername) -SQLDBNameList 'SUSDB'
+    }
+}
+else 
+{
+    Write-CMTraceLog -Message "Skipped. Not enabled."
 }
 #-----------------------------------------
 #endregion Step 6 End
@@ -2673,10 +3405,11 @@ if ($zipCustomBackup -ieq 'Yes')
     Catch{}
 }
 
-Write-CMTraceLog -Message "------"
+
 if(-NOT ($siteInfo.BackupEnabled))
 {
-    Write-CMTraceLog -Message "Compression of cd.latest folder. Since ConfigMgr backup task is not enabled."
+    Write-CMTraceLog -Message "-------------------------------------"
+    Write-CMTraceLog -Message "------> Compression of cd.latest folder. Since ConfigMgr backup task is not enabled."
     # zipping cd.latest
     Get-item $cdLatestFolder | New-ZipFile -PathToSaveFileTo "$sitebackupPath" -TempZipFileFolder $tempZipFileFolder -UseStaticFolderName Yes -FileName "cd.Latest"
 }
@@ -2688,6 +3421,36 @@ if(-NOT ($siteInfo.BackupEnabled))
 #-----------------------------------------
 #region Step 8
 #-----------------------------------------
+Write-CMTraceLog -Message "-------------------------------------"
+Write-CMTraceLog -Message "------> Creating main readme file..."
+if ($zipCustomBackup -ieq 'Yes')
+{
+    $tempTextString = 'Unpack the zip file under {0}\{1} and start with the Step-01-Setup-machine.txt file to recover the site' -f $sitebackupPath, $custombackupFolderName
+    $tempTextString | Out-File -FilePath "$sitebackupPath\README.txt" -Force
+    "The zip file can be unpacked to the same folder or directly onto the new machine." | Out-File -FilePath "$sitebackupPath\README.txt" -Append
+}
+else
+{
+    $tempTextString = 'Start with the Step-01-Setup-machine.txt file to recover the site in folder {0}\{1}' -f $sitebackupPath, $custombackupFolderName
+    $tempTextString | Out-File -FilePath "$sitebackupPath\README.txt" -Force
+
+}
+
+$tempTextString = @"
+
+List of folders and files and their meaning:
+----------------------------------------
+CustomBackups:  Contains the custom backup files either as zip file or as folders.
+SQLBackup:      Contains the SQL backup files. Only created if the SQL backup option is enabled.
+CD.Latest.zip:  Contains the cd.latest folder of the ConfigMgr installation media if the built-in ConfigMgr backup task is not enabled.
+
+Other files and folders could be created in case the built-in ConfigMgr backup task is enabled.
+The built-in ConfigMgr backup task will always contain the cd.latest folder of the ConfigMgr installation media (not compressed).
+"@ 
+
+$tempTextString | Out-File -FilePath "$sitebackupPath\README.txt" -Append
+
+
 # Rename Backup Folder
 Write-CMTraceLog -Message "-------------------------------------"
 Write-CMTraceLog -Message "------> Rename backup folder..."
@@ -2697,9 +3460,8 @@ try
 }
 Catch
 {
-    Write-CMTraceLog -Message "Renaming folder `"$($sitebackupPath)`" not possible. Error: $($error[0].Exception)" -WriteToEventLog -EventID 30 -type error
-    Write-CMTraceLog -Message "Stopping script" -WriteToEventLog
-    exit 2
+    Write-CMTraceLog -Message "Renaming folder `"$($sitebackupPath)`" not possible. Error: $($error[0].Exception)" -LogType 'LogAndEventlog' -type error
+    Invoke-StopScriptIfError
 }
 Write-CMTraceLog -Message "Folder renamed. Old: $($sitebackupPath) New: $sitebackupPathNewName"
 #-----------------------------------------
@@ -2754,12 +3516,11 @@ if ($copyContentLibrary -ieq 'Yes')
             }
             catch
             {
-                Write-CMTraceLog -Message "ContentLibrary folder could not be created: $newcontentLibraryPathBackup" -WriteToEventLog -EventID 30 -type error
-                Write-CMTraceLog -Message "Stopping script"
-                exit 2
+                Write-CMTraceLog -Message "ContentLibrary folder could not be created: $newcontentLibraryPathBackup" -LogType 'LogAndEventlog' -type error
+                Invoke-StopScriptIfError
             }
         }
-        
+        #NOTE run robocopy with /MIR only manually to prevent deletion of content library on the backup server
         Start-RoboCopy -Source $_ -Destination $newcontentLibraryPathBackup -RobocopyLogPath "$logFilePath\CLibraryRClog$i.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB" 
     }
     
@@ -2800,8 +3561,28 @@ else
 
 $stoptWatch.Stop()
 $scriptDurationString = "{0}h:{1}m:{2}s" -f $stoptWatch.Elapsed.Hours, $stoptWatch.Elapsed.Minutes, $stoptWatch.Elapsed.Seconds
-Write-CMTraceLog -Message "Stopping script! Runtime: $scriptDurationString" -EventlogName Application -EventID 20 -WriteToEventLog
+if ($global:SendSuccessMail -ieq 'Yes')
+{
+    $paramSplatting = @{
+        SmtpServer = $global:MailServer
+        To = $global:MailTo
+        From = $global:MailFrom
+        Subject = "Backup script finished on $($env:Computername)"
+        Body = "Backup script finished on $($env:Computername)"
+        #Attachments = $global:logFile
+    }
 
+    try 
+    {
+        Send-MailMessage @paramSplatting -ErrorAction Stop
+    }
+    catch 
+    {
+        Write-CMTraceLog -Type Error -Message "Mail could not be sent" -LogType 'LogAndEventlog'
+        Write-CMTraceLog -Type Error -Message "Error: $($error[0].Exception)" -LogType 'LogAndEventlog'
+    }
+}
+Write-CMTraceLog -Message "Stopping script! Runtime: $scriptDurationString" -LogType 'LogAndEventlog'
 #-----------------------------------------
 #region Step 11
 #-----------------------------------------
@@ -2818,6 +3599,5 @@ if ($copyToStandByServer -ieq 'Yes')
 #endregion Step 11 End
 #-----------------------------------------
 
-
 # End Script
-exit
+exit 0

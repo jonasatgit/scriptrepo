@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-XML for Script Version >= 20220112
+XML for Script Version >= 20231218
 
 Source: https://github.com/jonasatgit/scriptrepo
 
@@ -21,7 +21,7 @@ Source: https://github.com/jonasatgit/scriptrepo
 	
 	<!-- "Yes" or "No". If "Yes" the script will check if the SQL files are placed in the SCCM backup folder and will fail if they are missing -->
 	<!-- Only valid if the backup maintenance task is used -->
-    <CheckSQLFiles>No</CheckSQLFiles>
+	<CheckSQLFiles>No</CheckSQLFiles>
 	
 	<!-- List of additional folders to back up -->
 	<!-- Should contain everything required for a recovery -->
@@ -32,13 +32,13 @@ Source: https://github.com/jonasatgit/scriptrepo
 	</CustomFoldersToBackup>
 
 	<!-- Name of the folder each additional folder will be copied to. No need to change -->
-    <CustomFolderBackupName>CustomBackups</CustomFolderBackupName>
+	<CustomFolderBackupName>CustomBackups</CustomFolderBackupName>
 
 	<!-- "Yes" or "No". If "Yes" the script will compress the custom folder to save space -->
     <ZipCustomBackup>Yes</ZipCustomBackup>
 
 	<!-- We need a folder to store data we want to compress temporarily. The folder cannot be part of the path configured via: "SCCMbackupPath" -->
-    <TempZipFileFolder>E:\CUSTOM\BackupTmpZipFolder</TempZipFileFolder>
+	<TempZipFileFolder>E:\CUSTOM\BackupTmpZipFolder</TempZipFileFolder>
 
 	<!-- "Yes" or "No". If "Yes" the script will backup the IIS config and will create a recovery script -->
 	<BackupIIS>Yes</BackupIIS>
@@ -48,14 +48,10 @@ Source: https://github.com/jonasatgit/scriptrepo
     <BackupScheduledTasks>Yes</BackupScheduledTasks>
 
 	<!-- Path from within Task Scheduler from where to back up tasks -->
-    <BackupScheduledTasksRootPath>Custom</BackupScheduledTasksRootPath>
+	<BackupScheduledTasksRootPath>Custom</BackupScheduledTasksRootPath>
 
 	<!-- "Yes" or "No". If "Yes" the script will back up all SSRS reports. The backup account needs to have SSRS read rights for that. -->
 	<BackupSSRSRDLs>Yes</BackupSSRSRDLs>
-
-	<!-- Name of an event source for the Application event log.-->
-	<!-- Script failures for example will be written to the event log and will use the source name configured. -->
-	<EventSource>ConfigMgr Backup Script</EventSource>
 
 	<!-- Max logfile size in KB -->
    	<MaxLogfileSize>2048</MaxLogfileSize>
@@ -64,7 +60,7 @@ Source: https://github.com/jonasatgit/scriptrepo
     <CopyToStandByServer>No</CopyToStandByServer>
 
 	<!-- Path to which the Backup should to be copied if "CopyToStandByServer" is set to "yes" -->
-    <StandByBackupPath>F:\StandBy</StandByBackupPath>
+	<StandByBackupPath>F:\StandBy</StandByBackupPath>
 
 	<!-- "Yes" or "No". If "Yes" the script will not copy the SQL files (created via the built-in ConfigMgr backup task) to the second server-->
     <ExcludeSQLFilesFromStandByCopy>Yes</ExcludeSQLFilesFromStandByCopy>
@@ -77,13 +73,17 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<CopyContentLibrary>No</CopyContentLibrary>
 
 	<!-- List of local folders which need to be copied to another server. NOT limited to the ContentLibrary -->
-    <ContentLibraryPathLive>
-        	<Folder>F:\SCCMContentLib</Folder>
-        	<Folder>F:\SMSPKGF$</Folder>   
-    </ContentLibraryPathLive>
+	<ContentLibraryPathLive>
+			<Folder>F:\SCCMContentLib</Folder>
+			<Folder>F:\SMSPKGF$</Folder>   
+	</ContentLibraryPathLive>
 
 	<!-- Path to which the folders configured via "ContentLibraryPathLive" should be copied. (UNC or local) -->
-    <ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
+	<ContentLibraryPathBackup>F:\CL</ContentLibraryPathBackup>
+
+	<!-- "Yes" or "No". If "Yes" the script will backup the WSUS database of the primary site wsus server -->
+	<!-- IMPORTANT: The SQL service account needs to have write access to the path configured under "SCCMbackupPath" -->
+	<BackupWSUSDatabase>Yes</BackupWSUSDatabase>
 
 	<!-- "Yes" or "No". If "Yes" the script will use the list defined via "DatabaseList" and will try to backup each database -->
 	<!-- IMPORTANT: The SQL service account needs to have write access to the path configured under "SCCMbackupPath" -->
@@ -97,4 +97,26 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<!-- "Yes" or "No". If "Yes" the script will export backup metadata. Like the backup date and time, file name and backup path. Can be helpful in case SQL internal backup is used -->
 	<!-- NOTE: Not required if "BackupSQLDatabases" is set to yes, but both work independently -->
 	<ExportSQLBackupData>Yes</ExportSQLBackupData>
+
+	<!-- "Yes" or "No". If "Yes" the script will export the ConfigMgr role data. -->
+	<ExportConfigMgrRoleData>Yes</ExportConfigMgrRoleData>
+
+	<!-- "Yes" or "No". If "Yes" the script will send a mail in case of a failure -->
+	<SendErrorMail>Yes</SendErrorMail>
+
+	<!-- "Yes" or "No". If "Yes" the script will send a mail in the case of success -->
+	<SendSuccessMail>Yes</SendSuccessMail>
+
+	<!-- SMTP server to use for sending mails -->
+	<SMTPServer>smtp.contoso.local</SMTPServer>
+
+	<!-- List of email adresses the status mail should be sent -->
+	<MailToList>
+		<MailToEntry>user@contoso.local</MailToEntry>
+		<MailToEntry>user1@contoso.local</MailToEntry>
+	</MailToList>
+
+	<!-- Email the mail was sent from  -->
+	<MailFrom>user@contoso.local</MailFrom>
+	
 </sccmbackup>
