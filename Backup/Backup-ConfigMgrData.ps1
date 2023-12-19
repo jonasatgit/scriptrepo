@@ -1419,14 +1419,97 @@ function Get-SQLBackupMetadata
     }
     catch 
     {
-        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName)
-        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName)      
-        return   
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName) -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog     
+        Invoke-StopScriptIfError   
+    }
+
+    if ($SqlConnection)
+    {
+        if($SqlConnection.state -ieq 'Open')
+        {
+            Write-CMTraceLog -Message "Will close SQL connection" -Component ($MyInvocation.MyCommand.Name)
+            $SqlConnection.Close()
+        }
     }
 
     return $ds.tables[0]
 }
 #endregion
+
+
+#region Function Get-SQLPermissionsAndLogins
+<#
+.Synopsis
+    Get-SQLPermissionsAndLogins
+.DESCRIPTION
+    Get-SQLPermissionsAndLogins
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName 'sql2.contoso.local\instance2'
+.PARAMETER $SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+#>
+function Get-SQLPermissionsAndLogins
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$SQLServerName
+    )
+
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-CMTraceLog -Message "Export SQL permissions and logins" -Component ($commandName)
+    $connectionString = "Server=$SQLServerName;Database=msdb;Integrated Security=True"
+    Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
+    
+    $SqlQuery = @'
+    USE msdb
+    SELECT pr.principal_id, pr.name, pr.type_desc,   
+    pe.state_desc, pe.permission_name   
+    FROM sys.server_principals AS pr   
+    JOIN sys.server_permissions AS pe   
+    ON pe.grantee_principal_id = pr.principal_id;
+'@
+
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = $connectionString
+        $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+        $SqlCmd.Connection = $SqlConnection
+        $SqlCmd.CommandText = $SqlQuery
+        $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+        Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
+        $SqlAdapter.SelectCommand = $SqlCmd
+        $ds = New-Object -TypeName System.Data.DataSet
+        $SqlAdapter.Fill($ds) | Out-Null
+        $SqlCmd.Dispose()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($commandName) -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog     
+        Invoke-StopScriptIfError   
+    }
+
+    if ($SqlConnection)
+    {
+        if($SqlConnection.state -ieq 'Open')
+        {
+            Write-CMTraceLog -Message "Will close SQL connection" -Component ($MyInvocation.MyCommand.Name)
+            $SqlConnection.Close()
+        }
+    }
+
+    return $ds.tables[0]
+}
+#endregion
+
 
 #region Function Start-SQLDatabaseBackup
 <#
@@ -2256,6 +2339,7 @@ try
     [string]$BackupWSUSDatabase = $xmlConfig.sccmbackup.BackupWSUSDatabase
     [string[]]$BackupDatabaseList = $xmlConfig.sccmbackup.DatabaseList.DatabaseName
     [string]$ExportSQLBackupData = $xmlConfig.sccmbackup.ExportSQLBackupData
+    [string]$ExportSQLLogins = $xmlConfig.sccmbackup.ExportSQLLogins
     [string]$ExportConfigMgrRoleData = $xmlConfig.sccmbackup.ExportConfigMgrRoleData
     [string]$global:SendErrorMail = $xmlConfig.sccmbackup.SendErrorMail
     [string]$global:SendSuccessMail = $xmlConfig.sccmbackup.SendSuccessMail
@@ -2925,7 +3009,7 @@ Use a supported version and same edition of SQL Server.
 Do not switch from SQL Standard to SQL Enterprise or vice versa. 
 More information about how to restore databases can be found here: https://docs.microsoft.com/en-us/sql/relational-databases/backup-restore/restore-a-database-backup-using-ssms
 Restore each database (not only the ConfigMgr one) and proceed with the recovery process. 
-Try to use the same ports as before for the SQL Server. If you use different ports you need to use the ports during recovery in the ConfigMgr setup wizard.
+If you use different ports fpr SQL server you need to use the ports during recovery in the ConfigMgr setup wizard.
 Make sure the database logins are set as logins in SQL under Security\Logins. Otherwise the login cannot be used to access the database.
 
 "@
@@ -2937,11 +3021,6 @@ if ($BackupSQLDatabases -ieq 'yes')
     'Use the SQL backups in folder "SQLBackup" to restore the required databases' | Out-File -FilePath $recoveryFile03 -Append
 }
 
-if ($ExportSQLBackupData -ieq 'yes')
-{
-  'You can use the "SQL Backup Metadata" (shown below) to find the right backup to be recovered. Only the last 30 backups are visible in the list.' | Out-File -FilePath $recoveryFile03 -Append
-}
-
 $siteInfo | Select-Object SQLServerName, SQLSSBPort, SQlServicePort, SQLDatabaseName, SQLDatabase, SQLInstance | 
     Format-List * | Out-File -FilePath $recoveryFile03 -Append
 
@@ -2949,12 +3028,19 @@ $siteInfo | Select-Object SQLServerName, SQLSSBPort, SQlServicePort, SQLDatabase
 '-------------------------' | Out-File -FilePath $recoveryFile03 -Append
  Get-SQLVersionInfo -SQLServerName $sqlServerConnectionString | Select-Object SQLVersion -ExpandProperty SQLVersion | Out-File -FilePath $recoveryFile03 -Append
 
-'SQL Backup Metadata:' | Out-File -FilePath $recoveryFile03 -Append
-'-------------------------' | Out-File -FilePath $recoveryFile03 -Append
-
+if ($ExportSQLLogins -ieq 'yes')
+{
+    'SQL Permissions and Logins:' | Out-File -FilePath $recoveryFile03 -Append
+    '-------------------------' | Out-File -FilePath $recoveryFile03 -Append
+    'Use the below list to validate SQL permissions and logins. Create new logins if logins are missing.' | Out-File -FilePath $recoveryFile03 -Append
+    Get-SQLPermissionsAndLogins $sqlServerConnectionString | Out-File -FilePath $recoveryFile03 -Append
+}
 
 if ($ExportSQLBackupData -ieq 'yes')
 {
+    'SQL Backup Metadata:' | Out-File -FilePath $recoveryFile03 -Append
+    '-------------------------' | Out-File -FilePath $recoveryFile03 -Append
+    'You can use the "SQL Backup Metadata" (shown below) to find the right backup to be recovered. Only the last 30 backups are visible in the list.' | Out-File -FilePath $recoveryFile03 -Append
     Get-SQLBackupMetadata -SQLServerName $sqlServerConnectionString | Out-File -FilePath $recoveryFile03 -Append
 }
 #-----------------------------------------

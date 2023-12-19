@@ -98,6 +98,9 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<!-- NOTE: Not required if "BackupSQLDatabases" is set to yes, but both work independently -->
 	<ExportSQLBackupData>Yes</ExportSQLBackupData>
 
+	<!-- "Yes" or "No". If "Yes" the script will export SQL permissions and logins. -->
+    <ExportSQLLogins>Yes</ExportSQLLogins>
+
 	<!-- "Yes" or "No". If "Yes" the script will export the ConfigMgr role data. -->
 	<ExportConfigMgrRoleData>Yes</ExportConfigMgrRoleData>
 
