@@ -2311,7 +2311,16 @@ try
     }
     else
     {
-        [xml]$xmlConfig = Get-Content $configXMLFilePath
+        try
+        {
+            [xml]$xmlConfig = Get-Content $configXMLFilePath
+        }
+        catch
+        {
+            Write-CMTraceLog -Message "Not able to read config file" -Type Error -LogType 'LogAndEventlog' 
+            Write-CMTraceLog -Message "$($Error[0].Exception)" -Type Error -LogType 'LogAndEventlog'
+            Invoke-StopScriptIfError
+        }
     }
 
 
