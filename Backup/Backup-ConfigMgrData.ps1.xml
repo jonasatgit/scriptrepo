@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-XML for Script Version >= 20231218
+XML for Script Version >= 20240118
 
 Source: https://github.com/jonasatgit/scriptrepo
 
@@ -84,6 +84,12 @@ Source: https://github.com/jonasatgit/scriptrepo
 	<!-- "Yes" or "No". If "Yes" the script will backup the WSUS database of the primary site wsus server -->
 	<!-- IMPORTANT: The SQL service account needs to have write access to the path configured under "SCCMbackupPath" -->
 	<BackupWSUSDatabase>Yes</BackupWSUSDatabase>
+
+	<!-- Can be a list of defined database names or just ONE entry with a value of "AllUserDatabases" (to backup all user DBs) or "AllDatabases" (To backup all DBs) -->
+	<!-- Will backup defined databases of the WSUS server. ONly required if WSUS is NOT stored next to the primary site DB -->
+	<WSUSDatabaseList>
+		<DatabaseName>AllUserDatabases</DatabaseName>
+	</WSUSDatabaseList>
 
 	<!-- "Yes" or "No". If "Yes" the script will use the list defined via "DatabaseList" and will try to backup each database -->
 	<!-- IMPORTANT: The SQL service account needs to have write access to the path configured under "SCCMbackupPath" -->

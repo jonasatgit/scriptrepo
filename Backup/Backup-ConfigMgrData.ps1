@@ -63,7 +63,7 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20231218'
+$scriptVersion = '20240118'
 
 # Base variables
 [string]$scriptPath = $PSScriptRoot
@@ -2346,6 +2346,7 @@ try
     [string]$BackupScheduledTasksRootPath = $xmlConfig.sccmbackup.BackupScheduledTasksRootPath
     [string]$BackupSQLDatabases = $xmlConfig.sccmbackup.BackupSQLDatabases
     [string]$BackupWSUSDatabase = $xmlConfig.sccmbackup.BackupWSUSDatabase
+    [string[]]$WSUSDatabaseList = $xmlConfig.sccmbackup.WSUSDatabaseList.DatabaseName
     [string[]]$BackupDatabaseList = $xmlConfig.sccmbackup.DatabaseList.DatabaseName
     [string]$ExportSQLBackupData = $xmlConfig.sccmbackup.ExportSQLBackupData
     [string]$ExportSQLLogins = $xmlConfig.sccmbackup.ExportSQLLogins
@@ -2443,6 +2444,10 @@ foreach($Folder in $contentLibraryPathLive)
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Exclude SQL files from StandBy:", $excludeSQLFilesFromStandByCopy)"
 #Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Event source:", $eventSource)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "BackupWSUSDatabase:", $BackupWSUSDatabase)"
+foreach($database in $WSUSDatabaseList)
+{
+    Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "WSUSServerDBName:", $database)"
+}
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "BackupSQLDatabases:", $BackupSQLDatabases)"
 foreach($database in $BackupDatabaseList)
 {
@@ -3469,6 +3474,14 @@ if ($BackupWSUSDatabase -ieq 'Yes')
     else
     {
         Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName ($siteInfo.SUPList.dbservername) -SQLDBNameList 'SUSDB'
+        if ($WSUSDatabaseList -eq 1)
+        {
+            Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -BackupMode ($WSUSDatabaseList[0])
+        }
+        else 
+        {
+            Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $WSUSDatabaseList    
+        }
     }
 }
 else 
