@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-XML for Script Version >= 20240118
+XML for Script Version >= 20240129
 
 Source: https://github.com/jonasatgit/scriptrepo
 
@@ -55,6 +55,12 @@ Source: https://github.com/jonasatgit/scriptrepo
 
 	<!-- Max logfile size in KB -->
    	<MaxLogfileSize>2048</MaxLogfileSize>
+
+	<!-- Inter-Packet Gap (ms), to free bandwidth on slow lines. 0 means no limit. 1 or 2 is typically enough to slow down the transfer -->
+   	<RoboCopyIPGValue>0</RoboCopyIPGValue>
+
+	<!-- "Yes" or "No". If "Yes" the script will add the /MIR parameter to robocopy. This will mirror data copied to a stand by server or the content library copy job -->
+   	<RoboCopyMirroring>Yes</RoboCopyMirroring>	
 
 	<!-- "Yes" or "No". If "Yes" the script will also copy the backup to a second server -->
     <CopyToStandByServer>No</CopyToStandByServer>

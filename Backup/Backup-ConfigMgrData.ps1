@@ -63,15 +63,15 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20240118'
+$scriptVersion = '20240129'
 
 # Base variables
 [string]$scriptPath = $PSScriptRoot
 
-[string]$configXMLFileName = "{0}.xml" -f ($MyInvocation.MyCommand.Name)
+[string]$configXMLFileName = "{0}.xml" -f (($MyInvocation.MyCommand.Name) -replace '.ps1','')
 [string]$configXMLFilePath = "{0}\{1}" -f $scriptPath, $configXMLFileName
 
-[string]$global:logFile = "{0}\{1}.log" -f $scriptPath, ($MyInvocation.MyCommand.Name)
+[string]$global:logFile = "{0}\{1}.log" -f $scriptPath, (($MyInvocation.MyCommand.Name) -replace '.ps1','')
 [string]$global:scriptName = $MyInvocation.MyCommand.Name
 [string]$global:Component = "ConfigMgrBackupScript" # Eventsource for eventlog entries
 [string]$logFilePath = $PSScriptRoot
@@ -205,70 +205,36 @@ Function Check-RoboCopyResultFromLog
     #    Dirs :       168        47         0         0         0         0
     #   Files :       206        63       143         0         0         0
     
-    
-        $dirsTotal = 0
-        $dirsCopied = 0
-        $dirsSkipped = 0
-        $dirsMismatch = 0
-        $dirsFAILED = 0
-        $dirsExtras = 0
-        $filesTotal = 0
-        $filesCopied = 0
-        $filesSkipped = 0
-        $filesMismatch = 0
-        $filesFAILED = 0
-        $filesExtras = 0
-        # grep last 13 lines to avaluate the copy summary
-        $roboCopyResult = Get-Content $LogFilePath -Last 13
-        $bolFound = $false
-        $roboCopyResult | ForEach-Object {
-                # english and german language
-                if(($_).Contains('Dirs :') -or ($_).Contains('Verzeich.:'))
-                {
-                    $bolFound = $true
-                    $a = ($_).Replace('Dirs :','Dirs:')
-                    $a = ($a).split(" ",[StringSplitOptions]'RemoveEmptyEntries') # .NET Framework 4.5
-                    $dirsTotal = $a[1]
-                    $dirsCopied = $a[2]
-                    $dirsSkipped = $a[3]
-                    $dirsMismatch = $a[4]
-                    $dirsFAILED = $a[5]
-                    $dirsExtras = $a[6]
-                }
-                # english and german language
-                if(($_).Contains('Files :') -or ($_).Contains('Dateien:'))
-                {
-                    $bolFound = $true
-                    $a = ($_).Replace('Files :','Files:')
-                    $a = ($a).split(" ",[StringSplitOptions]'RemoveEmptyEntries') # .NET Framework 4.5
-                    $filesTotal = $a[1]
-                    $filesCopied = $a[2]
-                    $filesSkipped = $a[3]
-                    $filesMismatch = $a[4]
-                    $filesFAILED = $a[5]
-                    $filesExtras = $a[6]
-                }
-            }
-    
-        $props = @{
+    $roboCopyResult = Get-Content $LogFilePath -last 13
+
+    # german and english output parser
+    $regexResultDirectories = [regex]::Matches($roboCopyResult,'(Dirs|Verzeich\.*)(\s*:\s*)(?<DirsTotal>\d+)\s*(?<DirsCopied>\d+)\s*(?<DirsSkipped>\d+)\s*(?<DirsMismatch>\d+)\s*(?<DirsFailed>\d+)\s*(?<DirsExtras>\d+)\s*' )
+    $regexResultFiles = [regex]::Matches($roboCopyResult,'(Files|Dateien)(\s*:\s*)(?<FilesTotal>\d+)\s*(?<FilesCopied>\d+)\s*(?<FilesSkipped>\d+)\s*(?<FilesMismatch>\d+)\s*(?<FilesFailed>\d+)\s*(?<FilesExtras>\d+)\s*' )
+
+    $bolFound = $false
+    if ((-NOT([string]::IsNullOrEmpty($regexResultDirectories.value))) -and (-NOT([string]::IsNullOrEmpty($regexResultFiles.value))))
+    {
+        $bolFound = $true
+    }
+
+    $roboCopyResultObject = [pscustomobject]@{
             ResultFoundInLog = $bolFound
-            DirsTotal = $dirsTotal
-            DirsCopied = $dirsCopied
-            DirsSkipped = $dirsSkipped
-            DirsMismatch = $dirsMismatch
-            DirsFAILED = $dirsFAILED
-            DirsExtras = $dirsExtras
-            FilesTotal = $filesTotal
-            FilesCopied = $filesCopied
-            FilesSkipped = $filesSkipped
-            FilesMismatch = $filesMismatch
-            FilesFAILED = $filesFAILED
-            FilesExtras = $filesExtras
-        }
-    
-        $outObject = New-Object psobject -Property $props
-    
-        return $outObject
+            dirsTotal = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsTotal'}).Value
+            dirsCopied = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsCopied'}).Value
+            dirsSkipped = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsSkipped'}).Value
+            dirsMismatch = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsMismatch'}).Value
+            dirsFAILED = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsFailed'}).Value
+            dirsExtras = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsExtras'}).Value
+            filesTotal = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesTotal'}).Value
+            filesCopied = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesCopied'}).Value
+            filesSkipped = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesSkipped'}).Value
+            filesMismatch = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesMismatch'}).Value
+            filesFAILED = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesFailed'}).Value
+            filesExtras = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesExtras'}).Value
+    }
+
+    return $roboCopyResultObject
+}
 }
 #endregion
    
@@ -1523,29 +1489,26 @@ function Get-SQLPermissionsAndLogins
     Start-SQLDatabaseBackup -SQLServerName 'sql1.contoso.local'
 .EXAMPLE
     Start-SQLDatabaseBackup -SQLServerName 'sql2.contoso.local\instance2'
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql1.contoso.local' -BackupFolder 'F:\backup' -SQLDBNameList ('AllUserDatabases')
 .PARAMETER SQLServerName
     FQDN of SQL Server with instancename in case of a named instance
 .PARAMETER BackupFolder
     Folder to save the backups to. UNC or local. The function will create a sub-folder called 'SQLBackup'
 .PARAMETER SQLDBNameList
-    Array of database names
-.PARAMETER BackupMode
-    Either "AllDatabases" or "AllUserDatabases" to backup everything or just all user databases. If set, parameter "SQLDBNameList" will be ignored
+    Array of database names. Can also contain "AllDatabases" or "AllUserDatabases" to backup everything or just all user databases
 #>
 Function Start-SQLDatabaseBackup
 {
-    [CmdletBinding(DefaultParametersetName='Default')]
+    [CmdletBinding()]
     param 
     (
         [Parameter(Mandatory=$true)]
         [string]$SQLServerName,
         [Parameter(Mandatory=$true)]
         [string]$BackupFolder,
-        [parameter(ParameterSetName = 'SQLDBNameList',Mandatory=$false)]
-        [string[]]$SQLDBNameList=('ReportServer'),
-        [parameter(ParameterSetName = 'BackupMode',Mandatory=$false)]
-        [ValidateSet("AllDatabases", "AllUserDatabases")]
-        [string]$BackupMode
+        [parameter(Mandatory=$false)]
+        [string[]]$SQLDBNameList=('AllUserDatabases')
     )
 
     # We might need to create a folder
@@ -1576,23 +1539,26 @@ Function Start-SQLDatabaseBackup
     {
         Write-CMTraceLog -Type Error -Message "Connection to SQL server failed" -Component ($MyInvocation.MyCommand.Name) -LogType 'LogAndEventlog'
         Invoke-StopScriptIfError
-    }
+    }   
 
-    # Query to get user DBs#
-    if ($BackupMode -ieq "AllUserDatabases")
+    
+    # query for all user databases
+    if ($SQLDBNameList -icontains 'AllUserDatabases')
     {
+        $dbBackupString = 'AllUserDatabases'
         $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('master','tempdb','model','msdb');"
     }
 
-    # Query for all DBs
-    if ($BackupMode -ieq "AllDatabases")
+    # Query for all DBs. If both AllUserDatabases and AllDatabases passed via parameter, AllDatabases will overwrite the query
+    if ($SQLDBNameList -icontains 'AllDatabases')
     {
+        $dbBackupString = 'AllDatabases'
         $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('tempdb');"
     }
 
-    if (($BackupMode -ieq "AllDatabases") -or ($BackupMode -ieq "AllUserDatabases"))
+    if (($SQLDBNameList -icontains 'AllUserDatabases') -or ($SQLDBNameList -icontains 'AllDatabases'))
     {
-        Write-CMTraceLog -Message "Getting list of databases from SQL. Since BackupMode is set to: $($BackupMode)" -Component ($MyInvocation.MyCommand.Name)
+        Write-CMTraceLog -Message "Getting list of databases from SQL because of `"$($dbBackupString)`" setting" -Component ($MyInvocation.MyCommand.Name)
         try 
         {
             # Get all user databases
@@ -1662,6 +1628,7 @@ Function Start-SQLDatabaseBackup
             $SqlConnection.Close()
         }
     }
+
 }
 #endregion
 
@@ -2330,6 +2297,8 @@ try
     [int]$maxBackups = $xmlConfig.sccmbackup.MaxBackups # this value wins over maxBackupDays
     [string]$LicenseKey = $xmlConfig.sccmbackup.LicenseKey
     [int]$maxLogFileSizeKB = $xmlConfig.sccmbackup.MaxLogfileSize
+    [int]$roboCopyIPGValue = $xmlConfig.sccmbackup.RoboCopyIPGValue
+    [string]$roboCopyMirroring = $xmlConfig.sccmbackup.RoboCopyMirroring
     [string[]]$customFoldersToBackup = $xmlConfig.sccmbackup.CustomFoldersToBackup.Folder
     [string]$custombackupFolderName = $xmlConfig.sccmbackup.CustomFolderBackupName
     [string]$CheckSQLFiles = $xmlConfig.sccmbackup.CheckSQLFiles
@@ -2424,6 +2393,8 @@ Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "CD.Latest folder:" ,$cdLatestFold
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Custom Backup foldername:", $custombackupFolderName)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Zip custom backup:", $zipCustomBackup)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Temp Zip foldername:", $tempZipFileFolder)"
+Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "RoboCopyIPGValue:", $roboCopyIPGValue)"
+Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "RoboCopyMirroring:", $roboCopyMirroring)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Max backup days:", $maxBackupDays)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Max backup files:", $maxBackups)"
 Write-CMTraceLog -Message "$("{0,-35}{1}" -f  "Check SQL files:",  $CheckSQLFiles)"
@@ -3411,20 +3382,14 @@ if ($siteInfo.SQLInstance -eq "Default")
 }
 else 
 {
+    # In case of a named instance we need to add the instance name
     $sqlServerConnectionString = '{0}\{1}' -f $siteInfo.SQLServerName, $siteInfo.SQLInstance  
 }
 
 # Actual backup of SQL databases
 if ($BackupSQLDatabases -ieq 'yes')
 {
-    if ($BackupDatabaseList.Count -eq 1)
-    {
-        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -BackupMode ($BackupDatabaseList[0])
-    }
-    else 
-    {
-        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $BackupDatabaseList    
-    }
+    Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $BackupDatabaseList    
 }
 else 
 {
@@ -3473,15 +3438,7 @@ if ($BackupWSUSDatabase -ieq 'Yes')
     }
     else
     {
-        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName ($siteInfo.SUPList.dbservername) -SQLDBNameList 'SUSDB'
-        if ($WSUSDatabaseList -eq 1)
-        {
-            Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -BackupMode ($WSUSDatabaseList[0])
-        }
-        else 
-        {
-            Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $WSUSDatabaseList    
-        }
+        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $WSUSDatabaseList    
     }
 }
 else 
@@ -3592,12 +3549,29 @@ if ($copyToStandByServer -ieq 'Yes')
         Write-CMTraceLog -Message "Start of Robocopy for ConfigMgr Backup Data WITHOUT SQL Files to StandBy Server..."
         Write-CMTraceLog -Message "WITHOUT SQL Files refers only to the default ConfigMgr SQL Files of the default ConfigMgr backup task."
         Write-CMTraceLog -Message "Custom SQL Files are still copied."
-        Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB /XF $databaseFileName $databaseLogName"
+        
+        if ($roboCopyMirroring -ieq 'Yes')
+        {
+            $robocopyComonParamsString = "/MIR /E /NP /R:10 /W:10 /ZB /XF $databaseFileName $databaseLogName"
+        }
+        else 
+        {
+            $robocopyComonParamsString = "/E /NP /R:10 /W:10 /ZB /XF $databaseFileName $databaseLogName"
+        }
+        Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG $roboCopyIPGValue -CommonRobocopyParams $robocopyComonParamsString
     } 
     else
     {
+        if ($roboCopyMirroring -ieq 'Yes')
+        {
+            $robocopyComonParamsString = "/MIR /E /NP /R:10 /W:10 /ZB"
+        }
+        else 
+        {
+            $robocopyComonParamsString = "/E /NP /R:10 /W:10 /ZB"
+        }
         Write-CMTraceLog -Message "Start of Robocopy for ConfigMgr Backup Data with SQL Files to StandBy Server..."
-        Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB"
+        Start-RoboCopy -Source $sccmBackupPath -Destination $standBybackupPath -RobocopyLogPath "$logFilePath\StandbyRC.log" -IPG $roboCopyIPGValue -CommonRobocopyParams $robocopyComonParamsString
     }
 }
 
@@ -3628,8 +3602,15 @@ if ($copyContentLibrary -ieq 'Yes')
                 Invoke-StopScriptIfError
             }
         }
-        #NOTE run robocopy with /MIR only manually to prevent deletion of content library on the backup server
-        Start-RoboCopy -Source $_ -Destination $newcontentLibraryPathBackup -RobocopyLogPath "$logFilePath\CLibraryRClog$i.log" -IPG 2 -CommonRobocopyParams "/MIR /E /NP /R:10 /W:10 /ZB" 
+        if ($roboCopyMirroring -ieq 'Yes')
+        {
+            $robocopyComonParamsString = "/MIR /E /NP /R:10 /W:10 /ZB"
+        }
+        else 
+        {
+            $robocopyComonParamsString = "/E /NP /R:10 /W:10 /ZB"
+        }
+        Start-RoboCopy -Source $_ -Destination $newcontentLibraryPathBackup -RobocopyLogPath "$logFilePath\CLibraryRClog$i.log" -IPG $roboCopyIPGValue -CommonRobocopyParams $robocopyComonParamsString
     }
     
 }
