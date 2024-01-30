@@ -89,7 +89,7 @@ $localSystemFQDN = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
 try
 {
     $mccTestResult = $Null
-    $mccTestResult = Invoke-WebRequest -URI "http://$($localSystemFQDN)/mscomtest/wuidt.gif" -Headers @{"Host"="b1.download.windowsupdate.com"} -ErrorAction SilentlyContinue
+    $mccTestResult = Invoke-WebRequest -URI "http://$($localSystemFQDN)/mscomtest/wuidt.gif" -Headers @{"Host"="b1.download.windowsupdate.com"} -UseBasicParsing -ErrorAction SilentlyContinue
 }
 catch
 {
