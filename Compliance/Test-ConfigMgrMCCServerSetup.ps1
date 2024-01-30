@@ -93,6 +93,7 @@ try
 }
 catch
 {
+    # The webrequest might also fail if a user proxy is set for the user running the script
     Write-Output "Uncompliant. MCC test did not succeed. $(($Error[0].Exception).Message)"
     return
 }
