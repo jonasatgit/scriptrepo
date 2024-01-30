@@ -24,15 +24,26 @@
    Test-BCAndDedupConfiguration.ps1
 #>
 
-#Set to $true in case the script should remediate all required settings
-[bool]$Remediate = $false
-#If $true, the ConnectedCache Folder will be excluded from Dedup
-[bool]$ExcludeConnectedCacheFolderFromDeDup = $true
-#Name of the Microsoft Connected Cache data folder. Should be the same on all Connected Cache Servers
-[string]$ConnectedCacheFolderName = 'DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294'
+[CmdletBinding()]
+param
+(
+    #Set to $true in case the script should remediate all required settings
+    [bool]$Remediate = $false,
+
+    # If $true, the script will test for dedup service and if $Remediate = $true it will also install dedup if it is not installed already
+    # If §false, the script will only act on dedup if it is installed
+    [bool]$RequireDedup = $false,
+    
+    #If $true, the ConnectedCache Folder will be excluded from Dedup
+    [bool]$ExcludeConnectedCacheFolderFromDeDup = $true,
+    
+    #Name of the Microsoft Connected Cache data folder. Should be the same on all Connected Cache Servers
+    [string]$ConnectedCacheFolderName = 'DOINC-E77D08D0-5FEA-4315-8C95-10D359D59294'
+)
 
 # Just making sure we always have the correct output
 [string]$outPutString = $null
+[bool]$skipDedupChecks = $false
 
 # Prevent the script from running on a Primary Site
 if ((Get-Service -Name 'SMS_EXECUTIVE' -ErrorAction SilentlyContinue) -and (Get-Service -Name 'SMS_SITE_COMPONENT_MANAGER' -ErrorAction SilentlyContinue) -and ((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -Name 'Site Type' -ErrorAction SilentlyContinue).'Site Type' -ne 2))
@@ -61,8 +72,8 @@ else
 
 #region Validate BrancheCache feature and settings
 # Check if BracheCache feature is installed
-Import-Module BranchCache
-$Feature = Get-WindowsFeature -Name BranchCache
+Import-Module BranchCache -ErrorAction SilentlyContinue
+$Feature = Get-WindowsFeature -Name BranchCache -ErrorAction SilentlyContinue
 if (-NOT($Feature.Installed))
 {
     if ($Remediate)
@@ -71,7 +82,7 @@ if (-NOT($Feature.Installed))
     }
     else 
     {
-        Write-Output "BCFeatureMissing"
+        Write-Output "BranchCache feature missing. Stopping Script."
         # The script will end here. No need to validate further.
         Exit
     }
@@ -103,6 +114,7 @@ if ($Service.BranchCacheServiceStartType -ne "Automatic")
         $outPutString = "{0},{1}" -f $outPutString, "BCNotSetToAutomatic"   
     }
 }
+
 if ($Service.BranchCacheServiceStatus -ne "Running") 
 {
     if ($Remediate) 
@@ -155,6 +167,7 @@ $DataCacheDrive = ($DataCache.CacheFileDirectoryPath).SubString(0, 3)
 $HashCacheDest = "{0}{1}" -f $ContentLibDrive, "BranchCache\Publication"
 $DataCacheDest = "{0}{1}" -f $ContentLibDrive, "BranchCache\RePublication"
 
+# If branchcache hash cache is not stored next to the ContentLibrary fix that
 if ($ContentLibDrive -ne $HashCacheDrive) 
 {
     if ($Remediate) 
@@ -171,6 +184,7 @@ if ($ContentLibDrive -ne $HashCacheDrive)
     }
 }
 
+# If branchcache data cache is not stored next to the ContentLibrary fix that
 if ($ContentLibDrive -ne $DataCacheDrive) 
 {
     if ($Remediate) 
@@ -207,7 +221,7 @@ if ($HashCache.SizePercent -ne $BCSizePercent)
     }
 }
 
-# Data Cache
+# Data Cache SizePercent
 $DataCache = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\PeerDist\CacheMgr\RePublication" -Name SizePercent -ErrorAction SilentlyContinue
 if ($DataCache.SizePercent -ne $BCSizePercent) 
 {
@@ -221,7 +235,7 @@ if ($DataCache.SizePercent -ne $BCSizePercent)
     }
 }
 
-# Publication Catalog
+# Publication Catalog DatabaseCatalogSizePercent
 $PupCatalog = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\PeerDist\CacheMgr\Publication" -Name DatabaseCatalogSizePercent -ErrorAction SilentlyContinue
 if ($PupCatalog.DatabaseCatalogSizePercent -ne $BCSizePercent) 
 {
@@ -235,7 +249,7 @@ if ($PupCatalog.DatabaseCatalogSizePercent -ne $BCSizePercent)
     }
 }
 
-# RePublication Catalog
+# RePublication Catalog DatabaseCatalogSizePercent
 $RePupCatalog = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\PeerDist\CacheMgr\RePublication" -Name DatabaseCatalogSizePercent -ErrorAction SilentlyContinue
 if ($RePupCatalog.DatabaseCatalogSizePercent -ne $BCSizePercent) 
 {
@@ -274,92 +288,104 @@ if ($Remediate)
 
 #region Validate Data Dediplication feature and settings
 #Check Dedup Feature Installed, install if missing
-$DedupFeature = Get-WindowsFeature -Name FS-Data-Deduplication
+$DedupFeature = Get-WindowsFeature -Name FS-Data-Deduplication -ErrorAction SilentlyContinue
 if (-NOT ($DedupFeature.Installed)) 
 {
     if ($Remediate) 
     {
-        # Install dedup feature
-        $null = Install-WindowsFeature -Name FS-Data-Deduplication
-    }
-    else 
-    {
-        $outPutString = "{0},{1}" -f $outPutString, "DeDupFeatureMissing"         
-    }
-}
-
-
-$ContentLibDrive = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\SMS\DP" -Name ContentLibraryPath -ErrorAction Stop).ContentLibraryPath
-$ContentLibVolume = ($ContentLibDrive).SubString(0, 2)
-# Check Dedup enabled, enable if disabled and write status to variable for future processing
-$ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
-#Load DeDuplication Module
-Import-Module Deduplication
-
-if (-NOT ($ContenLibDedupStatus.Enabled))
-{
-    if ($Remediate) 
-    {
-        $null = Enable-DedupVolume $ContentLibVolume -ErrorAction Stop
-    }
-    else 
-    {
-        $outPutString = "{0},{1}" -f $outPutString, "DeDupNotEnabled"        
-    }
-}
-
-#Check file age for DeDuplication is set to 0 for best savings
-if (-NOT ($ContenLibDedupStatus.MinimumFileAgeDays -eq 0))
-{
-    if ($Remediate) 
-    {
-        $null = Set-DedupVolume -Volume $ContentLibVolume -MinimumFileAgeDays 0 -ErrorAction Stop
-    }
-    else 
-    {
-        $outPutString = "{0},{1}" -f $outPutString, "DeDupWrongFileAge"        
-    }
-} 
-     
-# Check if folders are excluded from DeDuplication
-$ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
-$RemediateExcludes = $false
-$DedupExcludeFolders = @()
-$DedupExcludeFolders = $ContenLibDedupStatus.ExcludeFolder
-if (-NOT $DedupExcludeFolders)
-{
-    $DedupExcludeFolders = @()
-}
-
-# check BranchCache folder
-if (-NOT ("\BranchCache" -in $DedupExcludeFolders))
-{
-    $DedupExcludeFolders += "\BranchCache"
-    $outPutString = "{0},{1}" -f $outPutString, "BCFolderNotExcludedFromDeDup"
-    $RemediateExcludes = $true
-}
-
-
-if ($ExcludeConnectedCacheFolderFromDeDup)
-{
-    if (Test-Path "$ContentLibVolume\$ConnectedCacheFolderName")
-    {
-        if (-NOT ("\$ConnectedCacheFolderName" -in $DedupExcludeFolders))
+        # Will only install dedup if we require the service
+        if ($RequireDedup)
         {
-            $DedupExcludeFolders += "\$ConnectedCacheFolderName"
-            $outPutString = "{0},{1}" -f $outPutString, "ConnectedCacheFolderNotExcludedFromDeDup"
-            $RemediateExcludes = $true
+            # Install dedup feature
+            $null = Install-WindowsFeature -Name FS-Data-Deduplication
+        }
+        else
+        {
+            $outPutString = "{0},{1}" -f $outPutString, "DeDupFeatureMissingButNotRequired"
+            $skipDedupChecks = $true
         }
     }
+    else 
+    {
+        $outPutString = "{0},{1}" -f $outPutString, "DeDupFeatureMissing"
+        $skipDedupChecks = $true         
+    }
 }
 
-if ($Remediate -and $RemediateExcludes) 
+# Only check and configure dedup if it is installed and required
+if (-NOT ($skipDedupChecks))
 {
-    $null = Set-DedupVolume $ContentLibVolume -ExcludeFolder $DedupExcludeFolders -ErrorAction Stop
-    # We could also start dedup optimization. If not manually started, the job will start a few hours later and will then run every hour. 
-    #$null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
-}
+    $ContentLibDrive = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\SMS\DP" -Name ContentLibraryPath -ErrorAction Stop).ContentLibraryPath
+    $ContentLibVolume = ($ContentLibDrive).SubString(0, 2)
+    # Check Dedup enabled, enable if disabled and write status to variable for further processing
+    $ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
+    #Load DeDuplication Module
+    Import-Module Deduplication
 
+    if (-NOT ($ContenLibDedupStatus.Enabled))
+    {
+        if ($Remediate) 
+        {
+            $null = Enable-DedupVolume $ContentLibVolume -ErrorAction Stop
+        }
+        else 
+        {
+            $outPutString = "{0},{1}" -f $outPutString, "DeDupNotEnabled"        
+        }
+    }
+
+    #Check file age for DeDuplication is set to 0 for best savings
+    if (-NOT ($ContenLibDedupStatus.MinimumFileAgeDays -eq 0))
+    {
+        if ($Remediate) 
+        {
+            $null = Set-DedupVolume -Volume $ContentLibVolume -MinimumFileAgeDays 0 -ErrorAction Stop
+        }
+        else 
+        {
+            $outPutString = "{0},{1}" -f $outPutString, "DeDupWrongFileAge"        
+        }
+    } 
+     
+    # Check if folders are excluded from DeDuplication
+    $ContenLibDedupStatus = Get-DedupVolume -Volume $ContentLibVolume -ErrorAction SilentlyContinue
+    $RemediateExcludes = $false
+    $DedupExcludeFolders = @()
+    $DedupExcludeFolders = $ContenLibDedupStatus.ExcludeFolder
+    if (-NOT $DedupExcludeFolders)
+    {
+        $DedupExcludeFolders = @()
+    }
+
+    # check BranchCache folder
+    if (-NOT ("\BranchCache" -in $DedupExcludeFolders))
+    {
+        $DedupExcludeFolders += "\BranchCache"
+        $outPutString = "{0},{1}" -f $outPutString, "BCFolderNotExcludedFromDeDup"
+        $RemediateExcludes = $true
+    }
+
+
+    if ($ExcludeConnectedCacheFolderFromDeDup)
+    {
+        if (Test-Path "$ContentLibVolume\$ConnectedCacheFolderName")
+        {
+            if (-NOT ("\$ConnectedCacheFolderName" -in $DedupExcludeFolders))
+            {
+                $DedupExcludeFolders += "\$ConnectedCacheFolderName"
+                $outPutString = "{0},{1}" -f $outPutString, "ConnectedCacheFolderNotExcludedFromDeDup"
+                $RemediateExcludes = $true
+            }
+        }
+    }
+
+    if ($Remediate -and $RemediateExcludes) 
+    {
+        $null = Set-DedupVolume $ContentLibVolume -ExcludeFolder $DedupExcludeFolders -ErrorAction Stop
+        # We could also start dedup optimization. If not manually started, the job will start a few hours later and will then run every hour. 
+        #$null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
+    }
+}
 #endregion
 
 #region Final output
