@@ -1,0 +1,63 @@
+/*
+    #************************************************************************************************************
+    # Disclaimer
+    #
+    # This sample script is not supported under any Microsoft standard support program or service. This sample
+    # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+    # including, without limitation, any implied warranties of merchantability or of fitness for a particular
+    # purpose. The entire risk arising out of the use or performance of this sample script and documentation
+    # remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+    # production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+    # damages for loss of business profits, business interruption, loss of business information, or other
+    # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+    # if Microsoft has been advised of the possibility of such damages.
+    #
+    #************************************************************************************************************
+
+
+    PowerBI function fnGraphCallWithPaging. With Microsoft Entra ID app registration and app secret
+    Needs three parameters:
+    TenantID
+    ApplicationID
+    AppSecretValue
+
+    Optional url parameter. Will get all Intune devices without url.
+    Url parameter also used for next link url in line 60
+
+*/
+let
+        Source = (optional url as text) =>
+        let	
+            uri = if url <> null then url else Text.Combine({"https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,azureADDeviceId,deviceName"}),
+    		token_uri = "https://login.windows.net",
+    		graph_uri = "https://graph.microsoft.com",		
+    		Resource = Text.Combine({"resource", Uri.EscapeDataString(graph_uri)}, "="),
+    		ClientId = Text.Combine({"client_id", ApplicationID}, "="),
+    		ClientSecret = Text.Combine({"client_secret", Uri.EscapeDataString(AppSecretValue)}, "="),
+    		GrantType = Text.Combine({"grant_type", "client_credentials"}, "="),
+    		Body = Text.Combine({Resource, ClientId, ClientSecret, GrantType}, "&"),
+    		
+    		tokenResponse = Json.Document(Web.Contents(
+    			token_uri, 
+                [
+                    RelativePath = Text.Combine({TenantID,"/oauth2/token"}), 
+                    Content = Text.ToBinary(Body)
+                ]
+            )),
+           access_token = tokenResponse[access_token],
+            json = Json.Document(Web.Contents(
+                graph_uri, 
+                [
+                    RelativePath= Text.Combine({Text.Range(uri,27)}),
+                    Headers = [#"Content-Type" = "application/json", #"Authorization" = "Bearer " & access_token]
+                ]
+            )),
+            nextLink = try Record.FieldOrDefault(json, "@odata.nextLink") otherwise null
+        in
+            if nextLink = null then
+                json[value]
+            else
+                json[value] & @fnGraphCallWithPaging(nextLink)
+
+in
+    Source

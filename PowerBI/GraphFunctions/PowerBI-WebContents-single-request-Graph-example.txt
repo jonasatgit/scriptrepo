@@ -1,0 +1,58 @@
+/*
+    #************************************************************************************************************
+    # Disclaimer
+    #
+    # This sample script is not supported under any Microsoft standard support program or service. This sample
+    # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+    # including, without limitation, any implied warranties of merchantability or of fitness for a particular
+    # purpose. The entire risk arising out of the use or performance of this sample script and documentation
+    # remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+    # production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+    # damages for loss of business profits, business interruption, loss of business information, or other
+    # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+    # if Microsoft has been advised of the possibility of such damages.
+    #
+    #************************************************************************************************************
+
+
+    Power Query single Web.Contents request example with Microsoft Entra ID app registration and app secret
+    Needs three parameters:
+    TenantID
+    ApplicationID
+    AppSecretValue
+
+    Intune configuration profile ID input required
+
+*/
+(id as text) as record =>
+
+	let
+		token_uri = "https://login.windows.net",
+		graph_uri = "https://graph.microsoft.com",
+		
+		Resource = Text.Combine({"resource", Uri.EscapeDataString(graph_uri)}, "="),
+		ClientId = Text.Combine({"client_id", #"ApplicationID"}, "="),
+		ClientSecret = Text.Combine({"client_secret", Uri.EscapeDataString(#"AppSecretValue")}, "="),
+		GrantType = Text.Combine({"grant_type", "client_credentials"}, "="),
+		Body = Text.Combine({Resource, ClientId, ClientSecret, GrantType}, "&"),
+		
+		tokenResponse = Json.Document(Web.Contents(
+			token_uri, 
+            [
+                RelativePath = Text.Combine({#"TenantID","/oauth2/token"}), 
+                Content = Text.ToBinary(Body)
+            ]
+        )),
+		
+		access_token = tokenResponse[access_token],
+        
+        output = Json.Document(Web.Contents(
+            graph_uri, 
+            [
+                RelativePath= Text.Combine({"beta/deviceManagement/deviceConfigurations/",id,"/deviceStatusOverview?$select=pendingCount,notApplicableCount,notApplicablePlatformCount,successCount,errorCount,failedCount,conflictCount"}),
+                Headers = [#"Content-Type" = "application/json", #"Authorization" = "Bearer " & access_token]
+            ]
+        ))
+
+    in
+        output
