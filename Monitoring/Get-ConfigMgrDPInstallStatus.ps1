@@ -291,7 +291,7 @@ if ($logFiles)
                 {
                     $paramSplatting = @{
                         From = $mailFrom
-                        To = $mailTo
+                        To = $MailToInCaseOfSuccess
                         SmtpServer = $mailserver
                         Subject = "$dpToCheck DP install successful. Will move file to success folder"
                         Body = $mailBody
@@ -312,7 +312,7 @@ if ($logFiles)
                     {
                         $paramSplatting = @{
                             From = $mailFrom
-                            To = $mailTo
+                            To = $MailToInCaseOfFailure
                             SmtpServer = $mailserver
                             Subject = "$dpToCheck Content still not there yet. Max timeout reached. Will move file to failure"
                             Body = $mailBody
@@ -333,11 +333,10 @@ if ($logFiles)
                         {
                             $paramSplatting = @{
                                 From = $mailFrom
-                                To = $mailTo
+                                To = $MailToInCaseOfFailure
                                 SmtpServer = $mailserver
                                 Subject = "$dpToCheck content still not there yet. Nothing in progress anymore. We need to assume a problem with the DP. Will move file to failure"
                                 Body = $mailBody
-                   
                             }
                             Send-MailMessage @paramSplatting -BodyAsHtml -Priority High
                     }             
@@ -355,7 +354,17 @@ if ($logFiles)
             {
                 Write-CMTraceLog -Message "$dpToCheck No install success found. Max timeout reached. Will move file to failure" -Type Warning
                 If ($moveFiles){Move-Item -Path ($log.FullName) -Destination $failureFolder -Force}
-                If ($sendMail){Send-MailMessage -From $mailFrom -SmtpServer $mailserver -Subject "$dpToCheck No install success found. Max timeout reached. Will move file to failure" -To $mailTo -Priority High}
+                If ($sendMail)
+                {
+                    $paramSplatting = @{
+                        From = $mailFrom
+                        To = $MailToInCaseOfFailure
+                        SmtpServer = $mailserver
+                        Subject = "$dpToCheck No install success found. Max timeout reached. Will move file to failure"
+                        Body = $mailBody
+                    }
+                    Send-MailMessage @paramSplatting -BodyAsHtml -Priority High
+                }
             }
             else
             {
