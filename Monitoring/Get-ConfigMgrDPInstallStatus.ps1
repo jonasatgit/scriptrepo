@@ -26,22 +26,62 @@
     
 .EXAMPLE
     Get-ConfigMgrDPInstallStatus.ps1
- 
+    Will run the script with default settings
+
+.PARAMETER ProviderServeName
+    The name of the provider server. Default is the local computername
+
+.PARAMETER QueueFolder
+    The folder where the logfiles to be monitored are located. Default is E:\CUSTOM\DPInstallTest\Queue
+
+.PARAMETER QuccessFolder
+    The folder where the logfiles of successful DP installations are moved to. Default is E:\CUSTOM\DPInstallTest\Success
+
+.PARAMETER FailureFolder
+    The folder where the logfiles of failed DP installations are moved to. Default is E:\CUSTOM\DPInstallTest\Failure
+
+.PARAMETER MoveFiles
+    If set to $true, the script will move the logfiles to the success or failure folder. Default is $true
+    If set to $false, the script will not move the logfiles to the success or failure folder.
+
+.PARAMETER SendMail
+    If set to $true, the script will send a mail in case of success or failure. Default is $true
+    If set to $false, the script will not send a mail in case of success or failure.
+
+.PARAMETER Mailserver
+    The mailserver to use for sending mails. Default is mail.contoso.local
+
+.PARAMETER MailToInCaseOfSuccess
+    Mail address list to send a mail in case of success.
+
+.PARAMETER MailToInCaseOfFailure
+    Mail address list to send a mail in case of failure.
+
+.PARAMETER MailFrom
+    Mail address to send the mail from.
+
+.PARAMETER StatusMessageDaySearchLimit
+    How many days we should look for status messages. Just to further decrease the result. Default is 70
+
+.PARAMETER MaxCheckTimeInDays
+    How many days a DP can still be in installing state until we assume a problem with a DP. Default is 2
+
 #>
 [CmdletBinding()]
 param
 (
-    [string]$providerServeName = $env:COMPUTERNAME,
-    [string]$queueFolder = 'E:\CUSTOM\DPInstallTest\Queue',
-    [string]$successFolder = 'E:\CUSTOM\DPInstallTest\Success',
-    [string]$failureFolder = 'E:\CUSTOM\DPInstallTest\Failure',
-    [bool]$moveFiles = $true,
-    [bool]$sendMail = $true,
-    [string]$mailserver = 'mail.contoso.local',
-    [string]$mailTo = 'admin@contoso.local',
-    [string]$mailFrom = 'admin@contoso.local',
-    [int]$statusMessageDaySearchLimit = 70, # How many days we should look for status messages. Just to further decrease the result
-    [int]$maxCheckTimeInDays = 2 # How many days a DP can still be in installing state until we assume a problem with a DP
+    [string]$ProviderServeName = $env:COMPUTERNAME,
+    [string]$QueueFolder = 'E:\CUSTOM\DPInstallTest\Queue',
+    [string]$QuccessFolder = 'E:\CUSTOM\DPInstallTest\Success',
+    [string]$FailureFolder = 'E:\CUSTOM\DPInstallTest\Failure',
+    [bool]$MoveFiles = $true,
+    [bool]$SendMail = $true,
+    [string]$Mailserver = 'mail.contoso.local',
+    [string[]]$MailToInCaseOfSuccess = ('admin@contoso.local'),
+    [string[]]$MailToInCaseOfFailure = ('admin@contoso.local'),
+    [string]$MailFrom = 'admin@contoso.local',
+    [int]$StatusMessageDaySearchLimit = 70, # How many days we should look for status messages. Just to further decrease the result
+    [int]$MaxCheckTimeInDays = 2 # How many days a DP can still be in installing state until we assume a problem with a DP
 )
  
  
