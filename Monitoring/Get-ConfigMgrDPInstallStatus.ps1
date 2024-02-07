@@ -253,7 +253,7 @@ if ($logFiles)
                         From = $mailFrom
                         To = $mailTo
                         SmtpServer = $mailserver
-                        Subject = "$dpToCheck DP install successful"
+                        Subject = "$dpToCheck DP install successful. Will move file to success folder"
                         Body = $mailBody
                    
                     }
@@ -274,7 +274,7 @@ if ($logFiles)
                             From = $mailFrom
                             To = $mailTo
                             SmtpServer = $mailserver
-                            Subject = "$dpToCheck DP content still not there. Max timeout reached"
+                            Subject = "$dpToCheck Content still not there yet. Max timeout reached. Will move file to failure"
                             Body = $mailBody
                    
                         }
@@ -287,7 +287,7 @@ if ($logFiles)
                     # We might need to test if the script starttime and DP install time is too close to actually start contentn ditribution
                     if ($smsDPStatusInfo.NumberInProgress -eq 0)
                     {
-                        Write-CMTraceLog -Message "$dpToCheck Content still not there yet. Nothing in progress. Will move file to failure" -Type Warning
+                        Write-CMTraceLog -Message "$dpToCheck content still not there yet. Nothing in progress anymore. We need to assume a problem with the DP. Will move file to failure" -Type Warning
                         If ($moveFiles){Move-Item -Path ($log.FullName) -Destination $failureFolder -Force}
                         If ($sendMail)
                         {
@@ -295,7 +295,7 @@ if ($logFiles)
                                 From = $mailFrom
                                 To = $mailTo
                                 SmtpServer = $mailserver
-                                Subject = "$dpToCheck DP content still not there. Nothing in progress anymore"
+                                Subject = "$dpToCheck content still not there yet. Nothing in progress anymore. We need to assume a problem with the DP. Will move file to failure"
                                 Body = $mailBody
                    
                             }
@@ -315,7 +315,7 @@ if ($logFiles)
             {
                 Write-CMTraceLog -Message "$dpToCheck No install success found. Max timeout reached. Will move file to failure" -Type Warning
                 If ($moveFiles){Move-Item -Path ($log.FullName) -Destination $failureFolder -Force}
-                If ($sendMail){Send-MailMessage -From $mailFrom -SmtpServer $mailserver -Subject "$dpToCheck No install success found. Max timeout reached" -To $mailTo -Priority High}
+                If ($sendMail){Send-MailMessage -From $mailFrom -SmtpServer $mailserver -Subject "$dpToCheck No install success found. Max timeout reached. Will move file to failure" -To $mailTo -Priority High}
             }
             else
             {
