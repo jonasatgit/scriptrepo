@@ -34,7 +34,7 @@
 .PARAMETER QueueFolder
     The folder where the logfiles to be monitored are located. Default is E:\CUSTOM\DPInstallTest\Queue
 
-.PARAMETER QuccessFolder
+.PARAMETER SuccessFolder
     The folder where the logfiles of successful DP installations are moved to. Default is E:\CUSTOM\DPInstallTest\Success
 
 .PARAMETER FailureFolder
@@ -72,7 +72,7 @@ param
 (
     [string]$ProviderServeName = $env:COMPUTERNAME,
     [string]$QueueFolder = 'E:\CUSTOM\DPInstallTest\Queue',
-    [string]$QuccessFolder = 'E:\CUSTOM\DPInstallTest\Success',
+    [string]$SuccessFolder = 'E:\CUSTOM\DPInstallTest\Success',
     [string]$FailureFolder = 'E:\CUSTOM\DPInstallTest\Failure',
     [bool]$MoveFiles = $true,
     [bool]$SendMail = $true,
@@ -207,6 +207,25 @@ Function Write-CMTraceLog
  
 Write-CMTraceLog -Message " "
 Write-CMTraceLog -Message "Start of script "
+
+# Lets check if the folders exists first
+If (-not (Test-Path -Path $QueueFolder))
+{
+    Write-CMTraceLog -Message "Queue folder does not exist: `"$QueueFolder`"" -Type Error
+    exit 1
+}
+If (-not (Test-Path -Path $QuccessFolder))
+{
+    Write-CMTraceLog -Message "Success folder does not exist: `"$QuccessFolder`"" -Type Error
+    exit 1
+}
+If (-not (Test-Path -Path $FailureFolder))
+{
+    Write-CMTraceLog -Message "Failure folder does not exist: `"$FailureFolder`"" -Type Error
+    exit 1
+}
+
+
 # Getting SMS provider and sitecode
 $ProviderInfo = Get-WmiObject -ComputerName $providerServeName -Namespace "root\sms" -query "select SiteCode, Machine from SMS_ProviderLocation where ProviderForLocalSite = True" -ErrorAction Stop
 $ProviderInfo = $ProviderInfo | Select-Object SiteCode, Machine -First 1
@@ -297,7 +316,15 @@ if ($logFiles)
                         Body = $mailBody
                    
                     }
-                    Send-MailMessage @paramSplatting -BodyAsHtml
+
+                    try 
+                    {
+                        Send-MailMessage @paramSplatting -BodyAsHtml -ErrorAction Stop    
+                    }
+                    catch 
+                    {
+                        Write-CMTraceLog -Message "Error sending mail: $($_)" -Type Warning
+                    }                    
                 }
             }
             else
@@ -318,7 +345,15 @@ if ($logFiles)
                             Body = $mailBody
                    
                         }
-                        Send-MailMessage @paramSplatting -BodyAsHtml -Priority High
+
+                        try 
+                        {
+                            Send-MailMessage @paramSplatting -BodyAsHtml -Priority High -ErrorAction Stop    
+                        }
+                        catch 
+                        {
+                            Write-CMTraceLog -Message "Error sending mail: $($_)" -Type Warning
+                        } 
                     }              
                 }
                 else
@@ -338,7 +373,15 @@ if ($logFiles)
                                 Subject = "$dpToCheck content still not there yet. Nothing in progress anymore. We need to assume a problem with the DP. Will move file to failure"
                                 Body = $mailBody
                             }
-                            Send-MailMessage @paramSplatting -BodyAsHtml -Priority High
+
+                            try 
+                            {
+                                Send-MailMessage @paramSplatting -BodyAsHtml -Priority High -ErrorAction Stop    
+                            }
+                            catch 
+                            {
+                                Write-CMTraceLog -Message "Error sending mail: $($_)" -Type Warning
+                            } 
                     }             
                     }
                     else
@@ -363,7 +406,15 @@ if ($logFiles)
                         Subject = "$dpToCheck No install success found. Max timeout reached. Will move file to failure"
                         Body = $mailBody
                     }
-                    Send-MailMessage @paramSplatting -BodyAsHtml -Priority High
+                    
+                    try 
+                    {
+                        Send-MailMessage @paramSplatting -BodyAsHtml -Priority High -ErrorAction Stop    
+                    }
+                    catch 
+                    {
+                        Write-CMTraceLog -Message "Error sending mail: $($_)" -Type Warning
+                    } 
                 }
             }
             else
