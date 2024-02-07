@@ -214,9 +214,9 @@ If (-not (Test-Path -Path $QueueFolder))
     Write-CMTraceLog -Message "Queue folder does not exist: `"$QueueFolder`"" -Type Error
     exit 1
 }
-If (-not (Test-Path -Path $QuccessFolder))
+If (-not (Test-Path -Path $SuccessFolder))
 {
-    Write-CMTraceLog -Message "Success folder does not exist: `"$QuccessFolder`"" -Type Error
+    Write-CMTraceLog -Message "Success folder does not exist: `"$SuccessFolder`"" -Type Error
     exit 1
 }
 If (-not (Test-Path -Path $FailureFolder))
