@@ -21,9 +21,10 @@
 
 .DESCRIPTION
     Script to get data shown via Get-DeliveryOptimizationPerfSnapThisMonth from registry
-    Using StdRegProv to get data direcly via ConfigMgr hardware ivnentory does not seem to work properly
-    The script can be used via ConfigMgr config item to write DeliveryOptimization Perf Data of This Month to custom WMI class
+    Using StdRegProv to get data direcly via ConfigMgr hardware inventory does not seem to work properly via system account
+    The script can be used via ConfigMgr config item to write DeliveryOptimization perf data of this Month to a custom WMI class
     Custom WMI class can then be inventoried via hardware inventory
+    This is not neccesary if the system is enrolled in Windows Update for Business reporting and the data is collected via windows telemetry
 
 .EXAMPLE
     .\New-DOUsageThisMonthWMIClass.ps1
