@@ -14,6 +14,8 @@
 
 # Script to disable Customer Feedback in SQL Server Reporting Services
 # Will also restart the service
+# Needs to be diabled in air-gapped environments where the server does not have internet access
+# Otherwise, the server will try to send feedback to Microsoft and will take a long time to timeout
 
 $path = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\SSRS\CPE"
 $ItemToChange_1 = 'CustomerFeedback'
