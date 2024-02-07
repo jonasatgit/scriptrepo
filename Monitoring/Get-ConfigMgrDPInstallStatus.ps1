@@ -204,7 +204,67 @@ Function Write-CMTraceLog
     }
 }
 #endregion
- 
+
+#region Rollover-Logfile
+<# 
+.Synopsis
+    Function Rollover-Logfile
+
+.DESCRIPTION
+    Will rename a logfile from ".log" to ".lo_". 
+    Old ".lo_" files will be deleted
+
+.PARAMETER MaxFileSizeKB
+    Maximum file size in KB in order to determine if a logfile needs to be rolled over or not.
+    Default value is 1024 KB.
+
+.EXAMPLE
+    Rollover-Logfile -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
+#>
+Function Rollover-Logfile
+{
+#Validate path and write log or eventlog
+[CmdletBinding()]
+Param(
+      #Path to test
+      [parameter(Mandatory=$True)]
+      [string]$Logfile,
+      
+      #max Size in KB
+      [parameter(Mandatory=$False)]
+      [int]$MaxFileSizeKB = 1024
+    )
+
+    if (Test-Path $Logfile)
+    {
+        $getLogfile = Get-Item $Logfile
+        if ($getLogfile.PSIsContainer)
+        {
+            # Just a folder. Skip actions
+        }
+        else 
+        {
+            $logfileSize = $getLogfile.Length/1024
+            $newName = "{0}.lo_" -f $getLogfile.BaseName
+            $newLogFile = "{0}\{1}" -f ($getLogfile.FullName | Split-Path -Parent), $newName
+
+            if ($logfileSize -gt $MaxFileSizeKB)
+            {
+                if(Test-Path $newLogFile)
+                {
+                    #need to delete old file first
+                    Remove-Item -Path $newLogFile -Force -ErrorAction SilentlyContinue
+                }
+                Rename-Item -Path ($getLogfile.FullName) -NewName $newName -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+#-----------------------------------------
+#endregion
+
+Rollover-Logfile -Logfile $global:logFile
+
 Write-CMTraceLog -Message " "
 Write-CMTraceLog -Message "Start of script "
 
