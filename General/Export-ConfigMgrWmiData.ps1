@@ -46,8 +46,9 @@ $datetimeString = get-date -Format "yyyyMMddHHmmss"
 $exportFileName = '{0}\CcmWmiExport-{1}.txt' -f $logPath, $datetimeString
 $global:dataList = [System.Collections.Generic.List[pscustomobject]]::new()
 $global:namespaceList = [System.Collections.Generic.List[string]]::new()
+$outInfo = [System.Collections.Generic.List[pscustomobject]]::new()
 
-
+#region function Get-CustomWMIClasses
 function Get-CustomWMIClasses
 {
     param
@@ -70,21 +71,19 @@ function Get-CustomWMIClasses
                 ClassName = $class.Name
             })
         }    
-    }
-
-
-    
-       
+    }       
 }
+#endregion
 
 
+#region function Get-WMINameSpaces
 function Get-WMINameSpaces
 {
     param
     (
         $NameSpace
     )
-    
+ 
     $namespaces = Get-WmiObject -Namespace $NameSpace -Class __Namespace -ErrorAction SilentlyContinue | Select-Object -Property Name
     if ($namespaces)
     {
@@ -136,30 +135,37 @@ function Get-WMINameSpaces
         }
 
     }
+
+    if ($global:namespaceList.Contains($NameSpace))
+    {
+        # skip
+    }
     else
     {
         $global:namespaceList.Add($NameSpace)
-        if($OutputInfo){Write-Host "Namespace found: $NameSpace"}  
+        if($OutputInfo){Write-Host "Namespace found: $NameSpace"}    
     }
 }
+#endregion
 
-
+# We need all namespaces first
+if($OutputInfo){Write-Host "Getting list of namespaces:" -ForegroundColor Cyan}
 foreach($item in $WMINamespaces)
 {
     Get-WMINameSpaces -NameSpace $item
-    Get-CustomWMIClasses -rootNamespace $item
+    #Get-CustomWMIClasses -rootNamespace $item
 }
 
-
+# With all namespaces we can get a list of all classes per namespace
+if($OutputInfo){Write-Host "Getting list of classes:" -ForegroundColor Cyan}
 foreach($namespace in $global:namespaceList)
 {
     if($OutputInfo){Write-Host "Getting classes for: $namespace"}
     Get-CustomWMIClasses -rootNamespace $namespace
 }
 
-
-$outInfo = [System.Collections.Generic.List[pscustomobject]]::new()
-
+# Lets now look for the data in each wmi class
+if($OutputInfo){Write-Host "Search for string: `"$($searchString)`" in WMI classes" -ForegroundColor Cyan}
 foreach ($WMIClass in $global:dataList)
 {
     # lets skip some classes
@@ -209,6 +215,7 @@ foreach ($WMIClass in $global:dataList)
             # export data if string was found in data
             if ($_ | select-string -pattern $searchString)
             {
+                if($OutputInfo){Write-Host "Data found in: `"$($WMIClass.Name)`"" -ForegroundColor Cyan}
                 $outInfo.Add($WMIClass)
                 $_ | Out-File $exportFileName -Append
                 '---------------------------------------------------------------------------------------------' | Out-File $exportFileName -Append
@@ -221,6 +228,7 @@ foreach ($WMIClass in $global:dataList)
     {
         if ($WMIClass.ClassName -imatch $searchString)
         {
+            if($OutputInfo){Write-Host "Data found in: `"$($WMIClass.Name)`"" -ForegroundColor Cyan}
             $outInfo.Add($WMIClass)
             Get-WmiObject -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) -ErrorAction Stop | Out-File $exportFileName -Append
             '---------------------------------------------------------------------------------------------' | Out-File $exportFileName -Append
@@ -240,6 +248,7 @@ if (Test-Path $exportFileName)
 
     if($OutputInfo)
     {
+        Write-Host "Found the string: `"$($searchString)`" in the following classes:" -ForegroundColor Cyan
         $outInfo
     }
 }
