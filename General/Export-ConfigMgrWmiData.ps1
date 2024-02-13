@@ -30,9 +30,13 @@ param
 #endregion
 
 #region param block just for the ConfigMgr scripts feature
-[string]$searchString = "d740f314-c3b7-44a8-bf18-2a38b7bf7e0d"
+param
+(
+    [string]$searchString = "d740f314-c3b7-44a8-bf18-2a38b7bf7e0d"
+)
+
 [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local')
-[bool]$OutputInfo = $true # should be false when running as a ConfigMgr script
+[bool]$OutputInfo = $true
 #endregion
 
 
@@ -58,7 +62,7 @@ if (-NOT ($logPath))
 
 
 $datetimeString = get-date -Format "yyyyMMddHHmmss"
-$exportFileName = '{0}\CcmWmiExport-{1}.txt' -f $logPath, $datetimeString
+$exportFileName = '{0}\CcmWmiExport-{1}.log' -f $logPath, $datetimeString
 $global:dataList = [System.Collections.Generic.List[pscustomobject]]::new()
 $global:namespaceList = [System.Collections.Generic.List[string]]::new()
 $outInfo = [System.Collections.Generic.List[pscustomobject]]::new()
