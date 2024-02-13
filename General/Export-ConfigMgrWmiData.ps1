@@ -13,7 +13,12 @@
 #
 #************************************************************************************************************
 
+# To run the script as a ConfigMgr script, use the second param block to avoid issues with parameters
+
 # Test script to search in WMI
+
+#region param block to us the script in standalone mode
+<#
 [CmdletBinding()]
 param
 (
@@ -21,6 +26,20 @@ param
     [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local'),
     [bool]$OutputInfo = $true
 )
+#>
+#endregion
+
+#region param block just for the ConfigMgr scripts feature
+param
+(
+    [string]$searchString = "d740f314-c3b7-44a8-bf18-2a38b7bf7e0d"
+)
+
+[array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local')
+[bool]$OutputInfo = $true
+#endregion
+
+
 
 try
 {
@@ -251,6 +270,8 @@ if (Test-Path $exportFileName)
         Write-Host "Found the string: `"$($searchString)`" in the following classes:" -ForegroundColor Cyan
         $outInfo
     }
+
+    Write-Output "Data found"
 }
 else
 {
