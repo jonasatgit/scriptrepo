@@ -32,7 +32,7 @@ param
 #region param block just for the ConfigMgr scripts feature
 [string]$searchString = "d740f314-c3b7-44a8-bf18-2a38b7bf7e0d"
 [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local')
-[bool]$OutputInfo = $true
+[bool]$OutputInfo = $true # should be false when running as a ConfigMgr script
 #endregion
 
 
