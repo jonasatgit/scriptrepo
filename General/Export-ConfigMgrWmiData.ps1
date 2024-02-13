@@ -17,8 +17,9 @@
 [CmdletBinding()]
 param
 (
-    $searchString = 'd740f314-c3b7-44a8-bf18-2a38b7bf7e0d',
-    $OutputInfo = $true
+    [string]$searchString = 'd740f314-c3b7-44a8-bf18-2a38b7bf7e0d',
+    [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local'),
+    [bool]$OutputInfo = $true
 )
 
 try
@@ -28,18 +29,23 @@ try
 
     # Get the ConfigMgr client log path from the registry
     $logPath = Get-ItemPropertyValue -Path $registryPath -Name "LogDirectory"
-}catch{}
+}catch
+{
+    Write-Output "ConfigMgr client log path not found $($_)"
+    Exit 0
+}
 
 if (-NOT ($logPath))
 {
     Write-Output "ConfigMgr client log path not found"
-    Exit 0
+    Exit 0   
 }
 
 
 $datetimeString = get-date -Format "yyyyMMddHHmmss"
 $exportFileName = '{0}\CcmWmiExport-{1}.txt' -f $logPath, $datetimeString
 $global:dataList = [System.Collections.Generic.List[pscustomobject]]::new()
+$global:namespaceList = [System.Collections.Generic.List[string]]::new()
 
 
 function Get-CustomWMIClasses
@@ -70,10 +76,6 @@ function Get-CustomWMIClasses
     
        
 }
-
-
-
-$global:namespaceList = [System.Collections.Generic.List[string]]::new()
 
 
 function Get-WMINameSpaces
@@ -131,18 +133,23 @@ function Get-WMINameSpaces
             if($OutputInfo){Write-Host "Namespace found: $newString"}
 
             Get-WMINameSpaces -NameSpace $newString
-
         }
+
+    }
+    else
+    {
+        $global:namespaceList.Add($NameSpace)
+        if($OutputInfo){Write-Host "Namespace found: $NameSpace"}  
     }
 }
 
-Get-WMINameSpaces -NameSpace 'root\ccm'
 
-Get-WMINameSpaces -NameSpace 'ROOT\Microsoft\PolicyPlatform\Documents\Local'
+foreach($item in $WMINamespaces)
+{
+    Get-WMINameSpaces -NameSpace $item
+    Get-CustomWMIClasses -rootNamespace $item
+}
 
-
-Get-CustomWMIClasses -rootNamespace 'root\ccm'
-Get-CustomWMIClasses -rootNamespace 'ROOT\Microsoft\PolicyPlatform\Documents\Local'
 
 foreach($namespace in $global:namespaceList)
 {
@@ -197,7 +204,7 @@ foreach ($WMIClass in $global:dataList)
 
     try
     {
-        Get-WmiObject -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) | ForEach-Object {
+        Get-WmiObject -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) -ErrorAction Stop | ForEach-Object {
             
             # export data if string was found in data
             if ($_ | select-string -pattern $searchString)
@@ -215,7 +222,7 @@ foreach ($WMIClass in $global:dataList)
         if ($WMIClass.ClassName -imatch $searchString)
         {
             $outInfo.Add($WMIClass)
-            Get-WmiObject -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) | Out-File $exportFileName -Append
+            Get-WmiObject -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) -ErrorAction Stop | Out-File $exportFileName -Append
             '---------------------------------------------------------------------------------------------' | Out-File $exportFileName -Append
         }
     }catch{}
@@ -230,6 +237,11 @@ if (Test-Path $exportFileName)
     $outInfo | Out-File $exportFileName -Force
     '---------------------------------------------------------------------------------------------' | Out-File $exportFileName -Append
     $fileContent | Out-File $exportFileName -Append
+
+    if($OutputInfo)
+    {
+        $outInfo
+    }
 }
 else
 {
