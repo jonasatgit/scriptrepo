@@ -28,7 +28,7 @@ $global:SiteCode = "P02" # Site code
 $global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
 
 $global:ExportRootFolder = 'E:\EXPORT' 
-
+$global:Spacer = '-'
 
 
 if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
@@ -182,6 +182,7 @@ function Export-CMItemCustomFunction
     {
         $item = $_ # $_ coming from pipeline
         $itemObjectTypeName = $item.SmsProviderObjectPath -replace '\..*'
+        $skipConfigMgrFolderSearch = $false # some items don't support folder. So, no need to look for one
 
         # We might need to read data from different properties
         switch ($itemObjectTypeName)
@@ -190,11 +191,6 @@ function Export-CMItemCustomFunction
             {
                 # We need a folder to store CIs in
                 $itemExportRootFolder = '{0}\CI' -f $global:FullExportFolderName
-                if (-not (Test-Path $itemExportRootFolder)) 
-                {
-                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
-                }
-
                 $itemModelName = $item.ModelName
                 $itemFileExtension = '.cab'
                 $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
@@ -203,11 +199,6 @@ function Export-CMItemCustomFunction
             {
                 # We need a folder to store baselines in
                 $itemExportRootFolder = '{0}\Baseline' -f $global:FullExportFolderName
-                if (-not (Test-Path $itemExportRootFolder)) 
-                {
-                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
-                }
-
                 $itemModelName = $item.ModelName
                 $itemFileExtension = '.cab'
                 $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
@@ -216,11 +207,6 @@ function Export-CMItemCustomFunction
             {
                 # We need a folder to store TaskSequences in
                 $itemExportRootFolder = '{0}\TS' -f $global:FullExportFolderName
-                if (-not (Test-Path $itemExportRootFolder)) 
-                {
-                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
-                }
-
                 $itemModelName = $item.PackageID
                 $itemFileExtension = '.zip'
                 $itemFileName = (Sanitize-FileName -FileName ($item.Name))
@@ -229,28 +215,46 @@ function Export-CMItemCustomFunction
             {
                 # We need a folder to store AntimalwarePolicies in
                 $itemExportRootFolder = '{0}\AntimalwarePolicy' -f $global:FullExportFolderName
-                if (-not (Test-Path $itemExportRootFolder)) 
-                {
-                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
-                }
-
                 $itemModelName = $item.SettingsID
                 $itemFileExtension = '.xml'
-                $itemFileName = (Sanitize-FileName -FileName ($item.Name))            
+                $itemFileName = (Sanitize-FileName -FileName ($item.Name))       
+                $skipConfigMgrFolderSearch = $true     
             }
             'SMS_Scripts'
             {
                 # We need a folder to store AntimalwarePolicies in
                 $itemExportRootFolder = '{0}\Scripts' -f $global:FullExportFolderName
-                if (-not (Test-Path $itemExportRootFolder)) 
-                {
-                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
-                }
-
                 $itemModelName = $item.ScriptGuid
                 $itemFileExtension = '.ps1'
                 # we will also export the whole script definition as json, just in case
-                $itemFileName = (Sanitize-FileName -FileName ($item.ScriptName))                
+                $itemFileName = (Sanitize-FileName -FileName ($item.ScriptName))        
+                $skipConfigMgrFolderSearch = $true        
+            
+            }
+            'SMS_ClientSettings'
+            {
+                # We need a folder to store AntimalwarePolicies in
+                $itemExportRootFolder = '{0}\ClientSettings' -f $global:FullExportFolderName
+               
+                $itemFileExtension = '.txt'
+                # we will also export the whole script definition as json, just in case
+                $itemFileName = (Sanitize-FileName -FileName ($item.Name))       
+                $skipConfigMgrFolderSearch = $true                 
+            }
+            'SMS_ConfigurationPolicy'
+            {
+                if ($item.CategoryInstance_UniqueIDs -imatch 'SMS_BitlockerManagementSettings')
+                {
+                    $itemExportRootFolder = '{0}\BitlockerPolicies' -f $global:FullExportFolderName
+                    $itemFileExtension = '.xml'
+                    $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+                    $skipConfigMgrFolderSearch = $true 
+                }
+                else
+                {
+                    # skip all other configuration polices
+                    return
+                }          
             
             }
             Default 
@@ -261,12 +265,26 @@ function Export-CMItemCustomFunction
             }
         }
 
-        # Lets get the ConfigMgr path
-        $paramSplatting = @{
-            ObjectUniqueID = $itemModelName
-            ObjectTypeName = $itemObjectTypeName
-        }    
-        $cmConsoleFolderPath = Get-ConfigMgrObjectLocation @paramSplatting
+        # We might need to create the folder first
+        if (-not (Test-Path $itemExportRootFolder)) 
+        {
+            New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+        }
+
+
+        if (-NOT ($skipConfigMgrFolderSearch))
+        {
+            # Lets get the ConfigMgr path
+            $paramSplatting = @{
+                ObjectUniqueID = $itemModelName
+                ObjectTypeName = $itemObjectTypeName
+            }    
+            $cmConsoleFolderPath = Get-ConfigMgrObjectLocation @paramSplatting
+        }
+        else
+        {
+            $cmConsoleFolderPath = 'root'   
+        }
 
         # Now lets map the ConfigMgr folder to a filesystem folder
         if ($cmConsoleFolderPath -ieq 'root')
@@ -349,6 +367,58 @@ function Export-CMItemCustomFunction
                     }
                         
                 }
+                'SMS_ClientSettings'
+                {
+                    foreach($agentConfig in $item.Properties.AgentConfigurations)
+                    {
+
+                        # We need to load more data about hardware inventory classes
+                        if ($agentConfig.AgentID -eq 15)
+                        {
+
+                            "Settingstype:" | Out-File -FilePath $itemFullName -Append
+                            ($agentConfig.SmsProviderObjectPath -replace '\..*') | Out-File -FilePath $itemFullName -Append                   
+                            $agentConfig | Out-File -FilePath $itemFullName -Append
+
+                            $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($agentConfig.InventoryReportID)'"
+                            try{$inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction Stop}catch{}
+                            if ($inventoryReport)
+                            {
+                                # load lazy properties
+                                $inventoryReport = $inventoryReport | Get-CimInstance
+                                
+                                foreach ($reportClass in $inventoryReport.ReportClasses)
+                                {
+                                    ($global:Spacer * 20) | Out-File -FilePath $itemFullName -Append
+                                    "Activated report class: $($reportClass.SMSClassID)" | Out-File -FilePath $itemFullName -Append
+                                    $reportClass.ReportProperties | Out-File -FilePath $itemFullName -Append
+                                }
+
+                            }
+                            " " | Out-File -FilePath $itemFullName -Append
+                            " " | Out-File -FilePath $itemFullName -Append
+                            ($global:Spacer * 50) | Out-File -FilePath $itemFullName -Append
+
+                        }
+                        else
+                        {
+                            "Settingstype:" | Out-File -FilePath $itemFullName -Append
+                            ($agentConfig.SmsProviderObjectPath -replace '\..*') | Out-File -FilePath $itemFullName -Append                   
+                            $agentConfig | Out-File -FilePath $itemFullName -Append
+                            ($global:Spacer * 50) | Out-File -FilePath $itemFullName -Append
+                        }
+                    }            
+                
+                }
+                'SMS_ConfigurationPolicy'
+                {
+                    # need to load lazy properties
+                    #$item = $item.get()
+                    $itemWithLazyProperties = Get-CMConfigurationPolicy -Id $item.CI_ID -WarningAction Ignore
+                    [xml]$SDMPackageXML = $itemWithLazyProperties.SDMPackageXML
+                    #$SDMPackageXML | Out-File -FilePath $itemFullName -Append
+                    $SDMPackageXML.Save($itemFullName)
+                }
                 Default {}
             }
             
@@ -371,4 +441,9 @@ Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
 Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
 
 Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
+
+Get-CMClientSetting | Export-CMItemCustomFunction
+
+Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
+
 
