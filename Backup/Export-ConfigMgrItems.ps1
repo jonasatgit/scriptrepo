@@ -24,9 +24,12 @@
 #>
 
 # Site configuration
-$SiteCode = "P02" # Site code 
-$ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
-$ExportRootFolder = 'E:\EXPORT' 
+$global:SiteCode = "P02" # Site code 
+$global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
+
+$global:ExportRootFolder = 'E:\EXPORT' 
+
+
 
 if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
 {
@@ -36,14 +39,12 @@ if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
 
 
 
-$FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
-
+$global:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
 # Validate path and create if not there yet
-if (-not (Test-Path $FullExportFolderName)) 
+if (-not (Test-Path $global:FullExportFolderName)) 
 {
     New-Item -ItemType Directory -Path $FullExportFolderName -Force | Out-Null
 }
-
 
 # Customizations
 $initParams = @{}
@@ -132,10 +133,10 @@ Get-ConfigMgrObjectLocation
 {
     param
     (
-        $SiteServer, # = $env:COMPUTERNAME,
-        $SiteCode, #= 'P02',
-        $ObjectUniqueID, # = $listOfConfigItems[7].ModelName, #$listOfUnusedConfigItems[1].ModelName,
-        $ObjectTypeName # = $listOfConfigItems[7].SmsProviderObjectPath -replace '\..*' #$listOfUnusedConfigItems[1].SmsProviderObjectPath -replace '\..*'
+        $SiteServer = $global:SiteCode, 
+        $SiteCode = $global:ProviderMachineName, 
+        $ObjectUniqueID, 
+        $ObjectTypeName 
     )
 
     $fullFolderPath = ""
@@ -165,117 +166,209 @@ Get-ConfigMgrObjectLocation
 }
 
 
-#region Configuration Items
-# We need a folder to store CIs in
-$ciExportRootFolder = '{0}\CI' -f $FullExportFolderName
-if (-not (Test-Path $ciExportRootFolder)) 
+function Export-CMItemCustomFunction
 {
-    New-Item -ItemType Directory -Path $ciExportRootFolder -Force | Out-Null
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object[]]$cmItems
+    )
+
+    Begin
+    {
+    }
+    Process
+    {
+        $item = $_ # $_ coming from pipeline
+        $itemObjectTypeName = $item.SmsProviderObjectPath -replace '\..*'
+
+        # We might need to read data from different properties
+        switch ($itemObjectTypeName)
+        {
+            'SMS_ConfigurationItemLatest'
+            {
+                # We need a folder to store CIs in
+                $itemExportRootFolder = '{0}\CI' -f $global:FullExportFolderName
+                if (-not (Test-Path $itemExportRootFolder)) 
+                {
+                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+                }
+
+                $itemModelName = $item.ModelName
+                $itemFileExtension = '.cab'
+                $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+            }
+            'SMS_ConfigurationBaselineInfo'
+            {
+                # We need a folder to store baselines in
+                $itemExportRootFolder = '{0}\Baseline' -f $global:FullExportFolderName
+                if (-not (Test-Path $itemExportRootFolder)) 
+                {
+                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+                }
+
+                $itemModelName = $item.ModelName
+                $itemFileExtension = '.cab'
+                $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+            }
+            'SMS_TaskSequencePackage'
+            {
+                # We need a folder to store TaskSequences in
+                $itemExportRootFolder = '{0}\TS' -f $global:FullExportFolderName
+                if (-not (Test-Path $itemExportRootFolder)) 
+                {
+                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+                }
+
+                $itemModelName = $item.PackageID
+                $itemFileExtension = '.zip'
+                $itemFileName = (Sanitize-FileName -FileName ($item.Name))
+            }
+            'SMS_AntimalwareSettings'
+            {
+                # We need a folder to store AntimalwarePolicies in
+                $itemExportRootFolder = '{0}\AntimalwarePolicy' -f $global:FullExportFolderName
+                if (-not (Test-Path $itemExportRootFolder)) 
+                {
+                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+                }
+
+                $itemModelName = $item.SettingsID
+                $itemFileExtension = '.xml'
+                $itemFileName = (Sanitize-FileName -FileName ($item.Name))            
+            }
+            'SMS_Scripts'
+            {
+                # We need a folder to store AntimalwarePolicies in
+                $itemExportRootFolder = '{0}\Scripts' -f $global:FullExportFolderName
+                if (-not (Test-Path $itemExportRootFolder)) 
+                {
+                    New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+                }
+
+                $itemModelName = $item.ScriptGuid
+                $itemFileExtension = '.ps1'
+                # we will also export the whole script definition as json, just in case
+                $itemFileName = (Sanitize-FileName -FileName ($item.ScriptName))                
+            
+            }
+            Default 
+            {
+                #Write-Host 'Type not supported. Skip item'
+                # Happens typically for antimalwarepolicies, since the default policy has a different type
+                return
+            }
+        }
+
+        # Lets get the ConfigMgr path
+        $paramSplatting = @{
+            ObjectUniqueID = $itemModelName
+            ObjectTypeName = $itemObjectTypeName
+        }    
+        $cmConsoleFolderPath = Get-ConfigMgrObjectLocation @paramSplatting
+
+        # Now lets map the ConfigMgr folder to a filesystem folder
+        if ($cmConsoleFolderPath -ieq 'root')
+        {
+            $itemExportFolder = $itemExportRootFolder
+        }
+        else
+        {
+            $itemExportFolder = '{0}\{1}' -f $itemExportRootFolder, ($cmConsoleFolderPath -replace '^root\\')
+        }
+
+        # Removing illegal characters from folder path
+        $itemExportFolder = Sanitize-Path -Path $itemExportFolder
+
+        # Lets make sure the folder is there
+        if (-not (Test-Path $itemExportFolder)) 
+        {
+            New-Item -ItemType Directory -Path $itemExportFolder -Force | Out-Null
+        }
+
+
+        # Now lets build the full file name to be exported
+        $itemFullName = '{0}\{1}{2}' -f $itemExportFolder, $itemFileName, $itemFileExtension
+
+        if ($itemFullName.Length -ge 254)
+        {
+            Write-Output "Path too long: $itemFullName"    
+        }
+        else
+        {
+            switch ($itemObjectTypeName)
+            {
+                'SMS_ConfigurationItemLatest'
+                {
+                    Export-CMConfigurationItem -Id $item.CI_ID -Path $itemFullName
+                }
+                'SMS_ConfigurationBaselineInfo'
+                {
+                    Export-CMBaseline -Id $item.CI_ID -Path $itemFullName
+                }
+                'SMS_TaskSequencePackage'
+                {
+                    Export-CMTaskSequence -TaskSequencePackageId $item.PackageID -ExportFilePath $itemFullName
+                }
+                'SMS_AntimalwareSettings'
+                {
+                    Export-CMAntimalwarePolicy -id $item.SettingsID -Path $itemFullName
+                }
+                'SMS_Scripts'
+                {
+                    # we need to filter out the default CMPivot script
+                    if($item.ScriptName -ine 'CMPivot')
+                    {
+                        $ScriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($item.Script))
+                        
+                        $ScriptContent | Out-File -Encoding unicode -FilePath $itemFullName
+
+                        $selectProperties = @('ApprovalState',
+                                                'Approver',
+                                                'Author',
+                                                'Comment',
+                                                'Feature',
+                                                'LastUpdateTime',
+                                                'ParameterGroupHash',
+                                                'Parameterlist',
+                                                'ParameterlistXML',
+                                                'ParamsDefinition',
+                                                'Script',
+                                                'ScriptDescription',
+                                                'ScriptGuid',
+                                                'ScriptHash',
+                                                'ScriptHashAlgorithm',
+                                                'ScriptName',
+                                                'ScriptType',
+                                                'ScriptVersion',
+                                                'Timeout')
+
+                        ($item | Select-Object -Property $selectProperties | ConvertTo-Json -Depth 4) | Out-File -FilePath ($itemFullName -replace 'ps1', 'json')
+                    
+                    }
+                        
+                }
+                Default {}
+            }
+            
+        }
+
+    }
+    End
+    {
+    }
 }
 
 
-# Getting full list of configuration items
-[array]$listOfConfigItems = Get-CMConfigurationItem -Fast
 
-# We will export all items individually and then baselines containing related items
-# That way we could restore the items to the correct folder first and the restore baselines
-# Or just baselines with items attached. But the items then might not be in the correct folder
+Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
 
-foreach ($configItem in $listOfConfigItems)
-{
-    $paramSplatting = @{
-        SiteServer = $ProviderMachineName
-        SiteCode = $SiteCode
-        ObjectUniqueID = ($configItem.ModelName)
-        ObjectTypeName = ($configItem.SmsProviderObjectPath -replace '\..*')
-    }
-    
-    $fullFolderPath = Get-ConfigMgrObjectLocation @paramSplatting
-    
-    if ($fullFolderPath -ieq 'root')
-    {
-        $ciExportFolder = $ciExportRootFolder
-    }
-    else
-    {
-        $ciExportFolder = '{0}\{1}' -f $ciExportRootFolder, ($fullFolderPath -replace '^root\\')
-    }
+Get-CMBaseline -Fast | Export-CMItemCustomFunction
 
-    # Removing illegal characters from folder path
-    $ciExportFolder = Sanitize-Path -Path $ciExportFolder
+Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
 
-    # Lets make sure the folder is there
-    if (-not (Test-Path $ciExportFolder)) 
-    {
-        New-Item -ItemType Directory -Path $ciExportFolder -Force | Out-Null
-    }
+Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
 
-    $itemFullName = '{0}\{1}.cab' -f $ciExportFolder, (Sanitize-FileName -FileName ($configItem.LocalizedDisplayName))
-    
-    if ($itemFullName.Length -ge 254)
-    {
-        Write-Output "Path too long: $itemFullName"    
-    }
-    else
-    {
-        Export-CMConfigurationItem -Id $configItem.CI_ID -Path $itemFullName
-    }
-}
-#endregion
+Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
 
-
-#region Baselines
-# We need a folder to store Baseliens in
-$baselineExportRootFolder = '{0}\Baseline' -f $FullExportFolderName
-if (-not (Test-Path $baselineExportRootFolder)) 
-{
-    New-Item -ItemType Directory -Path $baselineExportRootFolder -Force | Out-Null
-}
-
-
-# Getting full list of baselines
-[array]$listOfBaseline = Get-CMBaseline -Fast
-
-foreach ($baselineItem in $listOfBaseline)
-{
-    $paramSplatting = @{
-        SiteServer = $ProviderMachineName
-        SiteCode = $SiteCode
-        ObjectUniqueID = ($baselineItem.ModelName)
-        ObjectTypeName = ($baselineItem.SmsProviderObjectPath -replace '\..*')
-    }
-    
-    $fullFolderPath = Get-ConfigMgrObjectLocation @paramSplatting
-    
-    if ($fullFolderPath -ieq 'root')
-    {
-        $baselineExportFolder = $baselineExportRootFolder
-    }
-    else
-    {
-        $baselineExportFolder = '{0}\{1}' -f $baselineExportRootFolder, ($fullFolderPath -replace '^root\\')
-    }
-
-    # Removing illegal characters from folder path
-    $baselineExportFolder = Sanitize-Path -Path $baselineExportFolder
-
-    # Lets make sure the folder is there
-    if (-not (Test-Path $baselineExportFolder)) 
-    {
-        New-Item -ItemType Directory -Path $baselineExportFolder -Force | Out-Null
-    }
-
-    $baselineFullName = '{0}\{1}.cab' -f $baselineExportFolder, (Sanitize-FileName -FileName ($baselineItem.LocalizedDisplayName))
-    
-    if ($baselineFullName.Length -ge 254)
-    {
-        Write-Output "Path too long: $baselineFullName"    
-    }
-    else
-    {
-        Export-CMBaseline -Id $baselineItem.CI_ID -Path $baselineFullName
-    }
-}
-
-
-#endregion
