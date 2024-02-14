@@ -13,9 +13,41 @@
 #
 #************************************************************************************************************
 
-# Script can be run as a ConfigMgr script
+<#
+.SYNOPSIS
+    This script will read all wmi classes from a given wmi namespace list and tries to find a string in the data. 
+    The data will be exported to a log file in the ConfigMgr client log directory.
 
-# Test script to search in WMI
+.DESCRIPTION
+    This script will read all wmi classes from a given wmi namespace list and tries to find a string in the data. 
+    The data will be exported to a log file in the ConfigMgr client log directory. 
+    The logfile can then be collected by ConfigMgr and the data can be analyzed in a text editor.
+    You can use the "Collect Client Logs" feature in the ConfigMgr console to collect the log file.
+    All data is stored in JSON format to be able to expand all object properties in a fast and reliable way.
+    The logfile contains the class names at the top of the file to be able to see which classes were found.
+    Each entry in the logfile is separated by a line of dashes.
+    Use the search function of a text editor to find the string in the file and therefore the class where the string was found.
+    The script does not have any parameters and is designed to be run from the ConfigMgr scripts feature.
+    Buit it can also be run from the command line. 
+
+    Parameters are stored in variables in the script, but a simple param() block can expose them to outside of the script.
+    
+    $SearchString
+    The string to search for in the WMI data
+    
+    $WMINamespaces
+    The list of WMI namespaces to search in. The script will resursively search all namespaces
+    
+    $OutputInfo
+    If set to $true, the script will output information to the console
+    
+    CiVersionTimedOutSearch
+    If set to $true, the script will search for the latest CIAgent*.log file and extract the CI ID from the VersionInfoTimedOut error message. 
+    The CI_ID (shortened) will be used as the search string and will overwrite the $searchString variable. But only if the error message was found.
+
+.LINK
+    https://github.com/jonasatgit/scriptrepo    
+#>
 
 #region param block without the param() string to avoid problems with the ConfigMgr scripts feature
 [string]$searchString = "f3bbbcff-67e7-402a-b952-9860e9b04cf7"
@@ -199,7 +231,7 @@ foreach ($WMIClass in $global:dataList)
         {
             # we might need to get lazy properties
             $itemLoaded = $null
-            $itemLoaded = $item | Get-CimInstance -ErrorAction SilentlyContinue
+            $itemLoaded = Try{$item | Get-CimInstance -ErrorAction SilentlyContinue}catch{}
             # json makes the string search easier and gives a completely expanded object
             if (-NOT ($itemLoaded)){$itemLoaded = $item}
             $wmiJsonString = $itemLoaded | ConvertTo-Json -Depth 100
