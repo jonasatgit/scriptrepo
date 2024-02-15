@@ -171,7 +171,7 @@ if ($CiVersionTimedOutSearch)
     [array]$SelectStringResult = Get-ChildItem -Path $logPath -Filter "CIAgent*.log" | Sort-Object -Property LastWriteTime -Descending | Select-string -Pattern "CAgentJob::VersionInfoTimedOut"
     if($SelectStringResult)
     {
-        $Matches.Clear()
+        $Matches = $null
         $null = $SelectStringResult[0].Line -match "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"
 
         # will overwrite searchString variable
@@ -224,7 +224,7 @@ foreach ($WMIClass in $global:dataList)
 
     try
     {
-        [array]$wmiResult = Get-CimInstance -Namespace ($WMIClass.Namespace) -Class ($WMIClass.ClassName) -ErrorAction Stop 
+        [array]$wmiResult = Get-CimInstance -Namespace ($WMIClass.Namespace) -ClassName ($WMIClass.ClassName) -ErrorAction Stop 
             
         # export data if string was found in data
         foreach ($item in $wmiResult)
