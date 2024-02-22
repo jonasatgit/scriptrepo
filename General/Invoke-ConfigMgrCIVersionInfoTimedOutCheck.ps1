@@ -98,10 +98,13 @@ if ($appModelName)
     {
         foreach ($job in $dtsJobs)
         {
-            $wmiQuery = 'SELECT * FROM CCM_DTS_JobItemEx WHERE JobID = "{0}"' -f $job.JobID
+            $wmiQuery = 'SELECT * FROM CCM_DTS_JobEx WHERE ID = "{0}"' -f $job.JobID
             Get-WmiObject -namespace 'root\ccm\DataTransferService' -Query $wmiQuery | Remove-WmiObject
         }
+
+        $dtsJobs | Remove-WmiObject
     }
+
 
     # Lets also remove old state message entries
     $wmiQuery = 'SELECT * FROM CCM_StateMsg WHERE TopicID like "%{0}%"' -f $appModelName
