@@ -280,7 +280,6 @@ function Export-CMItemCustomFunction
             }
             Default 
             {
-                #Write-Host 'Type not supported. Skip item'
                 # Happens typically for antimalwarepolicies, since the default policy has a different type
                 return
             }
@@ -321,7 +320,8 @@ function Export-CMItemCustomFunction
         # File names for extra info
         $metadataFileName = '{0}\{1}.metadata.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
         $deploymentsFileName = '{0}\{1}.deployments.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
-
+        $inventoryFileName = '{0}\{1}.hinvclasses.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
+        $tsReferenceFileName = '{0}\{1}.references.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
 
         # Lets put the file info in a little inventory file
         $inventoryFile = '{0}\_Inventory.txt' -f $itemExportRootFolder
@@ -376,6 +376,14 @@ function Export-CMItemCustomFunction
                         $tsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
                     }
 
+                    # Lets export the TS refenrence data as well
+                    $wmiQuery = "Select * from SMS_TaskSequencePackageReference_Flat where PackageID = '$($item.PackageID)'"
+                    $tsRefData = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                    if ($tsRefData)
+                    {
+                        $tsRefData | Export-Clixml -Path $tsReferenceFileName
+                    }
+
                 }
                 'SMS_AntimalwareSettings'
                 {
@@ -398,28 +406,8 @@ function Export-CMItemCustomFunction
                         
                         $ScriptContent | Out-File -Encoding unicode -FilePath $itemFullName
 
-                        $selectProperties = @('ApprovalState',
-                                                'Approver',
-                                                'Author',
-                                                'Comment',
-                                                'Feature',
-                                                'LastUpdateTime',
-                                                'ParameterGroupHash',
-                                                'Parameterlist',
-                                                'ParameterlistXML',
-                                                'ParamsDefinition',
-                                                'Script',
-                                                'ScriptDescription',
-                                                'ScriptGuid',
-                                                'ScriptHash',
-                                                'ScriptHashAlgorithm',
-                                                'ScriptName',
-                                                'ScriptType',
-                                                'ScriptVersion',
-                                                'Timeout')
+                        $item | Export-Clixml -Depth 100 -Path ($itemFullName -replace 'ps1', 'xml')
 
-                        ($item | Select-Object -Property $selectProperties | ConvertTo-Json -Depth 4) | Out-File -FilePath ($itemFullName -replace 'ps1', 'json')
-                    
                     }
                         
                 }
@@ -435,46 +423,19 @@ function Export-CMItemCustomFunction
                         $settingsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
                     }
 
-                    foreach($agentConfig in $item.Properties.AgentConfigurations)
+                    # Lets test if we have hardware inventory data and export that too
+                    $hinvDataItem = $item.Properties.AgentConfigurations | Where-Object -Property AgentID -EQ 15
+                    if ($hinvDataItem)
                     {
-
-                        # We need to load more data about hardware inventory classes
-                        if ($agentConfig.AgentID -eq 15)
+                        $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($hinvDataItem.InventoryReportID)'"
+                        $inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                        if ($inventoryReport)
                         {
-
-                            "Settingstype:" | Out-File -FilePath $itemFullName -Append
-                            ($agentConfig.SmsProviderObjectPath -replace '\..*') | Out-File -FilePath $itemFullName -Append                   
-                            $agentConfig | Out-File -FilePath $itemFullName -Append
-
-                            $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($agentConfig.InventoryReportID)'"
-                            try{$inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction Stop}catch{}
-                            if ($inventoryReport)
-                            {
-                                # load lazy properties
-                                $inventoryReport = $inventoryReport | Get-CimInstance
-                                
-                                foreach ($reportClass in $inventoryReport.ReportClasses)
-                                {
-                                    ($global:Spacer * 20) | Out-File -FilePath $itemFullName -Append
-                                    "Activated report class: $($reportClass.SMSClassID)" | Out-File -FilePath $itemFullName -Append
-                                    $reportClass.ReportProperties | Out-File -FilePath $itemFullName -Append
-                                }
-
-                            }
-                            " " | Out-File -FilePath $itemFullName -Append
-                            " " | Out-File -FilePath $itemFullName -Append
-                            ($global:Spacer * 50) | Out-File -FilePath $itemFullName -Append
-
+                            # load lazy properties
+                            $inventoryReport = $inventoryReport | Get-CimInstance
+                            $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
                         }
-                        else
-                        {
-                            "Settingstype:" | Out-File -FilePath $itemFullName -Append
-                            ($agentConfig.SmsProviderObjectPath -replace '\..*') | Out-File -FilePath $itemFullName -Append                   
-                            $agentConfig | Out-File -FilePath $itemFullName -Append
-                            ($global:Spacer * 50) | Out-File -FilePath $itemFullName -Append
-                        }
-
-                    }            
+                     }
                 
                 }
                 'SMS_ConfigurationPolicy'
@@ -488,17 +449,7 @@ function Export-CMItemCustomFunction
                         $configDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
                     }
 
-
                     Get-CMConfigurationPolicy -Id $item.CI_ID -AsXml -WarningAction Ignore | Out-File -FilePath $itemFullName -Append
-
-                    <#
-                    # need to load lazy properties
-                    #$item = $item.get()
-                    $itemWithLazyProperties = Get-CMConfigurationPolicy -Id $item.CI_ID -WarningAction Ignore
-                    [xml]$SDMPackageXML = $itemWithLazyProperties.SDMPackageXML
-                    #$SDMPackageXML | Out-File -FilePath $itemFullName -Append
-                    $SDMPackageXML.Save($itemFullName)
-                    #>
                     
                 }
                 Default {}
