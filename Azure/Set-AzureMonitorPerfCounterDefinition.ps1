@@ -19,6 +19,7 @@
 .DESCRIPTION
     Set the variables to your needs and add all performance counters you want to collect to the $listOfPerformanceCounters array.
     The last command will update the data collection rule with the new performance counters and will overwrite the existing performance counters.
+    Performance counter names can be retrieved via the following script: https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
     
 .EXAMPLE
     .\Set-AzureMonitorPerfCounterDefinition.ps1
