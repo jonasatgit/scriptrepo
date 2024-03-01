@@ -17,37 +17,29 @@
 # tiny script to output all available performance counter
 # needs to be run as an admin
 
-$counterList = Get-Counter -ListSet *
-$outObj = $counterList | ForEach-Object {
-
-    foreach($path in $_.Paths)
+$outObj = [System.Collections.Generic.List[pscustomobject]]::new()
+foreach($counter in (Get-Counter -ListSet *))
+{
+    
+    foreach($path in $counter.Paths)
     {
-        $tmpObj = New-Object -TypeName PSObject | Select-Object CounterSetName, CounterSetType, InstanceCount, Path, Description
-        $tmpObj.CounterSetName = $_.CounterSetName
-        $tmpObj.CounterSetType = $_.CounterSetType
-        $tmpObj.InstanceCount = if($_.CounterSetType -eq 'SingleInstance'){1}else{$_.PathsWithInstances.Count}
-        $tmpObj.Path = $path.Substring(1)
-        $tmpObj.Description = $_.Description
-        $tmpObj
-        }
-    
-}
+        $outObj.Add([pscustomobject]@{
+            CounterSetName = $counter.CounterSetName
+            Counter = $path
+            Description = $counter.Description
+        })
 
-
-[array]$selectedObjects = $outObj | Out-GridView -Title 'PerfCounter' -OutputMode Multiple
-
-
-$outObj = $counterList.Where{($_.CounterSetName -in $selectedObjects.CounterSetName)} | ForEach-Object {
-    
-    foreach($path in $_.PathsWithInstances)
-        {
-            $tmpObj = New-Object -TypeName PSObject | Select-Object CounterSetName, CounterSetType, PathsWithInstances, Description
-            $tmpObj.CounterSetName = $_.CounterSetName
-            $tmpObj.CounterSetType = $_.CounterSetType
-            $tmpObj.PathsWithInstances = $path.Substring(1)
-            $tmpObj.Description = $_.Description
-            $tmpObj
-        }
     }
 
-$outObj | Sort-Object -Property PathsWithInstances | Out-GridView -Title 'PerfCounter Instances' 
+    foreach($path in $counter.PathsWithInstances)
+    {
+        $outObj.Add([pscustomobject]@{
+            CounterSetName = $counter.CounterSetName
+            Counter = $path
+            Description = $counter.Description
+        })
+    }
+
+}
+
+$outObj | Sort-Object -Property CounterSetName, Counter | Out-GridView -Title ('PerfCounter Instances. Total number: {0}' -f $outObj.count) 
