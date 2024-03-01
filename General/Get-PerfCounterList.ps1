@@ -13,10 +13,16 @@
 # if Microsoft has been advised of the possibility of such damages.
 #
 #************************************************************************************************************
-# Source: https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
-# tiny script to output all available performance counter
-# needs to be run as an admin
-
+<#
+.SYNOPSIS
+    Script to list all available performance counters on a system
+.DESCRIPTION
+    This script will list all available performance counters on a system
+    The output will be displayed in a gridview and varies depending on the system and installed software and roles
+    Admin permissions are required to run this script
+.LINK
+    https://guithub.com/jonasatgit/scriptrepo
+#>
 $outObj = [System.Collections.Generic.List[pscustomobject]]::new()
 foreach($counter in (Get-Counter -ListSet *))
 {
