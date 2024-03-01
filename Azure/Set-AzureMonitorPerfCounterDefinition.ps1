@@ -86,7 +86,9 @@ $listOfPerformanceCounters = @(
     'SMS State System\Message Records Processed/min',
     'SMS Status Messages(*)\Processed/sec',
     'Web Service(*)\Bytes Sent/sec',	
-    'Web Service(*)\Bytes Received/sec'
+    'Web Service(*)\Bytes Received/sec',
+    'SMS Notification Server\Total online clients' # Management Point performance counter
+
 )
 
 
