@@ -31,6 +31,7 @@
 $resourceGroupName = 'AZ0000016' # Replace with your resource group name where the data collection rule is located
 $dataCollectionRuleName = 'Windows-Server-Perf-DataCollector' # Replace with the name of the data collection rule name
 $samplerateInSeconds = 900 # Replace with the sample rate in seconds. Samplerate is the frequency at which the data is collected. The default value is 300 seconds (5 minutes).
+$sqlPerfCounterInstacenName = 'MSSQL$INST02' # Replace with the name of the SQL Server instance if you want to collect SQL Server performance counters. If you do not have a SQL Server instance, leave it empty
 
 # List of performance counters to add to the data collection rule
 $listOfPerformanceCounters = @(
@@ -116,8 +117,17 @@ If ($azContext) {
     Connect-AzAccount -ErrorAction Stop
 }
 
-# making sure all start with "\"
+# making sure all entries start with "\"
 $listOfPerformanceCounters = $listOfPerformanceCounters -replace '^(?!\\)', '\'
+
+# if $sqlPerfCounterInstacenName does not end with a :, add a : to the end
+if (-NOT ($sqlPerfCounterInstacenName -imatch ':(?<!a)$'))
+{
+    $sqlPerfCounterInstacenName = '\{0}:' -f $sqlPerfCounterInstacenName
+}
+
+# replace all SQL Server instance names with the actual instance name in case we have a SQL Server instance
+$listOfPerformanceCounters = $listOfPerformanceCounters -replace '^(\\SQLServer:)', $sqlPerfCounterInstacenName
 
 # add all counters with equal samplerate to the same array and not idividual arrays
 Write-Host "Create perf counter object" -ForegroundColor Green

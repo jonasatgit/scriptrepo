@@ -63,7 +63,7 @@
     https://github.com/jonasatgit/scriptrepo
 
 #>
-$scriptVersion = '20240129'
+$scriptVersion = '20240305'
 
 # Base variables
 [string]$scriptPath = $PSScriptRoot
@@ -234,7 +234,6 @@ Function Check-RoboCopyResultFromLog
     }
 
     return $roboCopyResultObject
-}
 }
 #endregion
    
@@ -3438,7 +3437,7 @@ if ($BackupWSUSDatabase -ieq 'Yes')
     }
     else
     {
-        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName $sqlServerConnectionString -SQLDBNameList $WSUSDatabaseList    
+        Start-SQLDatabaseBackup -BackupFolder $sitebackupPath -SQLServerName ($siteInfo.SUPList.DBServerName) -SQLDBNameList $WSUSDatabaseList    
     }
 }
 else 
