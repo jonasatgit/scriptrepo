@@ -115,6 +115,7 @@ $listOfPerformanceCounters = @(
     'SMS AD Group Discovery\DDRs generated/minute', # Site server performance counter
     'SMS AD System Discovery\DDRs generated/minute', # Site server performance counter
     'SMS Discovery Data Manager\User DDRs Processed/minute', # Site server performance counter
+    'SMS Discovery Data Manager\Non-User DDRs Processed/minute', # Site server performance counter
     'SMS Inventory Data Loader\MIFs Processed/minute', # Site server performance counter
     'SMS Software Inventory Processor\SINVs Processed/minute', # Site server performance counter
     'SMS Software Metering Processor\SWM Usage Records Processed/minute', # Site server performance counter
