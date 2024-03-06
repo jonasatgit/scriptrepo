@@ -24,28 +24,52 @@
     https://guithub.com/jonasatgit/scriptrepo
 #>
 $outObj = [System.Collections.Generic.List[pscustomobject]]::new()
-foreach($counter in (Get-Counter -ListSet *))
+$outObjInstances = [System.Collections.Generic.List[pscustomobject]]::new()
+Write-Host "Getting list of performance counters..." -ForegroundColor Green
+[array]$counterlist = Get-Counter -ListSet *
+Write-Host "Found $($counterlist.count) counters. Will loop through each to get the related instances..." -ForegroundColor Green
+foreach($counter in $counterlist)
 {
     
     foreach($path in $counter.Paths)
     {
+        $instanceCounter = 0
+        $pathSuffix = $path -replace '.*\\(.*?)$', '$1'
+        $searchstring = '.\\{0}' -f $pathSuffix
+        foreach($instance in $counter.PathsWithInstances)
+        {
+            if ($instance -imatch $searchstring)
+            {
+                $outObjInstances.Add([pscustomobject]@{
+                    CounterSetName = $counter.CounterSetName
+                    Counter = $path
+                    CounterInstance = $instance
+                    Description = $counter.Description
+                })
+                $instanceCounter++
+            }
+        }
+
         $outObj.Add([pscustomobject]@{
             CounterSetName = $counter.CounterSetName
+            InstanceCount = $instanceCounter
             Counter = $path
             Description = $counter.Description
+            
         })
 
     }
-
-    foreach($path in $counter.PathsWithInstances)
-    {
-        $outObj.Add([pscustomobject]@{
-            CounterSetName = $counter.CounterSetName
-            Counter = $path
-            Description = $counter.Description
-        })
-    }
-
 }
 
-$outObj | Sort-Object -Property CounterSetName, Counter | Out-GridView -Title ('PerfCounter Instances. Total number: {0}' -f $outObj.count) 
+# output and loop if a counter has been selected
+do
+{
+    $selectedObject = $outObj  | Out-GridView -Title ('List of performance counter. Select one and click ok to see related instances. Total number: {0}' -f $outObj.count) -OutputMode Single
+    if ($selectedObject)
+    {
+        $title = ('Instances of {0}' -f $selectedObject.counter) 
+        $outObjInstances | Where-Object {($_.CounterSetName -ieq $selectedObject.CounterSetName) -and ($_.Counter -ieq $selectedObject.counter)} | Out-GridView -Title $title -OutputMode Single
+    }
+}
+while ($selectedObject)
+
