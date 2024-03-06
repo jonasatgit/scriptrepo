@@ -18,7 +18,7 @@
  
 .DESCRIPTION
     Set the variables to your needs and add all performance counters you want to collect to the $ListOfPerformanceCounters array.
-    The script will install the required modules and connect to Azure asking for credentials if not already connected.
+    The script will install the required modules for the current user and will connect to Azure asking for credentials if not already connected.
     It will then update an existing data collection rule with the performance counters in $ListOfPerformanceCounters and 
     will "overwrite" all existing counters of the data collection rule.
     Performance counter names can be retrieved via the following script: https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
@@ -86,7 +86,6 @@ $listOfPerformanceCounters = @(
     'SQLServer:Buffer Manager\Total pages', # SQL Server performance counter
     'SQLServer:Databases(*)\Log Growths', # SQL Server performance counter
     'SQLServer:Databases(*)\Log Shrinks', # SQL Server performance counter
-    'SQLServer:Locks(*)\Number of Deadlocks/sec', # SQL Server performance counter
     'SQLServer:Memory Manager\Memory Grants Outstanding', # SQL Server performance counter
     'SQLServer:Memory Manager\Memory Grants Pending', # SQL Server performance counter
     'SQLServer:Memory Manager\Target Server Memory (KB)', # SQL Server performance counter
@@ -98,10 +97,19 @@ $listOfPerformanceCounters = @(
     'SQLServer:SQL Statistics\Batch Requests/sec', # SQL Server performance counter
     'SQLServer:SQL Statistics\SQL Compilations/sec', # SQL Server performance counter
     'SQLServer:SQL Statistics\SQL Re-Compilations/sec', # SQL Server performance counter
-    'SQLServer:Wait Statistics(*)\Memory grant queue waits', # SQL Server performance counter
-    'SQLServer:Wait Statistics(*)\Network IO waits', # SQL Server performance counter
-    'SQLServer:Wait Statistics(*)\Page latch waits', # SQL Server performance counter
-    'SQLServer:Wait Statistics(*)\Wait for the worker', # SQL Server performance counter
+    'SQLServer:Locks(_Total)\Number of Deadlocks/sec', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Lock waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Log buffer waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Log write waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Memory grant queue waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Network IO waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Non-Page latch waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Page IO latch waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Page latch waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Thread-safe memory objects waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Transaction ownership waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Wait for the worker', # SQL Server performance counter
+    'SQLServer:Wait Statistics(Waits in progress)\Workspace synchronization waits', # SQL Server performance counter    
     'SMS Inbox(*)\File Current Count', # Site server performance counter
     'SMS Outbox(*)\File Current Count', # Site server and MP performance counter
     'SMS AD Group Discovery\DDRs generated/minute', # Site server performance counter
@@ -115,7 +123,6 @@ $listOfPerformanceCounters = @(
     'Web Service(*)\Bytes Sent/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
     'Web Service(*)\Bytes Received/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
     'SMS Notification Server\Total online clients' # Management Point performance counter
-
 )
 
 
