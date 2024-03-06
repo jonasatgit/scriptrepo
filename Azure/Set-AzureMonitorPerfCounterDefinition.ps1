@@ -17,77 +17,103 @@
     Script to update an existing Azure Monitor performance counter data collection rule
  
 .DESCRIPTION
-    Set the variables to your needs and add all performance counters you want to collect to the $listOfPerformanceCounters array.
-    The last command will update the data collection rule with the new performance counters and will overwrite the existing performance counters.
+    Set the variables to your needs and add all performance counters you want to collect to the $ListOfPerformanceCounters array.
+    The script will install the required modules and connect to Azure asking for credentials if not already connected.
+    It will then update an existing data collection rule with the performance counters in $ListOfPerformanceCounters and 
+    will "overwrite" all existing counters of the data collection rule.
     Performance counter names can be retrieved via the following script: https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
     
 .EXAMPLE
     .\Set-AzureMonitorPerfCounterDefinition.ps1
-    This will update the existing data collection rule with the new performance counters.
-.LINK
-    https://guithub.com/jonasatgit/scriptrepo
-    
-#>
-$resourceGroupName = 'AZ0000016' # Replace with your resource group name where the data collection rule is located
-$dataCollectionRuleName = 'Windows-Server-Perf-DataCollector' # Replace with the name of the data collection rule name
-$samplerateInSeconds = 900 # Replace with the sample rate in seconds. Samplerate is the frequency at which the data is collected. The default value is 300 seconds (5 minutes).
-$sqlPerfCounterInstacenName = 'MSSQL$INST02' # Replace with the name of the SQL Server instance if you want to collect SQL Server performance counters. If you do not have a SQL Server instance, leave it empty
+    This will update the existing data collection rule with performance counters listed under $ListOfPerformanceCounters
+    It will ask for credentials if not already connected to Azure and will use the default resource group and data collection rule name set in the script
 
+.EXAMPLE
+    .\Set-AzureMonitorPerfCounterDefinition.ps1 -ResourceGroupName 'MyResourceGroup' -DataCollectionRuleName 'MyDataCollectionRule' -SamplerateInSeconds 300 -SQLPerfCounterInstacenName 'MSSQL$INST01'
+    This will update the existing data collection rule with performance counters listed under $ListOfPerformanceCounters using the specified resource 
+    group and data collection rule name as well as samplerate and SQL Server instance name
+
+.PARAMETER ResourceGroupName
+    The name of the resource group where the data collection rule is located
+
+.PARAMETER DataCollectionRuleName
+    The name of the data collection rule. Needs to be created before running this script
+
+.PARAMETER SamplerateInSeconds
+    The frequency at which the data is collected. The default value is 300 seconds (5 minutes).
+
+.PARAMETER SQLPerfCounterInstacenName
+    The name of the SQL Server instance if you want to collect SQL Server performance counters. If you do not have a SQL Server instance, leave it empty
+    If SQL runs on a named instance, the instance name needs to be added to the counter name. Example: MSSQL$INST01
+    Get the list of SQL counters by running this script first and copy the SQL instance name: 
+    https://github.com/jonasatgit/scriptrepo/blob/master/General/Get-PerfCounterList.ps1
+
+.LINK
+https://guithub.com/jonasatgit/scriptrepo
+#>
+# Set the variables to your needs
+[CmdletBinding()]
+param 
+(
+    [string]$ResourceGroupName = 'AZ0000016', 
+    [string]$DataCollectionRuleName = 'Windows-Server-Perf-DataCollector', 
+    [int]$SamplerateInSeconds = 900, 
+    [string]$SQLPerfCounterInstacenName = 'MSSQL$INST02' 
+)
 # List of performance counters to add to the data collection rule
 $listOfPerformanceCounters = @(
-    '\Processor Information(_Total)\% Processor Time',
-    '\LogicalDisk\Avg. Disk sec/Read',
-    '\LogicalDisk\Avg. Disk sec/Write',
-    '\LogicalDisk\Current Disk Queue Length', 
-    '\LogicalDisk\Disk Reads/sec',
-    '\LogicalDisk\Disk Transfers/sec', 
-    '\LogicalDisk\Disk Writes/sec', 
-    '\Memory\% Committed Bytes In Use', 
-    '\Memory\Available Mbytes',
-    '\Memory\Page Reads/sec',
-    '\Memory\Page Writes/sec',
-    '\Network Adapter\Bytes Received/sec',
-    '\Network Adapter\Bytes Sent/sec',
-    '\Network Interface\Bytes Total/sec',
-    'SQLServer:Access Methods\Full Scans/sec',
-    'SQLServer:Access Methods\Index Searches/sec',
-    'SQLServer:Access Methods\Table Lock Escalations/sec',
-    'SQLServer:Buffer Manager\Free pages',
-    'SQLServer:Buffer Manager\Lazy writes/sec',
-    'SQLServer:Buffer Manager\Page life expectancy',
-    'SQLServer:Buffer Manager\Stolen pages',
-    'SQLServer:Buffer Manager\Target pages',
-    'SQLServer:Buffer Manager\Total pages',
-    'SQLServer:Databases(*)\Log Growths',
-    'SQLServer:Databases(*)\Log Shrinks',
-    'SQLServer:Locks(*)\Number of Deadlocks/sec',
-    'SQLServer:Memory Manager\Memory Grants Outstanding',
-    'SQLServer:Memory Manager\Memory Grants Pending',
-    'SQLServer:Memory Manager\Target Server Memory (KB)',
-    'SQLServer:Memory Manager\Total Server Memory (KB)',
-    'SQLServer:Plan Cache(Object Plans)\Cache Object Counts',
-    'SQLServer:Plan Cache(SQL Plans)\Cache Object Counts',
-    'SQLServer:Plan Cache(Object Plans)\Cache Pages',
-    'SQLServer:Plan Cache(SQL Plans)\Cache Pages',
-    'SQLServer:SQL Statistics\Batch Requests/sec',
-    'SQLServer:SQL Statistics\SQL Compilations/sec',
-    'SQLServer:SQL Statistics\SQL Re-Compilations/sec',
-    'SQLServer:Wait Statistics(*)\Memory grant queue waits',
-    'SQLServer:Wait Statistics(*)\Network IO waits',
-    'SQLServer:Wait Statistics(*)\Page latch waits',
-    'SQLServer:Wait Statistics(*)\Wait for the worker',
-    'SMS Inbox(*)\File Current Count',
-    'SMS Outbox(*)\File Current Count',
-    'SMS AD Group Discovery\DDRs generated/minute',
-    'SMS AD System Discovery\DDRs generated/minute',
-    'SMS Discovery Data Manager\User DDRs Processed/minute',
-    'SMS Inventory Data Loader\MIFs Processed/minute',
-    'SMS Software Inventory Processor\SINVs Processed/minute',
-    'SMS Software Metering Processor\SWM Usage Records Processed/minute',
-    'SMS State System\Message Records Processed/min',
-    'SMS Status Messages(*)\Processed/sec',
-    'Web Service(*)\Bytes Sent/sec',	
-    'Web Service(*)\Bytes Received/sec',
+    '\Processor Information(_Total)\% Processor Time', # OS performance counter
+    '\LogicalDisk\Avg. Disk sec/Read', # OS performance counter
+    '\LogicalDisk\Avg. Disk sec/Write', # OS performance counter
+    '\LogicalDisk\Current Disk Queue Length', # OS performance counter
+    '\LogicalDisk\Disk Reads/sec', # OS performance counter
+    '\LogicalDisk\Disk Transfers/sec', # OS performance counter
+    '\LogicalDisk\Disk Writes/sec', # OS performance counter
+    '\Memory\% Committed Bytes In Use', # OS performance counter
+    '\Memory\Available Mbytes', # OS performance counter
+    '\Memory\Page Reads/sec', # OS performance counter
+    '\Memory\Page Writes/sec', # OS performance counter
+    '\Network Interface(*)\Bytes Received/sec', # OS performance counter
+    '\Network Interface(*)\Bytes Sent/sec', # OS performance counter
+    'SQLServer:Access Methods\Full Scans/sec', # SQL Server performance counter
+    'SQLServer:Access Methods\Index Searches/sec', # SQL Server performance counter
+    'SQLServer:Access Methods\Table Lock Escalations/sec', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Free pages', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Lazy writes/sec', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Page life expectancy', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Stolen pages', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Target pages', # SQL Server performance counter
+    'SQLServer:Buffer Manager\Total pages', # SQL Server performance counter
+    'SQLServer:Databases(*)\Log Growths', # SQL Server performance counter
+    'SQLServer:Databases(*)\Log Shrinks', # SQL Server performance counter
+    'SQLServer:Locks(*)\Number of Deadlocks/sec', # SQL Server performance counter
+    'SQLServer:Memory Manager\Memory Grants Outstanding', # SQL Server performance counter
+    'SQLServer:Memory Manager\Memory Grants Pending', # SQL Server performance counter
+    'SQLServer:Memory Manager\Target Server Memory (KB)', # SQL Server performance counter
+    'SQLServer:Memory Manager\Total Server Memory (KB)', # SQL Server performance counter
+    'SQLServer:Plan Cache(Object Plans)\Cache Object Counts', # SQL Server performance counter
+    'SQLServer:Plan Cache(SQL Plans)\Cache Object Counts', # SQL Server performance counter
+    'SQLServer:Plan Cache(Object Plans)\Cache Pages', # SQL Server performance counter
+    'SQLServer:Plan Cache(SQL Plans)\Cache Pages', # SQL Server performance counter
+    'SQLServer:SQL Statistics\Batch Requests/sec', # SQL Server performance counter
+    'SQLServer:SQL Statistics\SQL Compilations/sec', # SQL Server performance counter
+    'SQLServer:SQL Statistics\SQL Re-Compilations/sec', # SQL Server performance counter
+    'SQLServer:Wait Statistics(*)\Memory grant queue waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(*)\Network IO waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(*)\Page latch waits', # SQL Server performance counter
+    'SQLServer:Wait Statistics(*)\Wait for the worker', # SQL Server performance counter
+    'SMS Inbox(*)\File Current Count', # Site server performance counter
+    'SMS Outbox(*)\File Current Count', # Site server and MP performance counter
+    'SMS AD Group Discovery\DDRs generated/minute', # Site server performance counter
+    'SMS AD System Discovery\DDRs generated/minute', # Site server performance counter
+    'SMS Discovery Data Manager\User DDRs Processed/minute', # Site server performance counter
+    'SMS Inventory Data Loader\MIFs Processed/minute', # Site server performance counter
+    'SMS Software Inventory Processor\SINVs Processed/minute', # Site server performance counter
+    'SMS Software Metering Processor\SWM Usage Records Processed/minute', # Site server performance counter
+    'SMS State System\Message Records Processed/min', # Site server performance counter
+    'SMS Status Messages(*)\Processed/sec', # Site server performance counter
+    'Web Service(*)\Bytes Sent/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
+    'Web Service(*)\Bytes Received/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
     'SMS Notification Server\Total online clients' # Management Point performance counter
 
 )
