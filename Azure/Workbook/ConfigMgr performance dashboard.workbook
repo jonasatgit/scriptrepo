@@ -1,0 +1,659 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "<br> \r\n# ConfigMgr performance dashboard"
+      },
+      "name": "Header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "736a6059-f8bf-42c8-9b9a-0763440f71fc",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimePicker",
+            "label": "Time picker",
+            "type": 4,
+            "description": "Select the time you want to see performance data for",
+            "isRequired": true,
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 300000
+                },
+                {
+                  "durationMs": 900000
+                },
+                {
+                  "durationMs": 1800000
+                },
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2419200000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 5184000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ],
+              "allowCustom": true
+            },
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "value": {
+              "durationMs": 2592000000
+            }
+          },
+          {
+            "id": "d5294b37-c04c-4f86-aec6-37edc058dea3",
+            "version": "KqlParameterItem/1.0",
+            "name": "TabSelection",
+            "type": 1,
+            "isRequired": true,
+            "isHiddenWhenLocked": true,
+            "timeContext": {
+              "durationMs": 86400000
+            },
+            "value": "General"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters - 2"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "210aeade-a243-4ff5-a86e-574cedf6f2af",
+            "cellValue": "TabSelection",
+            "linkTarget": "parameter",
+            "linkLabel": "General",
+            "subTarget": "General",
+            "style": "link"
+          },
+          {
+            "id": "22f058f4-b77d-4199-8e9d-5d7bdbe6c428",
+            "cellValue": "TabSelection",
+            "linkTarget": "parameter",
+            "linkLabel": "SQL data",
+            "subTarget": "SQL",
+            "style": "link"
+          },
+          {
+            "id": "e394f716-bb4e-461e-a1aa-3eed76a90966",
+            "cellValue": "TabSelection",
+            "linkTarget": "parameter",
+            "linkLabel": "ConfigMgr",
+            "subTarget": "ConfigMgr",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "links - 2"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 9,
+            "content": {
+              "version": "KqlParameterItem/1.0",
+              "parameters": [
+                {
+                  "id": "58af6a8f-777e-4a87-935f-f0853838730b",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "Computername",
+                  "label": "Selected system",
+                  "type": 2,
+                  "description": "Select a system to view related performance counter",
+                  "isRequired": true,
+                  "query": "Perf\r\n| distinct Computer",
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "timeContext": {
+                    "durationMs": 1209600000
+                  },
+                  "timeContextFromParameter": "TimePicker",
+                  "queryType": 0,
+                  "resourceType": "microsoft.operationalinsights/workspaces",
+                  "value": "CM02.contoso.local"
+                },
+                {
+                  "id": "cd87b8c0-7f5e-4427-99af-0b86da7b432b",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "Website",
+                  "type": 2,
+                  "description": "Choose a specific website or \"_Total\" to view web server traffic for a website or all websites",
+                  "isRequired": true,
+                  "query": "Perf\r\n| where ObjectName == \"Web Service\"\r\n| where CounterName in (\"Bytes Sent/sec\",\"Bytes Received/sec\")\r\n| take 50\r\n| distinct InstanceName",
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "timeContext": {
+                    "durationMs": 1209600000
+                  },
+                  "timeContextFromParameter": "TimePicker",
+                  "queryType": 0,
+                  "resourceType": "microsoft.operationalinsights/workspaces",
+                  "value": "_Total",
+                  "label": "Website traffic"
+                },
+                {
+                  "id": "5942b307-d622-4073-a8b3-6fd3c14ce545",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "TotalClientsInterval",
+                  "label": "Client measure interval",
+                  "type": 2,
+                  "description": "To adjust the interval in wich total clients of all management points are aggregated",
+                  "isRequired": true,
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "jsonData": "[5, 10, 15]",
+                  "timeContext": {
+                    "durationMs": 604800000
+                  },
+                  "timeContextFromParameter": "TimePicker",
+                  "value": "15"
+                }
+              ],
+              "style": "pills",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "name": "parameters - 5"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \n| where  Computer == \"{Computername}\" \n| where ObjectName contains \"Processor\"\n| where CounterName contains \"% Processor Time\"\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\n| project LocalTime , InstanceName , CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "% CPU utilization: \"{Computername}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "showPin": false,
+            "name": "Query-General-CPU",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where  Computer == \"{Computername}\" \r\n| where ObjectName == \"Memory\"\r\n| where (CounterName == \"Available Mbytes\" or CounterName == \"Available MBytes\")\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime, Computer, CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Available memory in MByte (a high value is better): \"{Computername}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-RAM",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where ObjectName == \"SMS Notification Server\"\r\n| where CounterName == \"Total online clients\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime, Computer,CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Client's online (Data for all MPs)",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-client-online-all",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where ObjectName == \"SMS Notification Server\"\r\n| where CounterName == \"Total online clients\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| summarize TotalValue = sum(CounterValue) by bin(LocalTime, {TotalClientsInterval}m)",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Total online clients",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-client-online-total",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where ObjectName == \"Web Service\"\r\n| where  Computer == \"{Computername}\" \r\n| where CounterName in (\"Bytes Sent/sec\",\"Bytes Received/sec\")\r\n| where InstanceName == \"{Website}\"\r\n| extend CounterValueInMB = todouble(CounterValue)/1048576\r\n| extend CounterNameMB =replace_string(CounterName, 'Bytes', 'MBytes')\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime, CounterNameMB, CounterValueInMB\r\n| render timechart \r\n\r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Webserver traffic in/out Mbytes/sec",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-Webserver",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where  Computer == \"{Computername}\" \r\n| where ObjectName == \"Network Interface\"\r\n| where CounterName in (\"Bytes Received/sec\",\"Bytes Sent/sec\") \r\n| extend CounterValueInMB = todouble(CounterValue)/1048576\r\n| extend CounterNameMB =replace_string(CounterName, 'Bytes', 'MBytes')\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| summarize SumMB = sum(CounterValueInMB) by Computer, Time = bin(LocalTime, 10m), CounterNameMB\r\n| project CounterNameMB, SumMB, Computer, Time\r\n| render timechart ",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Network in/out Mbytes/sec: \"{Computername}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-Network",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "TabSelection",
+        "comparison": "isEqualTo",
+        "value": "General"
+      },
+      "name": "Group-General"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 9,
+            "content": {
+              "version": "KqlParameterItem/1.0",
+              "parameters": [
+                {
+                  "id": "434e1e52-7dd7-4e34-98fb-b63651ed3bb7",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "SQLServer",
+                  "type": 2,
+                  "description": "Select a SQL server to view related performance counters",
+                  "isRequired": true,
+                  "query": "Perf\r\n| distinct Computer",
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "timeContext": {
+                    "durationMs": 1209600000
+                  },
+                  "timeContextFromParameter": "TimePicker",
+                  "queryType": 0,
+                  "resourceType": "microsoft.operationalinsights/workspaces",
+                  "value": "CM02.contoso.local"
+                }
+              ],
+              "style": "pills",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "name": "parameters - 4"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \n| where  Computer == \"{SQLServer}\" \n| where ObjectName contains \"Processor\"\n| where CounterName contains \"% Processor Time\"\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\n| project LocalTime , InstanceName , CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "% CPU utilization SQL Server: \"{SQLServer}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "showPin": false,
+            "name": "Query-General-SQLCPU",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{SQLServer}\" \r\n| where ObjectName startswith \"SQLServer:\" or ObjectName startswith \"MSSQL$\"\r\n| where CounterName in (\"Memory grant queue waits\",\"Page latch waits\",\"Network IO waits\",\"Wait for the worker\")\r\n| where  InstanceName == \"Waits in progress\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime , CounterName, CounterValue\r\n| render timechart ",
+              "size": 0,
+              "aggregation": 5,
+              "title": "SQL waits in progress",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-SQL-Waits",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{SQLServer}\" \r\n| where ObjectName startswith \"SQLServer:\" or ObjectName startswith \"MSSQL$\"\r\n| where CounterName == \"Batch Requests/sec\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime , CounterName, CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "SQL batch requests per second",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-SQL-Batches",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{SQLServer}\" \r\n| where ObjectName startswith \"SQLServer:\" or ObjectName startswith \"MSSQL$\"\r\n| where CounterName == \"Index Searches/sec\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime , CounterName, CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "SQL Index Searches/sec",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-SQL-Index",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{SQLServer}\" \r\n| where ObjectName startswith \"SQLServer:\" or ObjectName startswith \"MSSQL$\"\r\n| where CounterName == \"Full Scans/sec\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime , CounterName, CounterValue",
+              "size": 0,
+              "aggregation": 5,
+              "title": "SQL Index Full Scans/sec",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-SQL-Index - Full scans",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "TabSelection",
+        "comparison": "isEqualTo",
+        "value": "SQL"
+      },
+      "name": "Group-SQL"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 9,
+            "content": {
+              "version": "KqlParameterItem/1.0",
+              "parameters": [
+                {
+                  "id": "bb811280-5fd3-4fa1-875a-e9e6dc85d347",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "PrimarySite",
+                  "label": "Siteservername",
+                  "type": 2,
+                  "description": "Select a site server to view related performance counter",
+                  "isRequired": true,
+                  "query": "Perf\r\n| distinct Computer",
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "timeContext": {
+                    "durationMs": 1209600000
+                  },
+                  "timeContextFromParameter": "TimePicker",
+                  "queryType": 0,
+                  "resourceType": "microsoft.operationalinsights/workspaces",
+                  "value": "CM02.contoso.local"
+                },
+                {
+                  "id": "906a45d6-9e38-4702-9ec9-7979038660df",
+                  "version": "KqlParameterItem/1.0",
+                  "name": "TotalClientsInterval",
+                  "label": "Client measure interval",
+                  "type": 2,
+                  "description": "To adjust the interval in wich total clients of all management points are aggregated",
+                  "isRequired": true,
+                  "typeSettings": {
+                    "additionalResourceOptions": [],
+                    "showDefault": false
+                  },
+                  "jsonData": "[5, 10, 15]",
+                  "value": "15"
+                }
+              ],
+              "style": "pills",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "name": "parameters - 3"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{PrimarySite}\" \r\n| where ObjectName contains \"Processor\"\r\n| where CounterName contains \"% Processor Time\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime , InstanceName , CounterValue\r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "% CPU utilization: \"{PrimarySite}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-PrimarySiteCPU",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\r\n| where ObjectName == \"SMS Notification Server\"\r\n| where CounterName == \"Total online clients\"\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| summarize TotalValue = sum(CounterValue) by bin(LocalTime, {TotalClientsInterval}m)\r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Total online clients (data from all MPs)",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-TotalOnlineClients",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{PrimarySite}\" \r\n| where ObjectName == \"SMS Inbox\" or ObjectName == \"SMS State System\"\r\n| where CounterName == \"File Current Count\" or CounterName == \"Message Records Processed/min\"\r\n| where InstanceName == \"auth>statesys.box>incoming\" or InstanceName == \"\"\r\n| extend InstanceNameNew = coalesce(InstanceName, 'Message Records Processed/min')\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime,InstanceNameNew,CounterValue\r\n| render timechart \r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "State Message Inbox (auth\\statesys.box\\incoming): \"{PrimarySite}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-StateSysInbox",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{PrimarySite}\" \r\n| where ObjectName == \"SMS Inbox\"\r\n| where CounterName == \"File Current Count\"\r\n//| where InstanceName == \"auth>statesys.box>incoming\" // state messages like update, app, baseline compliance\r\n//| where InstanceName == \"COLLEVAL.box\" // collection evaluation trigger files\r\n//| where InstanceName == \"auth>dataldr.box\" // hardware inventory and heartbeat client data\r\n| where InstanceName == \"auth>ddm.box\" // data discovery entries from discovery methods\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime,InstanceName,CounterValue\r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Data Discovery Message Inbox (auth\\ddm.box): \"{PrimarySite}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-auth-ddm.box",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{PrimarySite}\" \r\n| where ObjectName == \"SMS Inbox\" or ObjectName == \"SMS Inventory Data Loader\" //\\MIFs Processed/minute\r\n| where CounterName == \"File Current Count\" or CounterName == \"MIFs Processed/minute\"\r\n| where InstanceName == \"auth>dataldr.box\" or InstanceName == \"\"\r\n| extend InstanceNameNew = coalesce(InstanceName, 'MIFs Processed/minute')\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime,InstanceNameNew,CounterValue\r\n| render timechart \r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Inventory dataloader box (auth\\dataldr.box): \"{PrimarySite}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-auth-dataldr.box",
+            "styleSettings": {
+              "showBorder": true
+            }
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf \r\n| where  Computer == \"{PrimarySite}\" \r\n| where ObjectName == \"SMS Inbox\"\r\n| where CounterName == \"File Current Count\"\r\n//| where InstanceName == \"auth>statesys.box>incoming\" // state messages like update, app, baseline compliance\r\n| where InstanceName == \"COLLEVAL.box\" // collection evaluation trigger files\r\n//| where InstanceName == \"auth>dataldr.box\" // hardware inventory and heartbeat client data\r\n//| where InstanceName == \"auth>ddm.box\" // data discovery entries from discovery methods\r\n| extend LocalTime = datetime_utc_to_local(TimeGenerated, \"Europe/Berlin\")\r\n| project LocalTime,InstanceName,CounterValue\r\n",
+              "size": 0,
+              "aggregation": 5,
+              "title": "Collection evaluation box (COLLEVAL.box): \"{PrimarySite}\"",
+              "timeContextFromParameter": "TimePicker",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "timechart"
+            },
+            "customWidth": "50",
+            "name": "Query-ConfigMgr-COLLEVAL.box",
+            "styleSettings": {
+              "showBorder": true
+            }
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "TabSelection",
+        "comparison": "isEqualTo",
+        "value": "ConfigMgr"
+      },
+      "name": "Group-ConfigMgr"
+    }
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
