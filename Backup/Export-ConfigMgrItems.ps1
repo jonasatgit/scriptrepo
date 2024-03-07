@@ -29,43 +29,85 @@ $global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
 
 $global:ExportRootFolder = 'E:\EXPORT' 
 $global:Spacer = '-'
-
-
-if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
-{
-    Write-Host "ConfigurationManager.psd1 not found. Stopping script"
-    Exit 1   
-}
-
-
-
+$Global:LogFilePath = $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
 $global:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
-# Validate path and create if not there yet
-if (-not (Test-Path $global:FullExportFolderName)) 
+
+
+#region Write-CMTraceLog
+<#
+.Synopsis
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe .DESCRIPTION
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
+.EXAMPLE
+    Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
+function Write-CMTraceLog 
 {
-    New-Item -ItemType Directory -Path $FullExportFolderName -Force | Out-Null
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Global:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$true)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = 'Log'
+    )
+
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
+        {
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -ieq "Console") -or ($OutputMode -ieq "ConsoleAndLog"))
+    {
+        Write-Host $Message -ForegroundColor $color
+    }
+    
+    If (($OutputMode -ieq "Log") -or ($OutputMode -ieq "ConsoleAndLog"))
+    {
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
+
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
 }
+#endregion
 
-# Customizations
-$initParams = @{}
-#$initParams.Add("Verbose", $true) # Uncomment this line to enable verbose logging
-#$initParams.Add("ErrorAction", "Stop") # Uncomment this line to stop the script on any errors
-
-# Do not change anything below this line
-
-# Import the ConfigurationManager.psd1 module 
-if((Get-Module ConfigurationManager) -eq $null) {
-    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
-}
-
-# Connect to the site's drive if it is not already present
-if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
-    New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
-}
-
-# Set the current location to be the site code.
-Set-Location "$($SiteCode):\" @initParams
-
+#region function Sanitize-Path
 <#
 .SYNOPSIS
     Function to replace invalid characters with underscore to be able to export data in folders
@@ -87,7 +129,9 @@ function Sanitize-Path
     # Replace invalid characters with underscore
     return ($Path -replace "[$invalidChars]", '_')
 }
+#endregion
 
+#region function Sanitize-FileName
 <#
 .SYNOPSIS
     Function to replace invalid characters with underscore to be able to export data in folders
@@ -103,8 +147,9 @@ function Sanitize-FileName
     # Replace invalid characters with underscore
     return ($FileName -replace '[\\/:*?"<>|]', '_')
 }
+#endregion
 
-
+#region Function Get-ConfigMgrObjectLocation
 <#
 .SYNOPSIS
     This function retrieves the full folder path of a Configuration Manager object.
@@ -165,7 +210,9 @@ Function Get-ConfigMgrObjectLocation
     }
     return '\'
 }
+#endregion
 
+#region function Export-CMItemCustomFunction
 <#
 .SYNOPSIS
     Function to export certain configmgr items
@@ -179,9 +226,7 @@ function Export-CMItemCustomFunction
         [object[]]$cmItems
     )
 
-    Begin
-    {
-    }
+    Begin{}
     Process
     {
         $item = $_ # $_ coming from pipeline
@@ -205,14 +250,6 @@ function Export-CMItemCustomFunction
                     $itemModelName = $item.ModelName
                     $itemFileExtension = '.cab'
                     $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
-
-                    # Configitems dont come with an object path
-                    # The object path would contain the path in the ConfigMgr console
-                    $paramSplatting = @{
-                         ObjectUniqueID = $itemModelName
-                         ObjectTypeName = $itemObjectTypeName
-                    }    
-                    $item.ObjectPath = Get-ConfigMgrObjectLocation @paramSplatting
                 }
             }
             'SMS_ConfigurationBaselineInfo'
@@ -291,11 +328,27 @@ function Export-CMItemCustomFunction
             New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
         }
 
-
         # If ObjectPath has no value or just a "/" the item is at the root level
         if (([string]::IsNullOrEmpty($item.ObjectPath)) -or ($item.ObjectPath -eq '/') -or ($item.ObjectPath -eq '\'))
         {
-            $itemExportFolder = $itemExportRootFolder
+            # If we have no path, it might be correct and the item is stored at root, but sometimes the path is missing.
+            # Happens for config items mostly
+            $paramSplatting = @{
+                ObjectUniqueID = $itemModelName
+                ObjectTypeName = $itemObjectTypeName
+            }    
+            $item.ObjectPath = Get-ConfigMgrObjectLocation @paramSplatting
+
+            # If there is still no path, then set it to root
+            if (([string]::IsNullOrEmpty($item.ObjectPath)) -or ($item.ObjectPath -eq '/') -or ($item.ObjectPath -eq '\'))
+            {
+                $itemExportFolder = $itemExportRootFolder    
+            }
+            else
+            {
+                $itemExportFolder = '{0}\{1}' -f $itemExportRootFolder, $item.ObjectPath -replace '/', '\'
+                $itemExportFolder = $itemExportFolder -replace '\\{2}', '\' # making sure we don't have \\ in the path.            
+            }
         }
         else
         {
@@ -317,30 +370,42 @@ function Export-CMItemCustomFunction
         # Now lets build the full file name to be exported
         $itemFullName = '{0}\{1}{2}' -f $itemExportFolder, $itemFileName, $itemFileExtension
 
-        # File names for extra info
-        $metadataFileName = '{0}\{1}.metadata.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
-        $deploymentsFileName = '{0}\{1}.deployments.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
-        $inventoryFileName = '{0}\{1}.hinvclasses.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
-        $tsReferenceFileName = '{0}\{1}.references.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
-
-        # Lets put the file info in a little inventory file
-        $inventoryFile = '{0}\_Inventory.txt' -f $itemExportRootFolder
-        "Name:   $($itemFullName | Split-Path -Leaf)" | Out-File -FilePath $inventoryFile -Append
-        "Path:   $($itemFullName)" | Out-File -FilePath $inventoryFile -Append
-        "ItemID:   $($itemModelName)" | Out-File -FilePath $inventoryFile -Append
-        ($global:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
 
         # Path might be too long 
         if ($itemFullName.Length -ge 254)
         {
-            Write-Output "Path too long: $itemFullName"    
+            Write-CMTraceLog -Message "Path too long for item: $($itemFullName). Will try to store item in root folder" -Severity Warning
+            # Now lets correct the fullname to the root folder
+            $itemFullName = '{0}\{1}{2}' -f $itemExportRootFolder, $itemFileName, $itemFileExtension
+        }
+
+        # Lets check if its still too long and then skip the item
+        if ($itemFullName.Length -ge 254)
+        {
+            Write-CMTraceLog -Message "Path still too long for item: $($itemFullName). We need to skip the item" -Severity Warning
         }
         else
         {
+
+            # File names for extra info
+            $metadataFileName = '{0}\{1}.metadata.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
+            $deploymentsFileName = '{0}\{1}.deployments.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
+            $inventoryFileName = '{0}\{1}.hinvclasses.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
+            $tsReferenceFileName = '{0}\{1}.references.xml' -f ($itemFullName | Split-Path -Parent), ([System.IO.Path]::GetFileNameWithoutExtension($itemFullName))
+
+            # Lets put the file info in a little inventory file
+            $inventoryFile = '{0}\_Inventory.txt' -f $itemExportRootFolder
+            "Name:   $($itemFullName | Split-Path -Leaf)" | Out-File -FilePath $inventoryFile -Append
+            "Path:   $($itemFullName)" | Out-File -FilePath $inventoryFile -Append
+            "ItemID:   $($itemModelName)" | Out-File -FilePath $inventoryFile -Append
+            ($global:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
+
+
             switch ($itemObjectTypeName)
             {
                 'SMS_ConfigurationItemLatest'
                 {
+                    Write-CMTraceLog -Message "Will export CI: $($itemFullName)"
                     Export-CMConfigurationItem -Id $item.CI_ID -Path $itemFullName
 
                     # Lets also export medatdata
@@ -348,6 +413,7 @@ function Export-CMItemCustomFunction
                 }
                 'SMS_ConfigurationBaselineInfo'
                 {
+                    Write-CMTraceLog -Message "Will export Baseline: $($itemFullName)"
                     Export-CMBaseline -Id $item.CI_ID -Path $itemFullName
 
                     # Lets also export some metadata and the deployments
@@ -365,6 +431,7 @@ function Export-CMItemCustomFunction
                 }
                 'SMS_TaskSequencePackage'
                 {
+                    Write-CMTraceLog -Message "Will export Tasksequence: $($itemFullName)"
                     Export-CMTaskSequence -TaskSequencePackageId $item.PackageID -ExportFilePath $itemFullName
 
                     # Lets also export medatdata
@@ -387,6 +454,7 @@ function Export-CMItemCustomFunction
                 }
                 'SMS_AntimalwareSettings'
                 {
+                    Write-CMTraceLog -Message "Will export AntimalwareSettings: $($itemFullName)"
                     Export-CMAntimalwarePolicy -id $item.SettingsID -Path $itemFullName
 
                     $settingsDeployments = Get-CMClientSettingDeployment -Id $item.SettingsID -ErrorAction SilentlyContinue
@@ -402,6 +470,7 @@ function Export-CMItemCustomFunction
                     # we need to filter out the default CMPivot script
                     if($item.ScriptName -ine 'CMPivot')
                     {
+                        Write-CMTraceLog -Message "Will export Script: $($itemFullName)"
                         $ScriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($item.Script))
                         
                         $ScriptContent | Out-File -Encoding unicode -FilePath $itemFullName
@@ -413,6 +482,7 @@ function Export-CMItemCustomFunction
                 }
                 'SMS_ClientSettings'
                 {
+                    Write-CMTraceLog -Message "Will export Client Setting: $($itemFullName)"
                     
                     # Lets also export medatdata
                     $item | Export-Clixml -Depth 100 -Path $metadataFileName
@@ -435,11 +505,12 @@ function Export-CMItemCustomFunction
                             $inventoryReport = $inventoryReport | Get-CimInstance
                             $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
                         }
-                     }
+                        }
                 
                 }
                 'SMS_ConfigurationPolicy'
                 {
+                    Write-CMTraceLog -Message "Will export ConfigurationPolicy: $($itemFullName)"
                     # Lets also export medatdata
                     $item | Export-Clixml -Depth 100 -Path $metadataFileName
 
@@ -454,14 +525,66 @@ function Export-CMItemCustomFunction
                 }
                 Default {}
             }
-            
         }
-
     }
-    End
+    End{}
+}
+#endregion 
+
+#region load ConfigMgr modules
+Write-CMTraceLog -Message '   '
+Write-CMTraceLog -Message 'Start of script'
+Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
+# Lets make sure we have the ConfigMgr modules
+if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
+{
+    Write-CMTraceLog -Message 'ConfigurationManager.psd1 not found. Stopping script' -Severity Error
+    Exit 1   
+}
+
+
+# Validate path and create if not there yet
+if (-not (Test-Path $global:FullExportFolderName)) 
+{
+    New-Item -ItemType Directory -Path $FullExportFolderName -Force | Out-Null
+}
+
+Write-CMTraceLog -Message "Export will be made to folder: $($global:FullExportFolderName)"
+
+# Customizations
+$initParams = @{}
+#$initParams.Add("Verbose", $true) # Uncomment this line to enable verbose logging
+#$initParams.Add("ErrorAction", "Stop") # Uncomment this line to stop the script on any errors
+
+# Do not change anything below this line
+
+# Import the ConfigurationManager.psd1 module 
+if(-NOT (Get-Module ConfigurationManager)) 
+{
+    
+    try
     {
+        Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams
+    }
+    Catch
+    {
+        Write-CMTraceLog -Message "Not able to load ConfigurationManager.psd1 $($_)" -Severity Error
+        Exit 1
     }
 }
+
+# Connect to the site's drive if it is not already present
+if(-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue))
+{
+    New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
+}
+
+# Set the current location to be the site code.
+Set-Location "$($SiteCode):\" @initParams
+#endregion
+
+#region Main script
+
 
 
 
@@ -479,4 +602,5 @@ Get-CMClientSetting | Export-CMItemCustomFunction
 
 Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
 
-
+Write-CMTraceLog -Message 'End of script'
+#endregion

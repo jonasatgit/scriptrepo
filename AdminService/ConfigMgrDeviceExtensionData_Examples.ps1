@@ -194,7 +194,7 @@ Function Remove-ConfigMgrDeviceExtensionData
         
     try
     {
-        $device = Invoke-RestMethod -Method Post -Uri $uri -UseDefaultCredentials -ErrorAction SilentlyContinue
+        Invoke-RestMethod -Method Post -Uri $uri -UseDefaultCredentials -ErrorAction SilentlyContinue
     }
     catch
     {
