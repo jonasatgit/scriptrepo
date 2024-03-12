@@ -32,7 +32,7 @@ function Get-ConfigMgrDeviceExtensionData
         [Parameter(Mandatory=$true)]
         $AdminServiceServer,
         [Parameter(Mandatory=$false)]
-        [ValidateSet("JSON", "Object")]
+        [ValidateSet("JSON", "Hashtable")]
         $OutType = "Object"
     )
 
@@ -102,7 +102,7 @@ function Get-ConfigMgrDeviceExtensionData
     {
         switch ($OutType)
         {
-            'Object' {return $propsObject}
+            'Hashtable' {return $propsObject}
             'JSON' {return ($propsObject | ConvertTo-Json -Depth 4)}
         }
     
@@ -194,7 +194,7 @@ Function Remove-ConfigMgrDeviceExtensionData
         
     try
     {
-        Invoke-RestMethod -Method Post -Uri $uri -UseDefaultCredentials -ErrorAction SilentlyContinue
+        $device = Invoke-RestMethod -Method Post -Uri $uri -UseDefaultCredentials -ErrorAction SilentlyContinue
     }
     catch
     {
@@ -206,15 +206,78 @@ Function Remove-ConfigMgrDeviceExtensionData
 }
 #endregion
 
+#region function Get-ConfigMgrDevicesWithExtensionData
+function Get-ConfigMgrDevicesWithExtensionData
+{
+    param
+    (
+        [Parameter(Mandatory=$false)]
+        $SearchProperty,
+        [Parameter(Mandatory=$false)]
+        $SearchPropertyValue,
+        [Parameter(Mandatory=$true)]
+        $AdminServiceServer
+    )
+    
+    if ([string]::IsNullOrEmpty($SearchProperty))
+    {
+        $uri = 'https://{0}/AdminService/wmi/SMS_G_System_ExtensionData?$Select=ResourceID' -f $AdminServiceServer
+    }
+    else
+    {
+        $uri = 'https://{0}/AdminService/wmi/SMS_G_System_ExtensionData?$filter=PropertyName eq {1}' -f $AdminServiceServer, ("'$SearchProperty'")
+
+        if ([string]::IsNullOrEmpty($SearchPropertyValue))
+        {
+            $uri = '{0}&$Select=ResourceID,PropertyName,PropertyValue' -f $uri
+        }
+        else
+        {
+            $uri = '{0} and PropertyValue eq {1}&$Select=ResourceID,PropertyName,PropertyValue' -f $uri, ("'$SearchPropertyValue'")
+        }        
+    }
+    
+    try
+    {
+        $devices = Invoke-RestMethod -Method Get -Uri $uri -UseDefaultCredentials -ErrorAction SilentlyContinue
+    }
+    catch
+    {
+        Write-Host "Not able to get all devices with extension data"
+        Write-Host "$($Error[0].Exception)"
+        return $null
+    }
+
+    # return just the result value
+    # we might need to add paging for large result sets
+    return $devices.value
+    
+}
+#endregion
+
 break
 
 $ResourceID = 16777219
 $AdminServiceServer = 'cm02.contoso.local'
 
+#region GET ALL DEVICES WITH PROPERTY
+
+# Search for devices with "Property1"
+Get-ConfigMgrDevicesWithExtensionData -AdminServiceServer $AdminServiceServer -SearchProperty "Property1"
+
+# Search for devices with "Property1" and value "Add"
+Get-ConfigMgrDevicesWithExtensionData -AdminServiceServer $AdminServiceServer -SearchProperty "Property1" -SearchPropertyValue 'Add'
+
+# Get all devices with any property. Might not be the best idea to get all data
+Get-ConfigMgrDevicesWithExtensionData -AdminServiceServer $AdminServiceServer
+
+#endregion
+
+
 
 #region GET DATA
 # Read device extensiondata
-$data = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Object -AdminServiceServer $AdminServiceServer
+$data = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Hashtable -AdminServiceServer $AdminServiceServer
 #endregion
 
 
@@ -245,8 +308,9 @@ Set-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -ExtensionData $e
 
 
 #region REMOVE PROPERTY
+
 # To be able to remove a property we need to get all the properties
-$data = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Object -AdminServiceServer $AdminServiceServer
+$data = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Hashtable -AdminServiceServer $AdminServiceServer
 
 # Then remove the property from the data
 $data.ExtensionData.Remove('Property1')
@@ -256,12 +320,50 @@ Remove-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -AdminServiceS
 
 # And then write the manipulated data back
 Set-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -ExtensionData $data -AdminServiceServer $AdminServiceServer
+
+# We could also validate if all the other properties are written fine
+$data1 = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Object -AdminServiceServer $AdminServiceServer
+
+$areEqual = $true
+if ($data.Count -eq $data1.Count) 
+{
+    foreach ($key in $data.Keys) 
+    {
+        if ($data1.ContainsKey($key)) 
+        {
+            if ($data[$key] -ne $data1[$key]) 
+            {
+                $areEqual = $false
+                break
+            }
+        } 
+        else 
+        {
+            $areEqual = $false
+            break
+        }
+    }
+} 
+else 
+{
+    $areEqual = $false
+}
+
+# Output the result
+if ($areEqual) 
+{
+    Write-Host 'The data was written just fine'
+} 
+else 
+{
+    Write-Host 'Data not equal'
+}
+
 #endregion
 
 
 
-#region DELETE ALL EXTENSION DATA
+#region DELETE EXTENSION DATA OF DEVICE
 Remove-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -AdminServiceServer $AdminServiceServer
 #endregion
-
 
