@@ -377,7 +377,7 @@ Remove-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -AdminServiceS
 Set-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -ExtensionData $data -AdminServiceServer $AdminServiceServer
 
 # We could also validate if all the other properties are written fine
-$data1 = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Object -AdminServiceServer $AdminServiceServer
+$data1 = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Hashtable -AdminServiceServer $AdminServiceServer
 
 # Compare the two data sets. True means that the data is the same
 Compare-ConfigMgrDeviceExtensionDataHash -ReferenceHashtable $data.ExtensionData -DifferenceHashtable $data1.ExtensionData
