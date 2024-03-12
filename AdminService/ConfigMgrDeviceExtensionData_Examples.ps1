@@ -255,6 +255,61 @@ function Get-ConfigMgrDevicesWithExtensionData
 }
 #endregion
 
+#region Function Compare-ConfigMgrDeviceExtensionDataHash
+Function Compare-ConfigMgrDeviceExtensionDataHash
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        $ReferenceHashtable,
+        [Parameter(Mandatory=$true)]
+        $DifferenceHashtable
+    )
+
+    $areEqual = $true
+    foreach ($key in $ReferenceHashtable.Keys) 
+    {
+        if ($DifferenceHashtable.ContainsKey($key)) 
+        {
+            if ($ReferenceHashtable[$key] -ne $DifferenceHashtable[$key]) 
+            {
+                $areEqual = $false
+                break
+            }
+        } 
+        else 
+        {
+            $areEqual = $false
+            break
+        }
+    }
+
+    # now the other way around
+    if ($areEqual)
+    {
+        foreach ($key in $DifferenceHashtable.Keys) 
+        {
+            if ($ReferenceHashtable.ContainsKey($key)) 
+            {
+                if ($ReferenceHashtable[$key] -ne $DifferenceHashtable[$key]) 
+                {
+                    $areEqual = $false
+                    break
+                }
+            } 
+            else 
+            {
+                $areEqual = $false
+                break
+            }
+        }
+    }
+
+    return $areEqual    
+
+}
+#endregion
+
 break
 
 $ResourceID = 16777219
@@ -324,40 +379,8 @@ Set-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -ExtensionData $d
 # We could also validate if all the other properties are written fine
 $data1 = Get-ConfigMgrDeviceExtensionData -DeviceResourceID $ResourceID -OutType Object -AdminServiceServer $AdminServiceServer
 
-$areEqual = $true
-if ($data.Count -eq $data1.Count) 
-{
-    foreach ($key in $data.Keys) 
-    {
-        if ($data1.ContainsKey($key)) 
-        {
-            if ($data[$key] -ne $data1[$key]) 
-            {
-                $areEqual = $false
-                break
-            }
-        } 
-        else 
-        {
-            $areEqual = $false
-            break
-        }
-    }
-} 
-else 
-{
-    $areEqual = $false
-}
-
-# Output the result
-if ($areEqual) 
-{
-    Write-Host 'The data was written just fine'
-} 
-else 
-{
-    Write-Host 'Data not equal'
-}
+# Compare the two data sets. True means that the data is the same
+Compare-ConfigMgrDeviceExtensionDataHash -ReferenceHashtable $data.ExtensionData -DifferenceHashtable $data1.ExtensionData
 
 #endregion
 
