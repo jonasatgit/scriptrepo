@@ -116,5 +116,5 @@ if ($appModelName)
 }
 else
 {
-    Write-Output 'CAgentJob VersionInfoTimedOut error found in log'
+    Write-Output 'VersionInfoTimedOut error NOT found in log'
 }

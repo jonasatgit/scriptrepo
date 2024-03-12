@@ -50,10 +50,11 @@
 #>
 
 #region param block without the param() string to avoid problems with the ConfigMgr scripts feature
-[string]$searchString = "f3bbbcff-67e7-402a-b952-9860e9b04cf7"
+[string]$searchString = "62b82a43-913e-4872-b969-ddc51c6085df"
 [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local')
 [bool]$OutputInfo = $true
 [bool]$CiVersionTimedOutSearch = $true
+[bool]$StateMessageSearch = $true
 #endregion
 
 #region excluded classes and namespaces
@@ -172,11 +173,20 @@ if ($CiVersionTimedOutSearch)
     if($SelectStringResult)
     {
         $Matches = $null
-        $null = $SelectStringResult[0].Line -match "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"
+        $null = $SelectStringResult[0].Line -imatch "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"
 
         # will overwrite searchString variable
         if($OutputInfo){Write-Host "Found VersionInfoTimedOut error for CI $($Matches['ModelName'])" -ForegroundColor Cyan}
-        $searchString = $Matches['ModelName'] -replace "ScopeId_.*?/.*?_",""
+
+        if ([string]::IsNullOrEmpty($searchString))
+        {
+            $searchString = $Matches['ModelName'] -replace "ScopeId_.*?/.*?_",""          
+        }
+        else
+        {
+            $searchString = '{0}|{1}' -f $searchString, ($Matches['ModelName'] -replace "ScopeId_.*?/.*?_","")
+        }
+
         if($OutputInfo){Write-Host "Extracted searchstring is: $($searchString)" -ForegroundColor Cyan}
         #$Matches['Version'] # not used at the moment
     }
@@ -187,6 +197,46 @@ if ($CiVersionTimedOutSearch)
     }
 }
 #endregion
+
+#region State Message Search
+if ($StateMessageSearch)
+{
+    if($OutputInfo){Write-Host "Parse StateMessages for error -2016410860" -ForegroundColor Cyan}
+    # Lets check if we can find the CI version timed out error in state messages
+    $appStateMessages = Get-WmiObject -Namespace ROOT\ccm\StateMsg -Query "select * from CCM_StateMsg where TopicID like 'ScopeId%'"
+
+    $errorCounter = 0
+    foreach($stateMessage in $appStateMessages)
+    {
+        # Convert to json to be able to parse easily
+        # Remove all property definitions and just add the classname back
+        $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
+        $wmiJsonString = $stateMessage | Select-Object -Property $CimClassName, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties | ConvertTo-Json -Depth 100
+    
+        # From this: ScopeId_0C192617-7E7D-422B-979B-31FF58D765E6/Application_c0970840-2ef5-43be-b662-acffa796c2ae/44
+        # To thi: c0970840-2ef5-43be-b662-acffa796c2ae
+        $ciID = $stateMessage.TopicID -replace "ScopeId_.*?/.*?_","" -replace '/\d*'
+        # -2016410860 = CIVersionInfoTimedOut
+        if ($wmiJsonString -imatch '2016410860')
+        {
+            $errorCounter++
+            if ([string]::IsNullOrEmpty($searchString))
+            {
+                $searchString = $ciID             
+            }
+            else
+            {
+                $searchString = '{0}|{1}' -f $searchString, $ciID
+            }
+        }
+
+        if ($OutputInfo){Write-Host "Found $errorCounter state messages with VersionInfoTimedOut error" -ForegroundColor Cyan}
+
+    }
+}
+#endregion
+
+
 
 # We need all namespaces first
 if($OutputInfo){Write-Host "Getting list of namespaces:" -ForegroundColor Cyan}
@@ -234,7 +284,10 @@ foreach ($WMIClass in $global:dataList)
             $itemLoaded = Try{$item | Get-CimInstance -ErrorAction SilentlyContinue}catch{}
             # json makes the string search easier and gives a completely expanded object
             if (-NOT ($itemLoaded)){$itemLoaded = $item}
-            $wmiJsonString = $itemLoaded | ConvertTo-Json -Depth 100
+
+            # Remove all property definitions and just add the classname back
+            $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
+            $wmiJsonString = $itemLoaded | Select-Object -Property $CimClassName, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties | ConvertTo-Json -Depth 100
             if ($wmiJsonString -imatch $searchString)
             {
                 if($OutputInfo){Write-Host "String: `"$($searchString)`" found in: `"$($WMIClass.ClassName)`"" -ForegroundColor Cyan}
