@@ -26,12 +26,13 @@
 # Site configuration
 $global:SiteCode = "P02" # Site code 
 $global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
-
 $global:ExportRootFolder = 'E:\EXPORT' 
+
+# Do not change
 $global:Spacer = '-'
 $Global:LogFilePath = $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
 $global:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
-
+$global:ExitWithError = $false
 
 #region Write-CMTraceLog
 <#
@@ -398,130 +399,138 @@ function Export-CMItemCustomFunction
             "ItemID:   $($itemModelName)" | Out-File -FilePath $inventoryFile -Append
             ($global:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
 
-
-            switch ($itemObjectTypeName)
+            try
             {
-                'SMS_ConfigurationItemLatest'
+                switch ($itemObjectTypeName)
                 {
-                    Write-CMTraceLog -Message "Will export CI: $($itemFullName)"
-                    Export-CMConfigurationItem -Id $item.CI_ID -Path $itemFullName
-
-                    # Lets also export medatdata
-                    $item | Export-Clixml -Depth 100 -Path $metadataFileName
-                }
-                'SMS_ConfigurationBaselineInfo'
-                {
-                    Write-CMTraceLog -Message "Will export Baseline: $($itemFullName)"
-                    Export-CMBaseline -Id $item.CI_ID -Path $itemFullName
-
-                    # Lets also export some metadata and the deployments
-                    $item | Export-Clixml -Depth 100 -Path $metadataFileName
-
-                    if ($item.IsAssigned)
+                    'SMS_ConfigurationItemLatest'
                     {
-                        $baselineDeployments = Get-CMBaselineDeployment -Fast -SmsObjectId $item.CI_ID -ErrorAction SilentlyContinue
-                        if ($baselineDeployments)
+                        Write-CMTraceLog -Message "Will export CI: $($itemFullName)"
+                        Export-CMConfigurationItem -Id $item.CI_ID -Path $itemFullName
+
+                        # Lets also export medatdata
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
+                    }
+                    'SMS_ConfigurationBaselineInfo'
+                    {
+                        Write-CMTraceLog -Message "Will export Baseline: $($itemFullName)"
+                        Export-CMBaseline -Id $item.CI_ID -Path $itemFullName
+
+                        # Lets also export some metadata and the deployments
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
+
+                        if ($item.IsAssigned)
                         {
-                            $baselineDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName
+                            $baselineDeployments = Get-CMBaselineDeployment -Fast -SmsObjectId $item.CI_ID -ErrorAction SilentlyContinue
+                            if ($baselineDeployments)
+                            {
+                                $baselineDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName
+                            }
                         }
+
                     }
-
-                }
-                'SMS_TaskSequencePackage'
-                {
-                    Write-CMTraceLog -Message "Will export Tasksequence: $($itemFullName)"
-                    Export-CMTaskSequence -TaskSequencePackageId $item.PackageID -ExportFilePath $itemFullName
-
-                    # Lets also export medatdata
-                    $item | Export-Clixml -Depth 100 -Path $metadataFileName
-
-                    $tsDeployments = Get-CMTaskSequenceDeployment -TaskSequenceId $item.PackageID -WarningAction Ignore -ErrorAction SilentlyContinue
-                    if ($tsDeployments)
+                    'SMS_TaskSequencePackage'
                     {
-                        $tsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
+                        Write-CMTraceLog -Message "Will export Tasksequence: $($itemFullName)"
+                        Export-CMTaskSequence -TaskSequencePackageId $item.PackageID -ExportFilePath $itemFullName
+
+                        # Lets also export medatdata
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
+
+                        $tsDeployments = Get-CMTaskSequenceDeployment -TaskSequenceId $item.PackageID -WarningAction Ignore -ErrorAction SilentlyContinue
+                        if ($tsDeployments)
+                        {
+                            $tsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
+                        }
+
+                        # Lets export the TS refenrence data as well
+                        $wmiQuery = "Select * from SMS_TaskSequencePackageReference_Flat where PackageID = '$($item.PackageID)'"
+                        $tsRefData = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                        if ($tsRefData)
+                        {
+                            $tsRefData | Export-Clixml -Path $tsReferenceFileName
+                        }
+
                     }
-
-                    # Lets export the TS refenrence data as well
-                    $wmiQuery = "Select * from SMS_TaskSequencePackageReference_Flat where PackageID = '$($item.PackageID)'"
-                    $tsRefData = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
-                    if ($tsRefData)
+                    'SMS_AntimalwareSettings'
                     {
-                        $tsRefData | Export-Clixml -Path $tsReferenceFileName
+                        Write-CMTraceLog -Message "Will export AntimalwareSettings: $($itemFullName)"
+                        Export-CMAntimalwarePolicy -id $item.SettingsID -Path $itemFullName
+
+                        $settingsDeployments = Get-CMClientSettingDeployment -Id $item.SettingsID -ErrorAction SilentlyContinue
+                        if ($settingsDeployments)
+                        {
+                            $settingsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
+                        }
+
+
                     }
-
-                }
-                'SMS_AntimalwareSettings'
-                {
-                    Write-CMTraceLog -Message "Will export AntimalwareSettings: $($itemFullName)"
-                    Export-CMAntimalwarePolicy -id $item.SettingsID -Path $itemFullName
-
-                    $settingsDeployments = Get-CMClientSettingDeployment -Id $item.SettingsID -ErrorAction SilentlyContinue
-                    if ($settingsDeployments)
+                    'SMS_Scripts'
                     {
-                        $settingsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
-                    }
-
-
-                }
-                'SMS_Scripts'
-                {
-                    # we need to filter out the default CMPivot script
-                    if($item.ScriptName -ine 'CMPivot')
-                    {
-                        Write-CMTraceLog -Message "Will export Script: $($itemFullName)"
-                        $ScriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($item.Script))
+                        # we need to filter out the default CMPivot script
+                        if($item.ScriptName -ine 'CMPivot')
+                        {
+                            Write-CMTraceLog -Message "Will export Script: $($itemFullName)"
+                            $ScriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($item.Script))
                         
-                        $ScriptContent | Out-File -Encoding unicode -FilePath $itemFullName
+                            $ScriptContent | Out-File -Encoding unicode -FilePath $itemFullName
 
-                        $item | Export-Clixml -Depth 100 -Path ($itemFullName -replace 'ps1', 'xml')
+                            $item | Export-Clixml -Depth 100 -Path ($itemFullName -replace 'ps1', 'xml')
 
-                    }
+                        }
                         
-                }
-                'SMS_ClientSettings'
-                {
-                    Write-CMTraceLog -Message "Will export Client Setting: $($itemFullName)"
+                    }
+                    'SMS_ClientSettings'
+                    {
+                        Write-CMTraceLog -Message "Will export Client Setting: $($itemFullName)"
                     
-                    # Lets also export medatdata
-                    $item | Export-Clixml -Depth 100 -Path $metadataFileName
+                        # Lets also export medatdata
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
 
-                    $settingsDeployments = Get-CMClientSettingDeployment -Id $item.SettingsID -ErrorAction SilentlyContinue
-                    if ($settingsDeployments)
-                    {
-                        $settingsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
-                    }
-
-                    # Lets test if we have hardware inventory data and export that too
-                    $hinvDataItem = $item.Properties.AgentConfigurations | Where-Object -Property AgentID -EQ 15
-                    if ($hinvDataItem)
-                    {
-                        $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($hinvDataItem.InventoryReportID)'"
-                        $inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
-                        if ($inventoryReport)
+                        $settingsDeployments = Get-CMClientSettingDeployment -Id $item.SettingsID -ErrorAction SilentlyContinue
+                        if ($settingsDeployments)
                         {
-                            # load lazy properties
-                            $inventoryReport = $inventoryReport | Get-CimInstance
-                            $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
+                            $settingsDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
                         }
-                        }
+
+                        # Lets test if we have hardware inventory data and export that too
+                        $hinvDataItem = $item.Properties.AgentConfigurations | Where-Object -Property AgentID -EQ 15
+                        if ($hinvDataItem)
+                        {
+                            $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($hinvDataItem.InventoryReportID)'"
+                            $inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                            if ($inventoryReport)
+                            {
+                                # load lazy properties
+                                $inventoryReport = $inventoryReport | Get-CimInstance
+                                $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
+                            }
+                            }
                 
-                }
-                'SMS_ConfigurationPolicy'
-                {
-                    Write-CMTraceLog -Message "Will export ConfigurationPolicy: $($itemFullName)"
-                    # Lets also export medatdata
-                    $item | Export-Clixml -Depth 100 -Path $metadataFileName
-
-                    $configDeployments = Get-CMConfigurationPolicyDeployment -SmsObjectId $item.CI_ID -ErrorAction SilentlyContinue -WarningAction Ignore
-                    if ($configDeployments)
-                    {
-                        $configDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
                     }
+                    'SMS_ConfigurationPolicy'
+                    {
+                        Write-CMTraceLog -Message "Will export ConfigurationPolicy: $($itemFullName)"
+                        # Lets also export medatdata
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
 
-                    Get-CMConfigurationPolicy -Id $item.CI_ID -AsXml -WarningAction Ignore | Out-File -FilePath $itemFullName -Append
+                        $configDeployments = Get-CMConfigurationPolicyDeployment -SmsObjectId $item.CI_ID -ErrorAction SilentlyContinue -WarningAction Ignore
+                        if ($configDeployments)
+                        {
+                            $configDeployments | Export-Clixml -Depth 100 -Path $deploymentsFileName 
+                        }
+
+                        Get-CMConfigurationPolicy -Id $item.CI_ID -AsXml -WarningAction Ignore | Out-File -FilePath $itemFullName -Append
                     
+                    }
+                    Default {}
                 }
-                Default {}
+            }
+            catch
+            {
+                 Write-CMTraceLog -Message "Error exporting: $($itemFullName)" -Severity Error
+                 Write-CMTraceLog -Message "$($_)" -Severity Error
+                 $global:ExitWithError = $true
             }
         }
     }
@@ -530,6 +539,8 @@ function Export-CMItemCustomFunction
 #endregion 
 
 #region load ConfigMgr modules
+$stoptWatch = New-Object System.Diagnostics.Stopwatch
+$stoptWatch.Start()
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of script'
 Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
@@ -581,11 +592,9 @@ if(-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyCon
 Set-Location "$($SiteCode):\" @initParams
 #endregion
 
+
+
 #region Main script
-
-
-
-
 Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
 
 Get-CMBaseline -Fast | Export-CMItemCustomFunction
@@ -600,5 +609,18 @@ Get-CMClientSetting | Export-CMItemCustomFunction
 
 Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
 
-Write-CMTraceLog -Message 'End of script'
+
+$stoptWatch.Stop()
+$scriptDurationString = "Script runtime: {0}h:{1}m:{2}s" -f $stoptWatch.Elapsed.Hours, $stoptWatch.Elapsed.Minutes, $stoptWatch.Elapsed.Seconds
+Write-CMTraceLog -Message $scriptDurationString
+
+if ($global:ExitWithError)
+{
+
+    Write-CMTraceLog -Message 'Script ended with errors' -Severity Warning
+}
+else
+{
+    Write-CMTraceLog -Message 'Script ended successfull'
+}
 #endregion
