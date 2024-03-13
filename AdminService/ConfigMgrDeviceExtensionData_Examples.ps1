@@ -33,7 +33,7 @@ function Get-ConfigMgrDeviceExtensionData
         $AdminServiceServer,
         [Parameter(Mandatory=$false)]
         [ValidateSet("JSON", "Hashtable")]
-        $OutType = "Object"
+        $OutType = "Hashtable"
     )
 
     $propsObject = $null
