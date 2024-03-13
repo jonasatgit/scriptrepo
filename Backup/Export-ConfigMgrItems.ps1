@@ -145,7 +145,7 @@ function Sanitize-FileName
     )
 
     # Replace invalid characters with underscore
-    return ($FileName -replace '[\\/:*?"<>|]', '_')
+    return ($FileName -replace '[\[\\/:*?"<>|\]]', '_' -replace ',')
 }
 #endregion
 
@@ -191,7 +191,7 @@ Function Get-ConfigMgrObjectLocation
     {
         if ($containerNode.count -gt 1)
         {
-            Write-Host "Unusual amount of folder nodes found: $($containerNodes.count)"
+            Write-CMTraceLog -Message "Unusual amount of folder nodes found: $($containerNodes.count) for object `"$($ObjectUniqueID)`"" -Severity Warning
         }
         $fullFolderPath = $containerNode.Name
 
@@ -328,34 +328,32 @@ function Export-CMItemCustomFunction
             New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
         }
 
-        # If ObjectPath has no value or just a "/" the item is at the root level
-        if (([string]::IsNullOrEmpty($item.ObjectPath)) -or ($item.ObjectPath -eq '/') -or ($item.ObjectPath -eq '\'))
+        # $item.ObjectPath is not reliable enough. It sometimes has no value, but the item is in a sub-folder and sometimes it is missing completly.
+        # That's why we always rely on the Get-ConfigMgrObjectLocation function
+        $paramSplatting = @{
+            ObjectUniqueID = $itemModelName
+            ObjectTypeName = $itemObjectTypeName
+        }    
+        
+        # Not all items support folder. Lets skip the search in that case
+        if ($skipConfigMgrFolderSearch)
         {
-            # If we have no path, it might be correct and the item is stored at root, but sometimes the path is missing.
-            # Happens for config items mostly
-            $paramSplatting = @{
-                ObjectUniqueID = $itemModelName
-                ObjectTypeName = $itemObjectTypeName
-            }    
-            $item.ObjectPath = Get-ConfigMgrObjectLocation @paramSplatting
-
-            # If there is still no path, then set it to root
-            if (([string]::IsNullOrEmpty($item.ObjectPath)) -or ($item.ObjectPath -eq '/') -or ($item.ObjectPath -eq '\'))
-            {
-                $itemExportFolder = $itemExportRootFolder    
-            }
-            else
-            {
-                $itemExportFolder = '{0}\{1}' -f $itemExportRootFolder, $item.ObjectPath -replace '/', '\'
-                $itemExportFolder = $itemExportFolder -replace '\\{2}', '\' # making sure we don't have \\ in the path.            
-            }
+            $resolvedItemPath = '\'
         }
         else
         {
-            $itemExportFolder = '{0}\{1}' -f $itemExportRootFolder, $item.ObjectPath -replace '/', '\'
-            $itemExportFolder = $itemExportFolder -replace '\\{2}', '\' # making sure we don't have \\ in the path. 
+            $resolvedItemPath = Get-ConfigMgrObjectLocation @paramSplatting
         }
-
+                
+        if ($resolvedItemPath -eq '\')
+        {
+            $itemExportFolder = $itemExportRootFolder    
+        }
+        else
+        {
+            $itemExportFolder = '{0}{1}' -f $itemExportRootFolder, $resolvedItemPath
+            $itemExportFolder = $itemExportFolder -replace '\\{2}', '\' # making sure we don't have \\ in the path.            
+        }
 
         # Removing illegal characters from folder path
         $itemExportFolder = Sanitize-Path -Path $itemExportFolder
