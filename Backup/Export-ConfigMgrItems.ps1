@@ -24,9 +24,13 @@
 #>
 
 # Site configuration
-$global:SiteCode = "P02" # Site code 
-$global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
-$global:ExportRootFolder = 'E:\EXPORT' 
+[string]$global:SiteCode = "P02" # Site code 
+[string]$global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
+[string]$global:ExportRootFolder = 'E:\EXPORT' 
+[int]$MaxExportFolderAgeInDays = 10
+[int]$MinExportFoldersToKeep = 2
+# In case we only have older folders and would therefore delete them
+# $MinExportFoldersToKeep will make sure we will keep at least some of them and not end up with nothing
 
 # Do not change
 $global:Spacer = '-'
@@ -107,6 +111,61 @@ function Write-CMTraceLog
     }
 }
 #endregion
+
+
+#region function Remove-OldExportFolders
+<#
+.SYNOPSIS
+    Function to replace delete old export folders
+#>
+function Remove-OldExportFolders
+{
+    param
+    (
+        [parameter(Mandatory=$true)]
+        [string]$RootPath,
+        [parameter(Mandatory=$true)]
+        [int]$MaxExportFolderAgeInDays,
+        [parameter(Mandatory=$true)]
+        [int]$MinExportFoldersToKeep
+    )
+
+    $folderObj = [System.Collections.Generic.List[pscustomobject]]::new()
+    foreach ($item in (Get-ChildItem $RootPath))
+    {
+        # We need to make sure to only get folders with the name we defined. 
+        # Which is the creationdate in the format of yyyyMMdd-HHmm
+        if (($item.PSIsContainer) -and ($item.Name -match '^\d{8}-\d{4}$'))
+        {
+            $folderObj.add($item)
+        }
+    }
+
+    # Sort decending and skip the newest folders we need to keep based on $MinExportFoldersToKeep
+    $folderObjSorted = $folderObj | Sort-Object -Property Name -Descending | Select-Object -Skip $MinExportFoldersToKeep
+    foreach ($item in $folderObjSorted)
+    {
+    
+        $date = [DateTime]::ParseExact($item.Name, "yyyyMMdd-HHmm", $null)
+        $timeSpan = New-TimeSpan -Start $date -End (Get-Date)
+        if ($timeSpan.TotalDays -gt $MaxExportFolderAgeInDays)
+        {
+            Write-CMTraceLog -Message "Will delete: $($item.FullName) since it is $($timeSpan.TotalDays) days old"
+            try
+            {
+                Remove-Item $item.FullName -Recurse -Force -ErrorAction Stop
+            }
+            Catch
+            {
+                Write-CMTraceLog -Message "Not able to delete: $($item.FullName)" -Severity Error
+                Write-CMTraceLog -Message "$($_)" -Severity Error
+                $global:ExitWithError = $true   
+            }
+        }
+    }
+}
+#endregion
+
 
 #region function Sanitize-Path
 <#
@@ -543,6 +602,10 @@ $stoptWatch = New-Object System.Diagnostics.Stopwatch
 $stoptWatch.Start()
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of script'
+
+# Lets cleanup first
+Remove-OldExportFolders -RootPath $global:ExportRootFolder -MaxExportFolderAgeInDays $MaxExportFolderAgeInDays -MinExportFoldersToKeep $MinExportFoldersToKeep
+
 Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
 # Lets make sure we have the ConfigMgr modules
 if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
