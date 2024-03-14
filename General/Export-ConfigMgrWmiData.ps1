@@ -201,7 +201,7 @@ if ($CiVersionTimedOutSearch)
 #region State Message Search
 if ($StateMessageSearch)
 {
-    if($OutputInfo){Write-Host "Parse StateMessages for error -2016410860" -ForegroundColor Cyan}
+    if($OutputInfo){Write-Host "Parse StateMessages for error -2016410860 and -2016411012" -ForegroundColor Cyan}
     # Lets check if we can find the CI version timed out error in state messages
     $appStateMessages = Get-WmiObject -Namespace ROOT\ccm\StateMsg -Query "select * from CCM_StateMsg where TopicID like 'ScopeId%'"
 
@@ -216,8 +216,8 @@ if ($StateMessageSearch)
         # From this: ScopeId_0C192617-7E7D-422B-979B-31FF58D765E6/Application_c0970840-2ef5-43be-b662-acffa796c2ae/44
         # To thi: c0970840-2ef5-43be-b662-acffa796c2ae
         $ciID = $stateMessage.TopicID -replace "ScopeId_.*?/.*?_","" -replace '/\d*'
-        # -2016410860 = CIVersionInfoTimedOut
-        if ($wmiJsonString -imatch '2016410860')
+        # -2016410860 and -2016411012 = CIVersionInfoTimedOut
+        if ($wmiJsonString -imatch '2016410860|2016411012')
         {
             $errorCounter++
             if ([string]::IsNullOrEmpty($searchString))
