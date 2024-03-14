@@ -66,7 +66,7 @@ function Get-ConfigMgrDeviceExtensionData
 
     if ($deviceExtensionData)
     {
-        # if we have custom extension data, we will have mote than three properties of type NoteProperty
+        # if we have custom extension data, we will have more than three properties of type NoteProperty
         if (($deviceExtensionData | Get-Member -MemberType NoteProperty).count -gt 3)
         {
             # We need to get rid of the default properties to be able to work with the "real" extension data
@@ -77,8 +77,8 @@ function Get-ConfigMgrDeviceExtensionData
 
                 $propertiesHash = @{}
                 $filteredExtensionData.PSObject.Properties | ForEach-Object { $propertiesHash[$_.Name] = $_.Value }
-                # we have some custom properties
-                # Lets create an object we can use to change the properties
+                # We have some custom properties
+                # Lets create a hashtable with the properties
                 $propsObject = [hashtable]@{
                      ExtensionData =  $propertiesHash
                      #ExtensionData = $filteredExtensionData
@@ -221,7 +221,7 @@ function Get-ConfigMgrDevicesWithExtensionData
     
     if ([string]::IsNullOrEmpty($SearchProperty))
     {
-        $uri = 'https://{0}/AdminService/wmi/SMS_G_System_ExtensionData?$Select=ResourceID' -f $AdminServiceServer
+        $uri = 'https://{0}/AdminService/wmi/SMS_G_System_ExtensionData?$Select=ResourceID,PropertyName,PropertyValue' -f $AdminServiceServer
     }
     else
     {
