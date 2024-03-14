@@ -177,6 +177,7 @@ if ($CiVersionTimedOutSearch)
 
         # will overwrite searchString variable
         if($OutputInfo){Write-Host "Found VersionInfoTimedOut error for CI $($Matches['ModelName'])" -ForegroundColor Cyan}
+        "Found VersionInfoTimedOut error for CI $($Matches['ModelName'])" | Out-File $exportFileName -Append
 
         if ([string]::IsNullOrEmpty($searchString))
         {
@@ -236,7 +237,10 @@ if ($StateMessageSearch)
 }
 #endregion
 
-
+# lets output the searchstring into the log file
+"SearchString:" | Out-File $exportFileName -Append
+$searchString | Out-File $exportFileName -Append
+$spacer | Out-File $exportFileName -Append
 
 # We need all namespaces first
 if($OutputInfo){Write-Host "Getting list of namespaces:" -ForegroundColor Cyan}
@@ -285,9 +289,11 @@ foreach ($WMIClass in $global:dataList)
             # json makes the string search easier and gives a completely expanded object
             if (-NOT ($itemLoaded)){$itemLoaded = $item}
 
-            # Remove all property definitions and just add the classname back
+            # Remove all property definitions and just add the classname and namesapce back
+            # We also exclude the app icon property, policy rules and policy apps
             $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
-            $wmiJsonString = $itemLoaded | Select-Object -Property $CimClassName, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties | ConvertTo-Json -Depth 100
+            $CimNamespace = @{label="CimNamespace";expression={$_.CimSystemProperties.Namespace}}
+            $wmiJsonString = $itemLoaded | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon, Rules, Apps | ConvertTo-Json -Depth 100
             if ($wmiJsonString -imatch $searchString)
             {
                 if($OutputInfo){Write-Host "String: `"$($searchString)`" found in: `"$($WMIClass.ClassName)`"" -ForegroundColor Cyan}
@@ -306,7 +312,9 @@ foreach ($WMIClass in $global:dataList)
     # The class itself could contain the string
     if ($WMIClass.ClassName -imatch $searchString)
     {
-        $wmiJsonString = $WMIClass | ConvertTo-Json -Depth 100
+        $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
+        $CimNamespace = @{label="CimNamespace";expression={$_.CimSystemProperties.Namespace}}
+        $wmiJsonString = $WMIClass | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon | ConvertTo-Json -Depth 100
         if($OutputInfo){Write-Host "String: `"$($searchString)`" found in: `"$($WMIClass.ClassName)`"" -ForegroundColor Cyan}
         $outInfo.Add($WMIClass)
         $wmiJsonString | Out-File $exportFileName -Append

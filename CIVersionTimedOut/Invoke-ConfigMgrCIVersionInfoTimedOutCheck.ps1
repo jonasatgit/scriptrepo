@@ -86,7 +86,23 @@ if ($appModelName)
 {
     # Lets remove orphaned entries from Root\CCM\XmlStore class XmlDocument
     $wmiQuery = 'SELECT * FROM XmlDocument WHERE text like "%{0}%"' -f $appModelName
-    Get-WmiObject -namespace 'Root\CCM\XmlStore' -Query $wmiQuery | Remove-WmiObject 
+    [array]$xmlStoreDocuments = Get-WmiObject -namespace 'Root\CCM\XmlStore' -Query $wmiQuery 
+
+    $wmiQuery = 'SELECT * FROM CCM_CITask'
+    $ciTasks = Get-WmiObject -namespace 'ROOT\ccm\CITasks' -Query $wmiQuery
+
+    foreach ($xmlDocument in $xmlStoreDocuments)
+    {
+        foreach ($ciTask in $ciTasks)
+        {
+            if ($ciTasks.RefJobs -contains $xmlDocument.ID)
+            {
+                $ciTask | Remove-WmiObject 
+            }
+        }
+    }
+    
+    $xmlStoreDocuments | Remove-WmiObject 
     
     # Lets remove orphaned entries from root\ccm\DataTransferService class CCM_DTS_JobItemEx
 
