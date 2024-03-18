@@ -34,17 +34,21 @@ function Get-ConfigMgrClientLogPath
     return $logPath
 }
 
+
 $logPath = Get-ConfigMgrClientLogPath
 
+$outObj = [System.Collections.Generic.List[string]]::new()
 [array]$SelectStringResult = Get-ChildItem -Path $logPath -Filter "CIAgent*.log" | Sort-Object -Property LastWriteTime -Descending | Select-string -Pattern "CAgentJob::VersionInfoTimedOut"
 if($SelectStringResult)
 {
-    $Matches = $null
-    $null = $SelectStringResult[0].Line -imatch "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"
-
-    $outString = $Matches['ModelName'] -replace "ScopeId_.*?/.*?_",""
-    Write-Output $outString
-
+    foreach ($item in $SelectStringResult)
+    {
+        $Matches = $null
+        $null = $item.Line -imatch "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"    
+        $outString = '{0}/{1}' -f ($Matches['ModelName'] -replace "ScopeId_.*?/"), ($Matches['Version'])
+        $outObj.Add($outString)
+    }
+    Write-Output ($outObj | Select-Object -Unique)
 }
 else
 {
