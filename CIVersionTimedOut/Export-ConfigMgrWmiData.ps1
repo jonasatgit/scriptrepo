@@ -50,11 +50,11 @@
 #>
 
 #region param block without the param() string to avoid problems with the ConfigMgr scripts feature
-[string]$searchString = "62b82a43-913e-4872-b969-ddc51c6085df"
+[string]$searchString = "d740f314-c3b7-44a8-bf18-2a38b7bf7e0d"
 [array]$WMINamespaces = ('root\ccm','ROOT\Microsoft\PolicyPlatform\Documents\Local')
 [bool]$OutputInfo = $true
 [bool]$CiVersionTimedOutSearch = $true
-[bool]$StateMessageSearch = $true
+[bool]$StateMessageSearch = $false
 #endregion
 
 #region excluded classes and namespaces
@@ -89,7 +89,7 @@ $datetimeString = get-date -Format "yyyyMMddHHmmss"
 $exportFileName = '{0}\_WmiExport-{1}.log' -f $logPath, $datetimeString 
 $global:dataList = [System.Collections.Generic.List[pscustomobject]]::new()
 $global:namespaceList = [System.Collections.Generic.List[string]]::new()
-$outInfo = [System.Collections.Generic.List[pscustomobject]]::new()
+$outInfo = [System.Collections.Generic.List[string]]::new()
 $spacer = '---------------------------------------------------------------------------------------------'
 
 #region function Get-CustomWMIClasses
@@ -166,31 +166,41 @@ function Get-WMINameSpaces
 #region search for ci version timed out
 if ($CiVersionTimedOutSearch)
 {
-    if($OutputInfo){Write-Host "Parse CiaAgent.log files for VersionInfoTimedOut error.." -ForegroundColor Cyan}
+    $outObj = [System.Collections.Generic.List[string]]::new()
+    if($OutputInfo){Write-Host "Parse CIAgent.log files for VersionInfoTimedOut error.." -ForegroundColor Cyan}
     # Example: 
     #CIAgentJob({2535BA43-2097-45F0-A088-8D46ECE9DC5E}): CAgentJob::VersionInfoTimedOut for ModelName ScopeId_F39845A1-F303-4D3A-A303-6ECC327447D1/Application_7d1b5b09-123d-46d8-b4db-9217ce42de4f, version 12 not available.
     [array]$SelectStringResult = Get-ChildItem -Path $logPath -Filter "CIAgent*.log" | Sort-Object -Property LastWriteTime -Descending | Select-string -Pattern "CAgentJob::VersionInfoTimedOut"
     if($SelectStringResult)
     {
-        $Matches = $null
-        $null = $SelectStringResult[0].Line -imatch "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"
+        
+        foreach ($item in $SelectStringResult)
+        {
+            $Matches = $null
+            $null = $item.Line -imatch "VersionInfoTimedOut for ModelName (?<ModelName>.*?), version (?<Version>\d+)"    
+            $outString = '{0}/{1}' -f ($Matches['ModelName'] -replace "ScopeId_.*?/",""), ($Matches['Version'])
+            "Found version timedout error for: $($outString)" | Out-File $exportFileName -Append
+            if($OutputInfo){Write-Host "Found version timedout error for: $($outString)" -ForegroundColor Yellow}
 
-        # will overwrite searchString variable
-        if($OutputInfo){Write-Host "Found VersionInfoTimedOut error for CI $($Matches['ModelName'])" -ForegroundColor Cyan}
-        "Found VersionInfoTimedOut error for CI $($Matches['ModelName'])" | Out-File $exportFileName -Append
-
+            $outString = ($Matches['ModelName'] -replace "ScopeId_.*?/.*?_","")
+            
+            $outObj.Add($outString)
+        }
+              
+        
         if ([string]::IsNullOrEmpty($searchString))
         {
-            $searchString = $Matches['ModelName'] -replace "ScopeId_.*?/.*?_",""          
+            $searchString = (($outObj | Select-Object -Unique) -join '|').tostring()     
         }
         else
         {
-            $searchString = '{0}|{1}' -f $searchString, ($Matches['ModelName'] -replace "ScopeId_.*?/.*?_","")
+            $searchString = '{0}|{1}' -f $searchString, (($outObj | Select-Object -Unique) -join '|').tostring()
         }
 
-        if($OutputInfo){Write-Host "Extracted searchstring is: $($searchString)" -ForegroundColor Cyan}
-        #$Matches['Version'] # not used at the moment
-    }
+        if($OutputInfo){Write-Host "Current search string is:" -ForegroundColor Cyan}
+        if($OutputInfo){Write-Host $searchString -ForegroundColor Cyan}
+             
+      }  
     else
     {
         if($OutputInfo){Write-Host "No VersionInfoTimedOut error found" -ForegroundColor Yellow}
@@ -198,6 +208,8 @@ if ($CiVersionTimedOutSearch)
     }
 }
 #endregion
+
+
 
 #region State Message Search
 if ($StateMessageSearch)
@@ -293,12 +305,13 @@ foreach ($WMIClass in $global:dataList)
             # We also exclude the app icon property, policy rules and policy apps
             $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
             $CimNamespace = @{label="CimNamespace";expression={$_.CimSystemProperties.Namespace}}
-            $wmiJsonString = $itemLoaded | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon, Rules, Apps | ConvertTo-Json -Depth 100
+            $wmiJsonString = $itemLoaded | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon | ConvertTo-Json -Depth 100
             if ($wmiJsonString -imatch $searchString)
             {
                 if($OutputInfo){Write-Host "String: `"$($searchString)`" found in: `"$($WMIClass.ClassName)`"" -ForegroundColor Cyan}
-                $outInfo.Add($WMIClass)
-                $wmiJsonString | Out-File $exportFileName -Append
+                $outInfo.Add($WMIClass.ClassName)
+                $wmiJsonStringShort = $itemLoaded | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon | ConvertTo-Json -Depth 3
+                $wmiJsonStringShort | Out-File $exportFileName -Append
                 $spacer | Out-File $exportFileName -Append
             }
         }           
@@ -309,17 +322,6 @@ foreach ($WMIClass in $global:dataList)
         if($OutputInfo){Write-Host $errorString -ForegroundColor Yellow}
     }
 
-    # The class itself could contain the string
-    if ($WMIClass.ClassName -imatch $searchString)
-    {
-        $CimClassName = @{label="CimClassName";expression={$_.CimClass.CimClassName}}
-        $CimNamespace = @{label="CimNamespace";expression={$_.CimSystemProperties.Namespace}}
-        $wmiJsonString = $WMIClass | Select-Object -Property $CimClassName, $CimNamespace, * -ExcludeProperty CimClass, CimSystemProperties, CimInstanceProperties, Icon | ConvertTo-Json -Depth 100
-        if($OutputInfo){Write-Host "String: `"$($searchString)`" found in: `"$($WMIClass.ClassName)`"" -ForegroundColor Cyan}
-        $outInfo.Add($WMIClass)
-        $wmiJsonString | Out-File $exportFileName -Append
-        $spacer | Out-File $exportFileName -Append
-    }
 }
 
 
@@ -327,7 +329,7 @@ if (Test-Path $exportFileName)
 {
     # read all data to be able to put the names of the classes at the top of the file
     $fileContent = Get-Content $exportFileName
-    $outInfo | Out-File $exportFileName -Force # clear the file via force parameter
+    $outInfo | Select-Object -Unique | Out-File $exportFileName -Force # clear the file via force parameter
     $spacer | Out-File $exportFileName -Append
     $fileContent | Out-File $exportFileName -Append
 
@@ -335,7 +337,7 @@ if (Test-Path $exportFileName)
     {
         Write-Host "Logfile: $($exportFileName)" -ForegroundColor Cyan
         Write-Host "Found the string: `"$($searchString)`" in the following classes:" -ForegroundColor Cyan
-        $outInfo
+        $outInfo | Select-Object -Unique
     }
 
     Write-Output "Data found"
