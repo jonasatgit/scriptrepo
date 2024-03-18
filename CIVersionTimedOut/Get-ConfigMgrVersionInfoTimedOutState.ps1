@@ -14,6 +14,28 @@
 #************************************************************************************************************
 
 
+function Get-ConfigMgrClientLogPath
+{
+
+    # Get the ConfigMgr client log path from the registry   
+    try
+    {
+        # Define the registry path for the ConfigMgr client
+        $registryPath = "HKLM:\SOFTWARE\Microsoft\CCM\Logging\@Global"
+
+        # Get the ConfigMgr client log path from the registry
+        $logPath = Get-ItemPropertyValue -Path $registryPath -Name "LogDirectory"
+    }catch
+    {
+        Write-Output "ConfigMgr client log path not found $($_)"
+        Exit 1
+    }
+
+    return $logPath
+}
+
+$logPath = Get-ConfigMgrClientLogPath
+
 [array]$SelectStringResult = Get-ChildItem -Path $logPath -Filter "CIAgent*.log" | Sort-Object -Property LastWriteTime -Descending | Select-string -Pattern "CAgentJob::VersionInfoTimedOut"
 if($SelectStringResult)
 {
