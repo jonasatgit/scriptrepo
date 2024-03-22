@@ -22,6 +22,8 @@ This is an example script to show how to create a console menu with PowerShell.
 
 "@
 
+$StopIfWrongWidth = $false
+
 
 $mainObject = @(
     [ordered]@{
@@ -248,12 +250,25 @@ Function New-ConsoleMenu
     }
     $consoleMenu += "$([char]0x255a)"+"$([Char]0x2550)"*$maxWidth+"$([char]0x255D)"
     $consoleMenu += " "
-    $consoleMenu
+  
     # test if the console window is wide enough to display the menu
     if (($Host.UI.RawUI.WindowSize.Width -lt $maxWidth) -or ($Host.UI.RawUI.BufferSize.Width -lt $maxWidth)) 
     {
+        if ($StopIfWrongWidth)
+        {
+            exit 0
+        }
+        else 
+        {
+            $consoleMenu
+        }
+
         Write-Warning "Change your console window size to at least $maxWidth characters width"
         Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"
+    }
+    else 
+    {
+        $consoleMenu
     }
 }
 #endregion
