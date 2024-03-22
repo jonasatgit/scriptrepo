@@ -22,9 +22,7 @@ This is an example script to show how to create a console menu with PowerShell.
 
 "@
 
-$StopIfWrongWidth = $true
-
-
+# base object with some test data to generate the console menu
 $mainObject = @(
     [ordered]@{
         Category = "Intune"
@@ -101,7 +99,9 @@ Function New-ConsoleMenu
         [Parameter(Mandatory = $false)]
         [string[]]$ExcludeProperties,
         [Parameter(Mandatory = $false)]
-        [switch]$AddDevideLines
+        [switch]$AddDevideLines,
+        [Parameter(Mandatory = $false)]
+        [switch]$StopIfWrongWidth
     )
 
 
@@ -281,7 +281,7 @@ $cleared = $false
 do
 {
     #New-ConsoleMenu -Title $Title -Options $mainObject -MaxStringLength 50 -ExcludeProperties 'Test', 'Test2', 'Url' 
-    New-ConsoleMenu -Title $Title -Options $mainObject -ExcludeProperties 'Test', 'Test2', 'Url'
+    New-ConsoleMenu -Title $Title -Options $mainObject -ExcludeProperties 'Test', 'Test2', 'Url' -StopIfWrongWidth
     
     if ($cleared)
     {
