@@ -299,6 +299,7 @@ do
     # test if selection is between 1 and the number of options
     if ($selection -match '^\d+$' -and $selection -ge 1 -and $selection -le $mainObject.Count) 
     {
+        Clear-Host
         $scriptTitle = $mainObject[$selection-1].Name
         $scriptUri = $mainObject[$selection-1].Url
         Write-host "You selected: `"$scriptTitle`"" -ForegroundColor Green
