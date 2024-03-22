@@ -14,41 +14,57 @@
 #
 #************************************************************************************************************
 
-$Title = "****** Select a script to run ******"
+$Title = @"
+
+This is an example script to show how to create a console menu with PowerShell.
+
+****** Select a script to run ******
+
+"@
 
 
-$mainObject = [ordered]@{
-    'item001' = [ordered]@{
+$mainObject = @(
+    [ordered]@{
+        Category = "Intune"
+        Name = "Get-IntuneState.ps1"
+        Url = "https://test.test.test.test"
+        Author = "Me"
+        Elevation = $true
+        Description = "Simple state script"
+        Test = 'test'
+        Test2 = '23423434'
+    }
+    [ordered]@{
         Category = "Intune"
         Name = "Get-Win32AppsOrder.ps1----------"
         Url = "https://test.test.test.test"
         Author = "Me"
-        Elevation = 'Required'
+        Elevation = $true
         Description = "Reads the IntuneManagementExtension.log and returns a ordered list of the Win32Apps"
-        Hidden = 'url,test'
         Test = 'test'
+        Test2 = '23423434'
     }
-    'item002' = [ordered]@{
+    [ordered]@{
         Category = "CoMgmt"
         Name = "Get-CoMgmtWL.ps1"
         Url = "https://test.test.test.test"
         Author = "Me"
-        Elevation = ''
+        Elevation = $false
         Description = "Returns if CoManagement is enabled and how the workloads are configured"
-        Hidden = 'url,test'
         Test = 'test'
+        Test2 = '23423434'
     }
-    'item003' = [ordered]@{
+    [ordered]@{
         Category = "Autopilot"
         Name = "Get-AutopilotAndESPProgress.ps1"
         Url = "https://test.test.test.test"
         Author = "Someone else"
-        Elevation = 'Required'
+        Elevation = $true
         Description = "Script to view the Autopilot and ESP Progress"
-        Hidden = 'url,test'
         Test = 'test'
+        Test2 = '23423434'
     }
-}
+)
 
 
 #region Split-LongString 
@@ -77,131 +93,207 @@ Function New-ConsoleMenu
         [Parameter(Mandatory = $true)]
         [string]$Title,
         [Parameter(Mandatory = $true)]
-        [System.Collections.Specialized.OrderedDictionary]$Options,
+        [array]$Options,
         [Parameter(Mandatory = $false)]
-        [int]$MaxStringLength = 0
+        [int]$MaxStringLength = 0,
+        [Parameter(Mandatory = $false)]
+        [string[]]$ExcludeProperties,
+        [Parameter(Mandatory = $false)]
+        [switch]$AddDevideLines
     )
 
-    # getting some basic info from the first entry
-    [array]$propertiesToHideFromOutput = $Options[0].Hidden -split ','
-    $propertiesToHideFromOutput += 'Hidden'
 
-    [array]$selectedProperties = $Options[0].GetEnumerator() | ForEach-Object {
-        if ($propertiesToHideFromOutput -notcontains $_.Key) {
-            $_.Key
+    # exclude properties from output if they are in the $ExcludeProperties array and store the result in $selectedProperties
+    if ($ExcludeProperties)
+    {
+        [array]$selectedProperties = $Options[0].Keys | ForEach-Object {
+            if ($ExcludeProperties -notcontains $_) {
+                $_
+            }
+        }
+    }
+    else
+    {
+        # Nothing to exclude
+        [array]$selectedProperties = $Options[0].Keys
+    }
+
+    # Calculate the maximum length of each value and key in case the key is longer than the value
+    $lengths = @{}
+    foreach ($item in $Options) {
+        foreach ($property in $item.Keys) {
+            if ($selectedProperties -icontains $property)
+            {
+                $valueLength = $item[$property].ToString().Length
+                $keyLength = $property.ToString().Length
+                # if key name is longer than value, use key length as value length
+                if ($keyLength -gt $valueLength) {
+                    $valueLength = $keyLength
+                }
+                if ($lengths.ContainsKey($property)) {
+                    if ($valueLength -gt $lengths[$property]) {
+                        $lengths[$property] = $valueLength
+                    }
+                } else {
+                    $lengths.Add($property, $valueLength)
+                }
+            }
         }
     }
 
-
-    # calculate the maximum length of each property
-    $lengths = @{}
-    foreach ($item in $Options.Values) {
-        foreach ($property in $item.Keys) {
-            $valueLength = $item[$property].ToString().Length
-            $keyLength = $property.ToString().Length
-            # if key name is longer than value, use key length as value length
-            if ($keyLength -gt $valueLength) {
-                $valueLength = $keyLength
-            }
-            if ($lengths.ContainsKey($property)) {
-                if ($valueLength -gt $lengths[$property]) {
-                    $lengths[$property] = $valueLength
-                }
-            } else {
-                $lengths.Add($property, $valueLength)
+    # if $MaxStringLength is set, we need to limit the maximum length of each string in $lengths
+    if ($MaxStringLength -gt 0)
+    {
+        foreach ($property in $selectedProperties)
+        {
+            if ($lengths[$property] -gt $MaxStringLength)
+            {
+                $lengths[$property] = $MaxStringLength
             }
         }
     }
 
     # Calculcate the maximum width using all selected properties
-    $maxWidth = 0
-    foreach ($property in $selectedProperties) {
-        $maxWidth = $maxWidth + $lengths[$property]
-    }
+    $maxWidth = ($lengths.Values | Measure-Object -Sum).Sum
 
     # Add some extra space for each added table character
-    $maxWidth = $maxWidth + 3 # for the outer characters plus a space "║ " and "║"
-    $maxWidth = $maxWidth + (1 + $selectedProperties.count) * 3 # 1 + for the Nr header and one for each selected property times three because of two spaces and one character
+    # for the outer characters plus a space "║ " and "║"
+    $maxWidth = $maxWidth + 3 
+    # 1 + for the "Nr" header and one for each selected property times three because of two spaces and one extra character
+    $maxWidth = $maxWidth + (1 + $selectedProperties.count) * 3 
 
     # create the menu with the $consoleMenu array
     $consoleMenu = @()
     $consoleMenu += "$([char]0x2554)"+"$([Char]0x2550)"*$maxWidth+"$([char]0x2557)"
-    $consoleMenu += "$([Char]0x2551)"+" "*[Math]::Floor(($maxWidth-($Title.Length+2))/2)+$Title+" "*[Math]::Ceiling(($maxWidth-($Title.Length+2))/2+2)+"$([Char]0x2551)"
-    $consoleMenu += "$([Char]0x255F)" +"$([char]0x2500)"*$maxWidth+"$([Char]0x2562)"
+
+    foreach ($titlePart in ($Title -split "\r?\n"))
+    {
+        $consoleMenu += "$([Char]0x2551)"+" "*[Math]::Floor(($maxWidth-($titlePart.Length+2))/2)+$titlePart+" "*[Math]::Ceiling(($maxWidth-($titlePart.Length+2))/2+2)+"$([Char]0x2551)"    
+    }
+    #$consoleMenu += "$([Char]0x255F)" +"$([char]0x2500)"*$maxWidth+"$([Char]0x2562)"
+    $consoleMenu += "$([Char]0x2560)"+"$([Char]0x2550)"*$maxWidth+"$([Char]0x2563)"
     # now add the header using just the properties from $selectedProperties
     $header = "$([Char]0x2551)"+" Nr"+" "*(3)+"$([Char]0x2551)"
 
-    foreach ($property in $selectedProperties) {
+    foreach ($property in $selectedProperties) 
+    {
         $header += " "+$property+" "*($lengths[$property]-($property.Length-1))+"$([Char]0x2551)"
     }
     $consoleMenu += $header
     $consoleMenu += "$([Char]0x2560)"+"$([Char]0x2550)"*$maxWidth+"$([Char]0x2563)"
     # now add the items
     $i = 0
-    foreach ($item in $Options.GetEnumerator()) {
+    foreach ($item in $Options) 
+    {
         $i++
         $line = "$([Char]0x2551)"+" "+"$i"+" "*(5-$i.ToString().Length)+"$([Char]0x2551)"
+        $lineEmpty = "$([Char]0x2551)"+"      "+"$([Char]0x2551)"
+        $stringAdded = $false
         foreach ($property in $selectedProperties) 
         {
-            <#
-            if ($MaxStringLength -gt 0 -and ($item.Value[$property]).Length -gt $MaxStringLength)
+            
+            if ($MaxStringLength -gt 0 -and ($item.$property).Length -gt $MaxStringLength)
             {
-                [array]$strList = Split-LongString -String $item.Value[$property] -ChunkSize $MaxStringLength
+                [array]$strList = Split-LongString -String $item.$property -ChunkSize $MaxStringLength
+                $rowCounter = 0              
                 foreach ($string in $strList)
                 {
-                    $line += " "+$string+" "*($lengths[$property]-($string.Length-1))+"$([Char]0x2551)"
+                    # we need a complete new row for the next string, so we close this one and add it to the $consoleMenu array
+                    if ($rowCounter -eq 0)
+                    {
+                        $line += " "+($string.ToString())+" "*($lengths.$property-(($string.ToString()).Length-1))+"$([Char]0x2551)"
+                        $consoleMenu += $line
+                        $stringAdded = $true
+                    }
+                    else 
+                    {
+                        # This is a new row with nothing bu the remaining string
+                        $lineEmpty += " "+($string.ToString())+" "*($lengths.$property-(($string.ToString()).Length-1))+"$([Char]0x2551)"
+                        $consoleMenu += $lineEmpty
+                        $stringAdded = $true
+                    }
+                    $rowCounter++
                 }
+
+                # We can add some devide lines if we want
+                if ($AddDevideLines)
+                {
+                    if ($i -lt $Options.Count)
+                    {
+                        $consoleMenu += "$([Char]0x255F)" +"$([char]0x2500)"*$maxWidth+"$([Char]0x2562)"
+                    }
+                }
+
             }
             else
             {
-                $line += " "+$item.Value[$property]+" "*($lengths[$property]-($item.Value[$property].Length-1))+"$([Char]0x2551)"
+                $line += " "+($item.$property.ToString())+" "*($lengths.$property-(($item.$property.ToString()).Length-1))+"$([Char]0x2551)"
+                $lineEmpty += "  "+" "*($lengths.$property)+"$([Char]0x2551)"
+                #$consoleMenu += $line
             }
-            #>
-            $line += " "+$item.Value[$property]+" "*($lengths[$property]-($item.Value[$property].Length-1))+"$([Char]0x2551)"
         }
-        $consoleMenu += $line
+
+        # if the string was not added, we add it here this is typically the case if the string is not longer than $MaxStringLength
+        if (-not $stringAdded)
+        {
+            $consoleMenu += $line
+
+            if ($AddDevideLines)
+            {
+                if ($i -lt $Options.Count)
+                {
+                    $consoleMenu += "$([Char]0x255F)" +"$([char]0x2500)"*$maxWidth+"$([Char]0x2562)"
+                }
+            }
+        }
     }
     $consoleMenu += "$([char]0x255a)"+"$([Char]0x2550)"*$maxWidth+"$([char]0x255D)"
     $consoleMenu += " "
     $consoleMenu
+    # test if the console window is wide enough to display the menu
+    if (($Host.UI.RawUI.WindowSize.Width -lt $maxWidth) -or ($Host.UI.RawUI.BufferSize.Width -lt $maxWidth)) 
+    {
+        Write-Warning "Change your console window size to at least $maxWidth characters width"
+        Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"
+    }
 }
 #endregion
+
 
 $selection = -1
 $cleared = $false
 do
 {
-
-    New-ConsoleMenu -Title $Title -Options $mainObject -MaxStringLength 50
+    #New-ConsoleMenu -Title $Title -Options $mainObject -MaxStringLength 50 -ExcludeProperties 'Test', 'Test2', 'Url' 
+    New-ConsoleMenu -Title $Title -Options $mainObject -ExcludeProperties 'Test', 'Test2', 'Url'
     
     if ($cleared)
     {
-        Write-Host "Invalid selection. Use any of the shown numbers or type `"Q`" to quit" -ForegroundColor Yellow
+        Write-Host "`"$($selection)`" is invalid. Use any of the shown numbers or type `"Q`" to quit" -ForegroundColor Yellow
     }
 
-    $selection = Read-Host 'Please type the number of the script you want to run'
-    # test if the selection is a number
-    # test if selection is between 1 and the number of options
+    $selection = Read-Host 'Please type the number of the script you want to run or type "Q" to quit'
+    #$selection = 'Q'
+    # test if the selection is q to quit
     if ($selection -imatch 'q')
     {
         exit 0
     }
 
+    # test if the selection is a number
+    # test if selection is between 1 and the number of options
     if ($selection -match '^\d+$' -and $selection -ge 1 -and $selection -le $mainObject.Count) 
     {
-
-        else
-        {
-            $scriptTitle = $mainObject[$selection-1].Name
-            $scriptUri = $mainObject[$selection-1].Url
-            Write-host "You selected: `"$scriptTitle`"" -ForegroundColor Green
-            Write-host "URL: `"$scriptUri`"" -ForegroundColor Green
-        }
+        $scriptTitle = $mainObject[$selection-1].Name
+        $scriptUri = $mainObject[$selection-1].Url
+        Write-host "You selected: `"$scriptTitle`"" -ForegroundColor Green
+        Write-host "URL: `"$scriptUri`"" -ForegroundColor Green
     } 
     else 
     {
         Clear-Host
         $cleared = $true
     }
+    
 }
 until ($selection -match '^\d+$' -and $selection -ge 1 -and $selection -le $mainObject.Count)
