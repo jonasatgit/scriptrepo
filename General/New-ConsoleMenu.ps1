@@ -22,7 +22,7 @@ This is an example script to show how to create a console menu with PowerShell.
 
 "@
 
-$StopIfWrongWidth = $false
+$StopIfWrongWidth = $true
 
 
 $mainObject = @(
