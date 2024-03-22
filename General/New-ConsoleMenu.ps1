@@ -256,15 +256,17 @@ Function New-ConsoleMenu
     {
         if ($StopIfWrongWidth)
         {
-            exit 0
+            Write-Warning "Change your console window size to at least $maxWidth characters width"
+            Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"    
+            break
         }
         else 
         {
             $consoleMenu
+            Write-Warning "Change your console window size to at least $maxWidth characters width"
+            Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"
+                 
         }
-
-        Write-Warning "Change your console window size to at least $maxWidth characters width"
-        Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"
     }
     else 
     {
@@ -291,7 +293,7 @@ do
     # test if the selection is q to quit
     if ($selection -imatch 'q')
     {
-        exit 0
+        break
     }
 
     # test if the selection is a number
