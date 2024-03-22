@@ -265,7 +265,6 @@ Function New-ConsoleMenu
             $consoleMenu
             Write-Warning "Change your console window size to at least $maxWidth characters width and re-run the script"
             Write-Warning "Or exclude some properties via '-ExcludeProperties' parameter of 'New-ConsoleMenu' cmdlet in the script"
-                 
         }
     }
     else 
