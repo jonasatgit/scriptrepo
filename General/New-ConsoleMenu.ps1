@@ -157,7 +157,7 @@ Function New-ConsoleMenu
     $maxWidth = ($lengths.Values | Measure-Object -Sum).Sum
 
     # Add some extra space for each added table character
-    # for the outer characters plus a space "║ " and "║"
+    # for the outer characters plus a space
     $maxWidth = $maxWidth + 3 
     # 1 + for the "Nr" header and one for each selected property times three because of two spaces and one extra character
     $maxWidth = $maxWidth + (1 + $selectedProperties.count) * 3 
@@ -170,7 +170,6 @@ Function New-ConsoleMenu
     {
         $consoleMenu += "$([Char]0x2551)"+" "*[Math]::Floor(($maxWidth-($titlePart.Length+2))/2)+$titlePart+" "*[Math]::Ceiling(($maxWidth-($titlePart.Length+2))/2+2)+"$([Char]0x2551)"    
     }
-    #$consoleMenu += "$([Char]0x255F)" +"$([char]0x2500)"*$maxWidth+"$([Char]0x2562)"
     $consoleMenu += "$([Char]0x2560)"+"$([Char]0x2550)"*$maxWidth+"$([Char]0x2563)"
     # now add the header using just the properties from $selectedProperties
     $header = "$([Char]0x2551)"+" Nr"+" "*(3)+"$([Char]0x2551)"
