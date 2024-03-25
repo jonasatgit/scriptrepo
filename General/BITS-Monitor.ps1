@@ -16,21 +16,39 @@
 # Source: https://github.com/jonasatgit/scriptrepo/blob/master/General/BITS-Monitor.ps1
 # tiny script to monitor BITS downloads in Powershell directly
 # needs to be run as an admin
+
+#region admin rights
+#Ensure that the Script is running with elevated permissions
+
+[int]$timeoutSeconds = 5
+
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Warning 'The script needs admin rights to run. Start PowerShell with administrative rights and run the script again'
+    return 
+}
+
+#endregion
 while($true)
 {
     # endless loop
     Clear-Host  
-    Get-BitsTransfer -AllUsers | Format-Table   @{Expression={$_.JobID};Label="JobID"},
+    $bitsJobs = Get-BitsTransfer -AllUsers 
+    if (-NOT $bitsJobs) 
+    {
+        Write-Host "No BITS jobs found. Will try again in $timeoutSeconds seconds..."
+    }
+    else 
+    {
+        $bitsJobs | Format-Table   @{Expression={$_.JobID};Label="JobID"},
                                             @{Expression={$_.DisplayName};Label="DisplayName"},
                                             @{Expression={$_.TransferType};Label="TransferType"},
                                             @{Expression={"{0:N2}" -f $($_.BytesTotal/1024/1024)};Label="MBTotal"},
-                                            #@{Expression={$_.BytesTotal};Label="BytesTotal"},
-                                            #@{Expression={$_.BytesTransferred};Label="BytesTransferred"},
-                                            #@{Expression={"{0:N2}" -f $($_.BytesTotal/1024)};Label="KBTotal"},
                                             @{Expression={"{0:N2}" -f $($_.BytesTransferred/1024/1024)};Label="MBTransferred"},
                                             @{Expression={"{0:N2}" -f $((100 / $_.BytesTotal) * $_.BytesTransferred)+"%"};Label="Total%"},
                                             @{Expression={$_.JobState};Label="Jobstate"},
                                             @{Expression={$_.ProxyList};Label="ProxyList"},
                                             @{Expression={$_.FileList[0].RemoteName};Label="FirstURL"}
-    Start-Sleep -Seconds 5
+    }
+    Start-Sleep -Seconds $timeoutSeconds
 }  

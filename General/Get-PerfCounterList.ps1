@@ -23,6 +23,13 @@
 .LINK
     https://guithub.com/jonasatgit/scriptrepo
 #>
+
+if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Warning 'Run the script with administrative rights to get the full list of performance counters'
+}
+
+
 $outObj = [System.Collections.Generic.List[pscustomobject]]::new()
 $outObjInstances = [System.Collections.Generic.List[pscustomobject]]::new()
 Write-Host "Getting list of performance counters..." -ForegroundColor Green
