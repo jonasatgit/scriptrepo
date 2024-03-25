@@ -85,6 +85,42 @@ function Split-LongString
 
 
 #region New-ConsoleMenu
+<#
+.SYNOPSIS
+    Creates a console menu with the given title and options
+
+.DESCRIPTION
+    Creates a console menu with the given title and options. The options are displayed in a table format with the given properties
+    as columns. The properties are selected from the first object in the options array. The properties can be excluded via the
+    -ExcludeProperties parameter. The maximum length the last property can be limited via the -MaxStringLength parameter. 
+    If the console window is not wide enough to display the menu, a warning is shown and the script stops. If the -StopIfWrongWidth 
+    switch is not used, the menu is displayed anyway but might be shown incorrectly.
+
+.PARAMETER Title
+    The title of the console menu. It is displayed at the top of the menu. The title can be multiline by using a here-string.
+
+.PARAMETER Options
+    An array of objects to display in the console menu
+
+.PARAMETER MaxStringLength
+    The maximum length the last property in the console menu. If the property is longer than the given length, it is split into
+    multiple lines. Default is 0 which means no limit.
+
+.PARAMETER ExcludeProperties
+    An array of properties to exclude from the console menu. Default is $null.
+
+.PARAMETER AddDevideLines
+    If this switch is used, a devide line is added after each item in the console menu. Default is $false.
+
+.PARAMETER StopIfWrongWidth
+    If this switch is used, the script stops if the console window is not wide enough to display the menu. Default is $false.
+
+.EXAMPLE
+    New-ConsoleMenu -Title "Select a script to run" -Options $mainObject -ExcludeProperties 'Test', 'Test2', 'Url' -StopIfWrongWidth -maxStringLength 50
+
+.LINK
+    https://jonasatgit.github.io/scriptrepo/General/New-ConsoleMenu.ps1
+#>
 Function New-ConsoleMenu
 {
     [CmdletBinding()]
@@ -158,6 +194,14 @@ Function New-ConsoleMenu
     # Calculcate the maximum width using all selected properties
     $maxWidth = ($lengths.Values | Measure-Object -Sum).Sum
 
+    # Lets check the lenght of the title
+    $maxTitleLength = (($Title -split "\r?\n") | ForEach-Object {$_.ToString().Length} | Measure-Object -Sum).Sum
+    
+    if ($maxTitleLength -gt $maxWidth)
+    {
+        $maxWidth = $maxTitleLength
+    }
+
     # Add some extra space for each added table character
     # for the outer characters plus a space
     $maxWidth = $maxWidth + 3 
@@ -180,6 +224,14 @@ Function New-ConsoleMenu
     {
         $header += " "+$property+" "*($lengths[$property]-($property.Length-1))+"$([Char]0x2551)"
     }
+
+    # if the header is shorter than the max width, we need to add some spaces to the end
+    if ($header.Length -lt $maxWidth)
+    {
+        # we need to replace the last character with a space and then add the last character with spaces until we reach max width
+        $header = $header.Substring(0, $header.Length-1) + " " + " "*($maxWidth-$header.Length+1) + "$([Char]0x2551)"
+    }
+
     $consoleMenu += $header
     $consoleMenu += "$([Char]0x2560)"+"$([Char]0x2550)"*$maxWidth+"$([Char]0x2563)"
     # now add the items
@@ -203,6 +255,11 @@ Function New-ConsoleMenu
                     if ($rowCounter -eq 0)
                     {
                         $line += " "+($string.ToString())+" "*($lengths.$property-(($string.ToString()).Length-1))+"$([Char]0x2551)"
+                        if ($line.Length -lt $maxWidth)
+                        {
+                            # we need to replace the last character with a space and then add the last character with spaces until we reach max width
+                            $line = $line.Substring(0, $line.Length-1) + " " + " "*($maxWidth-$line.Length+1) + "$([Char]0x2551)"
+                        }
                         $consoleMenu += $line
                         $stringAdded = $true
                     }
@@ -210,6 +267,11 @@ Function New-ConsoleMenu
                     {
                         # This is a new row with nothing bu the remaining string
                         $lineEmpty += " "+($string.ToString())+" "*($lengths.$property-(($string.ToString()).Length-1))+"$([Char]0x2551)"
+                        if ($lineEmpty.Length -lt $maxWidth)
+                        {
+                            # we need to replace the last character with a space and then add the last character with spaces until we reach max width
+                            $lineEmpty = $lineEmpty.Substring(0, $lineEmpty.Length-1) + " " + " "*($maxWidth-$lineEmpty.Length+1) + "$([Char]0x2551)"
+                        }
                         $consoleMenu += $lineEmpty
                         $stringAdded = $true
                     }
@@ -230,13 +292,18 @@ Function New-ConsoleMenu
             {
                 $line += " "+($item.$property.ToString())+" "*($lengths.$property-(($item.$property.ToString()).Length-1))+"$([Char]0x2551)"
                 $lineEmpty += "  "+" "*($lengths.$property)+"$([Char]0x2551)"
-                #$consoleMenu += $line
             }
         }
 
         # if the string was not added, we add it here this is typically the case if the string is not longer than $MaxStringLength
         if (-not $stringAdded)
         {
+            # if the line is shorter than the max width, we need to add some spaces to the end
+            if ($line.Length -lt $maxWidth)
+            {
+                # we need to replace the last character with a space and then add the last character with spaces until we reach max width
+                $line = $line.Substring(0, $line.Length-1) + " " + " "*($maxWidth-$line.Length+1) + "$([Char]0x2551)"
+            }
             $consoleMenu += $line
 
             if ($AddDevideLines)
