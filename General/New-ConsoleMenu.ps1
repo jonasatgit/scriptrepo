@@ -40,7 +40,7 @@ $mainObject = @(
         Url = "https://test.test.test.test"
         Author = "Me"
         Elevation = $true
-        Description = "Reads the IntuneManagementExtension.log and returns a ordered list of the Win32Apps"
+        Description = "`u{2699} Reads the IntuneManagementExtension.log and returns a ordered list of the Win32Apps"
         Test = 'test'
         Test2 = '23423434'
     }
@@ -50,7 +50,7 @@ $mainObject = @(
         Url = "https://test.test.test.test"
         Author = "Me"
         Elevation = $false
-        Description = "Returns if CoManagement is enabled and how the workloads are configured"
+        Description = "`u{1F195} Returns if CoManagement is enabled and how the workloads are configured"
         Test = 'test'
         Test2 = '23423434'
     }
