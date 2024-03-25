@@ -354,7 +354,8 @@ do
         Write-Host "`"$($selection)`" is invalid. Use any of the shown numbers or type `"Q`" to quit" -ForegroundColor Yellow
     }
 
-    $selection = Read-Host 'Please type the number of the script you want to run or type "Q" to quit'
+    Write-Host 'Please type the number of the script you want to run or type "Q" to quit' -ForegroundColor Green -NoNewline
+    $selection = Read-Host ' '
     #$selection = 'Q'
     # test if the selection is q to quit
     if ($selection -imatch 'q')
