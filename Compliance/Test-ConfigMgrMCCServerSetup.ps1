@@ -75,12 +75,15 @@ if (-NOT (Test-Path $mccContentFolder))
     return    
 }
 
+<#
 # Test auto generated test file
+# Removed due to the fact that the file is not always present. For example, if the server was setup without an internet connection
 if (-NOT (Test-Path $autoTestFileFullPath))
 {
     Write-Output "Uncompliant. MCC auto test file content path does not exist: $autoTestFileFullPath"
     return    
 }
+#>
 
 
 # Run mcc test against local server
