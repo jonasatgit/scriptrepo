@@ -262,8 +262,8 @@ try
     $WUStatusServer = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -Name 'WUStatusServer' -ErrorAction Stop
     if ($WUServer -and $WUStatusServer)
     {
-        $WUServerURL = $WUServer.WUServer -replace '(http|https)://' -replace ':.*'
-        $WUStatusServerURL = $WUStatusServer.WUStatusServer -replace '(http|https)://' -replace ':.*'
+        $WUServerURL = $WUServer.WUServer -replace '(http|https)://' -replace ':.*' -replace '/.*'
+        $WUStatusServerURL = $WUStatusServer.WUStatusServer -replace '(http|https)://' -replace ':.*' -replace '/.*'
 
         if ($WUServerURL -ieq $WUStatusServerURL)
         {
