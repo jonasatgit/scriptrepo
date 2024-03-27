@@ -57,16 +57,16 @@ $stateHashTable = @{
 
 # Possible types: https://learn.microsoft.com/en-us/mem/configmgr/develop/reference/core/servers/configure/sms_packagestatusdistpointssummarizer-server-wmi-class
 $pkgTypeHashTable = @{
-    0 =     'PKG_TYPE_REGULAR'
-    3 =     'PKG_TYPE_DRIVER'
-    4 =     'PKG_TYPE_TASK_SEQUENCE'
-    5 =     'PKG_TYPE_SWUPDATES'
-    6 =     'PKG_TYPE_DEVICE_SETTING'
-    7 =     'PKG_TYPE_VIRTUAL_APP'
-    8 =     'PKG_CONTENT_PACKAGE'
+    0 = 'PKG_TYPE_REGULAR'
+    3 = 'PKG_TYPE_DRIVER'
+    4 = 'PKG_TYPE_TASK_SEQUENCE'
+    5 = 'PKG_TYPE_SWUPDATES'
+    6 = 'PKG_TYPE_DEVICE_SETTING'
+    7 = 'PKG_TYPE_VIRTUAL_APP'
+    8 = 'PKG_CONTENT_PACKAGE'
     257 = 'PKG_TYPE_IMAGE'
-    258    = 'PKG_TYPE_BOOTIMAGE'
-    259    = 'PKG_TYPE_OSINSTALLIMAGE'
+    258 = 'PKG_TYPE_BOOTIMAGE'
+    259 = 'PKG_TYPE_OSINSTALLIMAGE'
 }
  
 
@@ -143,6 +143,7 @@ else
 {
     Write-Host 'No DP selected' -ForegroundColor Green
 }
+Write-Host 'End of script' -ForegroundColor Green
 
 
 
