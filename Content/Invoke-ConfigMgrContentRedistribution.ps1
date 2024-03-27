@@ -39,9 +39,7 @@ param(
     [switch]$IncludeAlreadyInstalled
 )
 
-
-
-
+#region hash tables
 # Possible package status states: https://learn.microsoft.com/en-us/mem/configmgr/develop/reference/core/servers/configure/sms_packagestatusdistpointssummarizer-server-wmi-class
 $stateHashTable = @{
     0 = 'INSTALLED'
@@ -68,8 +66,9 @@ $pkgTypeHashTable = @{
     258 = 'PKG_TYPE_BOOTIMAGE'
     259 = 'PKG_TYPE_OSINSTALLIMAGE'
 }
+#endregion
  
-
+#region get dps
 $query = "SELECT NALPath FROM SMS_SCI_SysResUse WHERE RoleName = 'SMS Distribution Point'"
 [array]$DPList = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
 
@@ -86,8 +85,9 @@ else
 {
     Write-Host 'No DPs found' -ForegroundColor Green
 }
+#endregion
 
-
+#region redistribute content
 $FailedPackages = $null
 if ($dpSelection)
 {
@@ -144,6 +144,7 @@ else
     Write-Host 'No DP selected' -ForegroundColor Green
 }
 Write-Host 'End of script' -ForegroundColor Green
+#endregion
 
 
 
