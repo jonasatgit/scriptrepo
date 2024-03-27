@@ -34,6 +34,14 @@
     If this parameter is set to $true, the script will delete the log files. 
     If set to $false, the script will only output the number of log files that would be deleted.
 
+.PARAMETER FileNamesToExclude
+    An array of file names to exclude from the deletion process. "*"" as wildcard is supported.
+    Cannot be used with FileNamesToInclude together.
+
+.PARAMETER FileNamesToInclude
+    An array of file names to include in the deletion process. "*"" as wildcard is supported.
+    Cannot be used with FileNamesToExclude together.
+
 .EXAMPLE
     Remove-ConfigMgrClientLogs.ps1 -FolderPath "C:\Windows\CCM\Logs" -DaysToKeep 7
 
@@ -43,13 +51,20 @@
     Remove-ConfigMgrClientLogs.ps1 -FolderPath "C:\Windows\CCM\Logs" -DaysToKeep 7 -Remediate $true
 
     This example will delete log files older than 7 days from the specified folder.
+
+.EXAMPLE
+    Remove-ConfigMgrClientLogs.ps1 -FolderPath "C:\Windows\CCM\Logs" -DaysToKeep 7 -FileNamesToInclude "*WmiExport*.log"
+
+    This example will delete log files older than 7 days from the specified folder that match the file name "*WmiExport*.log".
 #>
 [CmdletBinding()]
 param
 (
     [string]$FolderPath,
     [int]$DaysToKeep = 30,
-    [bool]$Remediate = $false
+    [bool]$Remediate = $false,
+    [string[]]$FileNamesToExclude = @(),
+    [string[]]$FileNamesToInclude = @("*WmiExport*.log","*SCNotify*.log","*SCToastNotification*.log")
 )
 
 
@@ -68,7 +83,6 @@ function Get-ConfigMgrClientLogPath
     }catch
     {
         Write-Output "ConfigMgr client log path not found $($_)"
-        Exit 1
     }
 
     return $logPath
@@ -76,21 +90,71 @@ function Get-ConfigMgrClientLogPath
 #endregion
 
 #region Main
+if ($FileNamesToExclude -and $FileNamesToInclude)
+{
+    Write-Output "You can only specify either LogNamesToExclude or LogNamesToInclude, not both"
+    break
+}
+
+
+# Get the log folder path
 if(-not $FolderPath)
 {
     $FolderPath = Get-ConfigMgrClientLogPath
 }
 
 $today = Get-Date
-[array]$filesToDelete = Get-ChildItem -Path $folderPath | Where-Object {$_.LastWriteTime -lt ($today.AddDays(-$daysToKeep))}
-
-if ($Remediate)
+if ($FolderPath)
 {
-    $filesToDelete | Remove-Item -Force
-}
-else
-{
-    Write-Output ($filesToDelete.count)
-}
+    [array]$filesToDelete = Get-ChildItem -Path $folderPath
 
+    # Include some files
+    if ($FileNamesToInclude)
+    {
+        $filesToDelete = $filesToDelete | ForEach-Object {
+
+            foreach ($FileName in $FileNamesToInclude)
+            {
+                if ($_.Name -ilike $FileName)
+                {
+                    $_
+                }
+            }
+        }
+    }
+
+    # Exclude some files
+    if ($FileNamesToExclude)
+    {
+        $filesToDelete = $filesToDelete | ForEach-Object {
+            
+            $foundItem = $false
+            foreach ($FileName in $FileNamesToExclude)
+            {
+                if ($_.Name -ilike $FileName)
+                {
+                    $foundItem = $true
+                }
+            }
+
+            if (-not $foundItem)
+            {
+                $_
+            }
+        }
+    }
+
+    # Now lets filter out the files that are older than the specified number of days
+    $filesToDelete = $filesToDelete | Where-Object {$_.LastWriteTime -le ($today.AddDays(-$daysToKeep))}
+
+    # Either delete or output the number of files
+    if ($Remediate)
+    {
+        $filesToDelete | Remove-Item -Force
+    }
+    else
+    {
+        Write-Output ($filesToDelete.count)
+    }
+}
 #endregion
