@@ -150,7 +150,10 @@ if ($FolderPath)
     # Either delete or output the number of files
     if ($Remediate)
     {
-        $filesToDelete | Remove-Item -Force
+        if ($filesToDelete.count -gt 0)
+        {
+            $filesToDelete | Remove-Item -Force
+        }
     }
     else
     {
