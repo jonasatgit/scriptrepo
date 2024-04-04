@@ -160,4 +160,8 @@ if ($FolderPath)
         Write-Output ($filesToDelete.count)
     }
 }
+else
+{
+    Write-Output "No ConfigMgr log folder path found"
+}
 #endregion
