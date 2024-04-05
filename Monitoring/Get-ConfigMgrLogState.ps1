@@ -511,7 +511,7 @@ Function ConvertTo-CustomMonitoringObject
                     }
                     Default 
                     {
-                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                        [string]$shortDescription = '{0}:{1}:{2}' -f $InputObject.Name, $env:COMPUTERNAME, ($InputObject.Description -replace "\'", "" -replace '>','_') # Remove some chars like quotation marks or >
                     }
                 }
 
