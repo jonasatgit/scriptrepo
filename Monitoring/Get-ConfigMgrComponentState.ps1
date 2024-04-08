@@ -60,6 +60,16 @@
 .PARAMETER OutputTestData
     Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
+.PARAMETER ExcludeComponentsList
+    List of ConfigMgr components to exclude from monitoring. Should be the component name and only used temporary.
+
+.PARAMETER ExcludeSiteSystemsList
+    List of ConfigMgr site systems to exclude from monitoring. Should be the FQDN of the site system. Use only temporary in case a system is down for maintenance.
+
+.PARAMETER $ExcludeAlertIDsList
+    List of ConfigMgr alerts to exclude from monitoring. Should be the "Alert ID" which can be shown in ConfigMgr console under "Active Alerts".
+    Use only temporary in case an alert is known and not relevant for a time being.
+
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
 
@@ -80,6 +90,15 @@
 
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1 -WriteLog -LogPath "C:\Temp"
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -ExcludeComponentsList 'SMS_LAN_SENDER','SMS_WSUS_CONTROL_MANAGER'
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -ExcludeSiteSystemsList 'CM00.contoso.local', 'CM01.contoso.local'
+
+.EXAMPLE
+    Get-ConfigMgrComponentState.ps1 -$ExcludeAlertIDsList 10, 20
 
 .INPUTS
    None
@@ -114,7 +133,13 @@ param
     [switch]$TestMode,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
-    [int]$OutputTestData=0
+    [int]$OutputTestData=0,
+    [Parameter(Mandatory=$false)]
+    [string[]]$ExcludeComponentsList = @(),
+    [Parameter(Mandatory=$false)]
+    [string[]]$ExcludeSiteSystemsList = @(),
+    [Parameter(Mandatory=$false)]
+    [int[]]$ExcludeAlertIDsList = @()
 )
 
 
@@ -520,6 +545,15 @@ else
                         #Status: 0=OK, 1=Warning, 2=Error 
                         foreach ($componentState in ($listFromComponentSummarizer | Where-Object {($_.Status -ne 0)}))
                         {
+
+                            # We might need to exclude some components from monitoring
+                            if ($ExcludeComponentsList -icontains $componentState.ComponentName)
+                            {
+                                if($WriteLog){Write-CMTraceLog -Message "Will skip component with name: $($componentState.ComponentName)" -Component ($MyInvocation.MyCommand)}
+                                continue
+                            }
+
+                            # Build the object for the result list
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'ComponentState'
                             $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $componentState.MachineName, $componentState.ComponentName, $componentState.SiteCode
@@ -567,6 +601,14 @@ else
                                 $siteSystemName = $siteSystemName -replace '\\', '' -replace '\"', '' -replace '\]', ''   
                             }
 
+                            # we might need to exclude some site systems from monitoring
+                            if ($ExcludeSiteSystemsList -icontains $siteSystemName)
+                            {
+                                if($WriteLog){Write-CMTraceLog -Message "Will skip site system with name: $($siteSystemName)" -Component ($MyInvocation.MyCommand)}
+                                continue
+                            }
+
+                            # Build the object for the result list
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'SiteSystemState'
                             $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $siteSystemState.Role, $siteSystemState.SiteCode
@@ -616,6 +658,14 @@ else
                     {
                         foreach ($alertState in ($listFromSMSAlert | Where-Object {($_.AlertState -eq 0) -and ($_.IsIgnored -eq 0)}))
                         {
+
+                            # we might need to exclude some alerts from monitoring
+                            if ($ExcludeAlertIDsList -contains $alertState.ID)
+                            {
+                                if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
+                                continue
+                            }
+
                             if($alertState.SourceSiteCode)
                             {
                                 $sourceSiteCode = $alertState.SourceSiteCode
@@ -645,7 +695,7 @@ else
 
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'AlertState'
-                            $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode, $alertState.ID
                             $tmpObj.SystemName = $systemName
                             $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                             $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -687,6 +737,13 @@ else
                     #>
                     foreach ($alertState in $listFromSMSEPAlert)
                     {
+                        # we might need to exclude some alerts from monitoring
+                        if ($ExcludeAlertIDsList -contains $alertState.ID)
+                        {
+                            if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
+                            continue
+                        }     
+
                         if($alertState.SourceSiteCode)
                         {
                             $sourceSiteCode = $alertState.SourceSiteCode
@@ -698,7 +755,7 @@ else
 
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'EPAlertState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -739,6 +796,14 @@ else
                     #>
                     foreach ($alertState in $listFromSMSCHAlert)
                     {
+
+                        # we might need to exclude some alerts from monitoring
+                        if ($ExcludeAlertIDsList -contains $alertState.ID)
+                        {
+                            if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
+                            continue
+                        }
+
                         if($alertState.SourceSiteCode)
                         {
                             $sourceSiteCode = $alertState.SourceSiteCode
@@ -749,7 +814,7 @@ else
                         }
                         $tmpObj = New-Object psobject | Select-Object $propertyList
                         $tmpObj.CheckType = 'CHAlertState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode
+                        $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
                         $tmpObj.SystemName = $systemName
                         $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                         $tmpObj.SiteCode = $alertState.SourceSiteCode

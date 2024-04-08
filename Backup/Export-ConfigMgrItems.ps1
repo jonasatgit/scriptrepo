@@ -328,6 +328,100 @@ Function Get-ConfigMgrObjectLocation
 }
 #endregion
 
+#region function New-CMCollectionListCustom
+function New-CMCollectionListCustom
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object[]]$cmItems
+    )
+    Begin
+    {
+        $out = [System.Collections.Generic.List[pscustomobject]]::new()
+    }
+    Process
+    {
+        $item = $_ # $_ coming from pipeline
+
+        $collItem = [pscustomobject]@{
+            CollectionID = $item.CollectionID
+            Name = $item.Name
+            LimitToCollectionID = $item.LimitToCollectionID
+            LimitToCollectionName = $item.LimitToCollectionName
+            IsBuiltIn = $item.IsBuiltIn
+            CollectionRules = $null
+            RefreshManual = if ($item.RefreshType -eq 1) {$true}else{$false}
+            RefreshIncremental = if ($item.RefreshType -band 4) {$true}else{$false}
+            RefreshFull = if ($item.RefreshType -band 2) {$true}else{$false}
+            RefreshSchedule = $null
+            CollectionVariables = $null
+            MaintenanceWindows = $null
+
+        }
+
+        # Lets get the collection rules
+        $rulesList = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($rule in $item.CollectionRules)
+        {
+            switch ($rule.ObjectClass) 
+            {
+                "SMS_CollectionRuleDirect" 
+                {
+                    $rulesList.Add([pscustomobject]@{
+                        Type = "DirectRule"
+                        RuleName = $rule.RuleName
+                        ResourceID = $rule.ResourceID
+                    })
+                }
+                "SMS_CollectionRuleQuery" 
+                {
+                    $rulesList.Add([pscustomobject]@{
+                        Type = "QueryRule"
+                        RuleName = $rule.RuleName
+                        QueryID = $rule.QueryID
+                        QueryExpression = $rule.QueryExpression
+                    })
+                }
+                "SMS_CollectionRuleIncludeCollection" 
+                {
+                    $rulesList.Add([pscustomobject]@{
+                        Type = "IncludeRule"
+                        RuleName = $rule.RuleName
+                        IncludeCollectionID = $rule.IncludeCollectionID
+                    })
+                }
+                "SMS_CollectionRuleExcludeCollection" 
+                {
+                    $rulesList.Add([pscustomobject]@{
+                        Type = "ExcludeRule"
+                        RuleName = $rule.RuleName
+                        ExcludeCollectionID = $rule.ExcludeCollectionID
+                    })
+                }
+                Default 
+                {
+                    $rulesList.Add([pscustomobject]@{
+                        Type = "UnknownRule"
+                        RuleName = $rule.RuleName
+                    })
+                }
+            }
+        }
+
+        $collItem.CollectionRules = $rulesList
+
+        $out.Add($collItem)
+
+    }
+    End
+    {
+        $out
+    }
+
+}
+
 #region function Export-CMItemCustomFunction
 <#
 .SYNOPSIS
