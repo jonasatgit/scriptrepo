@@ -412,8 +412,84 @@ function New-CMCollectionListCustom
 
         $collItem.CollectionRules = $rulesList
 
-        $out.Add($collItem)
+        # Lets get the refresh schedule
+        $refreshScheduleList = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $i = 0
+        Foreach($schedule in $item.RefreshSchedule) 
+        {
+            $i++
+            $refreshScheduleList.Add([PSCustomObject]@{
+                Name = "Schedule $i"
+                Type = ($schedule.OverridingObjectClass -replace "SMS_ST_", "")
+                Day = $schedule.Day
+                DayDuration = $schedule.DayDuration
+                DaySpan = $schedule.DaySpan
+                HourDuration = $schedule.HourDuration
+                HourSpan = $schedule.HourSpan
+                IsGMT = $schedule.IsGMT
+                MinuteDuration = $schedule.MinuteDuration
+                MinuteSpan = $schedule.MinuteSpan
+                MonthDay = $schedule.MonthDay
+                StartTime = $schedule.StartTime.ToString("yyyymmddHHMMss.000000+***")
+                ForNumberOfWeeks = $schedule.ForNumberOfWeeks
+                WeekOrder = $schedule.WeekOrder
+                ForNumberOfMonths = $schedule.ForNumberOfMonths
+            })   
+        }
 
+        $collItem.RefreshSchedule = $refreshScheduleList
+
+        if (($item.CollectionVariablesCount -gt 0) -or ($item.MaintenanceWindowsCount -gt 0))
+        {
+            $wmiQuery = "Select * from SMS_CollectionSettings where CollectionID = '$($item.CollectionID)'"
+            $collectionSettings = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName
+            if ($collectionSettings)
+            {
+                $collectionSettings.Get()
+            }
+        }
+
+
+        # Lets add the collection variables
+        if ($item.CollectionVariablesCount -gt 0) 
+        {
+            $CollectionVariables = [System.Collections.Generic.List[PSCustomObject]]::new()
+            foreach ($Variable in $collectionSettings.CollectionVariables) 
+            {
+                $CollectionVariables.Add([PSCustomObject]@{
+                    Name = $Variable.Name
+                    Value = $Variable.Value
+                    IsMasked = $Variable.IsMasked
+                })
+            }            
+        }
+        
+        $collItem.CollectionVariables = $CollectionVariables
+
+        # Lets add maintenance windows
+        if ($item.ServiceWindowsCount -gt 0) 
+        {
+            $MaintenanceWindows = [System.Collections.Generic.List[PSCustomObject]]::new()
+            foreach ($Window in $collectionSettings.ServiceWindows) 
+            {
+                $MaintenanceWindows.Add([PSCustomObject]@{
+                    Name = $Window.Name
+                    Description = $Window.Description
+                    IsEnabled = $Window.IsEnabled
+                    IsGMT = $Window.IsGMT
+                    Starttime = $Window.Starttime #.ToString("yyyymmddHHMMss.000000+***")
+                    ServiceWindowType = $Window.ServiceWindowType
+                    ServiceWindowSchedules = $Window.ServiceWindowSchedules
+                    RecurrenceType = $Window.RecurrenceType
+                    Duration = $Window.Duration
+                    
+                })
+            }            
+        }
+
+        $collItem.MaintenanceWindows = $MaintenanceWindows
+
+        $out.Add($collItem)
     }
     End
     {
@@ -807,8 +883,6 @@ if(-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyCon
 # Set the current location to be the site code.
 Set-Location "$($SiteCode):\" @initParams
 #endregion
-
-
 
 #region Main script
 Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
