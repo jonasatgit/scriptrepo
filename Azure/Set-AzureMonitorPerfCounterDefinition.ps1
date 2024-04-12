@@ -29,7 +29,7 @@
     It will ask for credentials if not already connected to Azure and will use the default resource group and data collection rule name set in the script
 
 .EXAMPLE
-    .\Set-AzureMonitorPerfCounterDefinition.ps1 -ResourceGroupName 'MyResourceGroup' -DataCollectionRuleName 'MyDataCollectionRule' -SamplerateInSeconds 300 -SQLPerfCounterInstacenName 'MSSQL$INST01'
+    .\Set-AzureMonitorPerfCounterDefinition.ps1 -ResourceGroupName 'MyResourceGroup' -DataCollectionRuleName 'MyDataCollectionRule' -SamplerateInSeconds 300 -SQLPerfCounterInstanceName 'MSSQL$INST01'
     This will update the existing data collection rule with performance counters listed under $ListOfPerformanceCounters using the specified resource 
     group and data collection rule name as well as samplerate and SQL Server instance name
 
@@ -39,10 +39,10 @@
 .PARAMETER DataCollectionRuleName
     The name of the data collection rule. Needs to be created before running this script
 
-.PARAMETER SamplerateInSeconds
+.PARAMETER SampleRateInSeconds
     The frequency at which the data is collected. The default value is 300 seconds (5 minutes).
 
-.PARAMETER SQLPerfCounterInstacenName
+.PARAMETER SQLPerfCounterInstanceName
     The name of the SQL Server instance if you want to collect SQL Server performance counters. If you do not have a SQL Server instance, leave it empty
     If SQL runs on a named instance, the instance name needs to be added to the counter name. Example: MSSQL$INST01
     Get the list of SQL counters by running this script first and copy the SQL instance name: 
@@ -55,10 +55,14 @@ https://guithub.com/jonasatgit/scriptrepo
 [CmdletBinding()]
 param 
 (
-    [string]$ResourceGroupName = 'AZ0000016', 
+    [Parameter(Mandatory = $true)]
+    [string]$ResourceGroupName = '',
+    [Parameter(Mandatory = $false)]
     [string]$DataCollectionRuleName = 'Windows-Server-Perf-DataCollector', 
-    [int]$SamplerateInSeconds = 900, 
-    [string]$SQLPerfCounterInstacenName = 'MSSQL$INST02' 
+    [Parameter(Mandatory = $false)]
+    [int]$SampleRateInSeconds = 900,
+    [Parameter(Mandatory = $false)]
+    [string]$SQLPerfCounterInstanceName = ''
 )
 # List of performance counters to add to the data collection rule
 $listOfPerformanceCounters = @(
@@ -154,18 +158,22 @@ If ($azContext) {
 # making sure all entries start with "\"
 $listOfPerformanceCounters = $listOfPerformanceCounters -replace '^(?!\\)', '\'
 
-# if $sqlPerfCounterInstacenName does not end with a :, add a : to the end
-if (-NOT ($sqlPerfCounterInstacenName -imatch ':(?<!a)$'))
+# if we have a SQL Server instance name, replace all SQL Server instance names with the actual instance name
+if (-NOT([string]::IsNullOrEmpty($SQLPerfCounterInstanceName)))
 {
-    $sqlPerfCounterInstacenName = '\{0}:' -f $sqlPerfCounterInstacenName
-}
+    # if $SQLPerfCounterInstanceName does not end with a :, add a : to the end
+    if (-NOT ($SQLPerfCounterInstanceName -imatch ':(?<!a)$'))
+    {
+        $SQLPerfCounterInstanceName = '\{0}:' -f $SQLPerfCounterInstanceName
+    }
 
-# replace all SQL Server instance names with the actual instance name in case we have a SQL Server instance
-$listOfPerformanceCounters = $listOfPerformanceCounters -replace '^(\\SQLServer:)', $sqlPerfCounterInstacenName
+    # replace all SQL Server instance names with the actual instance name in case we have a SQL Server instance
+    $listOfPerformanceCounters = $listOfPerformanceCounters -replace '^(\\SQLServer:)', $SQLPerfCounterInstanceName
+}
 
 # add all counters with equal samplerate to the same array and not idividual arrays
 Write-Host "Create perf counter object" -ForegroundColor Green
-$counterObject = New-AzPerfCounterDataSourceObject -CounterSpecifier $listOfPerformanceCounters -Name CoreCounters -SamplingFrequencyInSecond $samplerateInSeconds -Stream Microsoft-Perf
+$counterObject = New-AzPerfCounterDataSourceObject -CounterSpecifier $listOfPerformanceCounters -Name CoreCounters -SamplingFrequencyInSecond $sampleRateInSeconds -Stream Microsoft-Perf
 
 # get the current data collection rule
 Write-Host "Get data collection rule" -ForegroundColor Green

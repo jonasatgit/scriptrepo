@@ -328,6 +328,50 @@ Function Get-ConfigMgrObjectLocation
 }
 #endregion
 
+#region convert to xml
+function ConvertTo-Xml {
+    param (
+        [Parameter(Mandatory=$true)]
+        $Object
+    )
+
+    $settings = New-Object System.Xml.XmlWriterSettings
+    $settings.Indent = $true
+
+    $sb = New-Object System.Text.StringBuilder
+    $writer = [System.Xml.XmlWriter]::Create($sb, $settings)
+
+    $writer.WriteStartDocument()
+    $writer.WriteStartElement("Object")
+
+    foreach ($property in $Object.PSObject.Properties) {
+        $writer.WriteStartElement($property.Name)
+
+        if ($property.Value -is [System.Collections.IEnumerable] -and $property.Value -isnot [string]) {
+            foreach ($item in $property.Value) {
+                $writer.WriteStartElement("Item")
+                foreach ($subProperty in $item.PSObject.Properties) {
+                    $writer.WriteElementString($subProperty.Name, $subProperty.Value)
+                }
+                $writer.WriteEndElement()
+            }
+        } else {
+            $writer.WriteValue($property.Value)
+        }
+
+        $writer.WriteEndElement()
+    }
+
+    $writer.WriteEndElement()
+    $writer.WriteEndDocument()
+    $writer.Flush()
+    $writer.Close()
+
+    return $sb.ToString()
+}
+#endregion
+
+
 #region function New-CMCollectionListCustom
 function New-CMCollectionListCustom
 {
@@ -340,6 +384,82 @@ function New-CMCollectionListCustom
     Begin
     {
         $out = [System.Collections.Generic.List[pscustomobject]]::new()
+        
+        # Data from SQL table dbo.RBAC_SecuredObjectTypes
+        $deploymentTypeHash = @{
+            2 = "SMS_Package"
+            7 = "SMS_TaskSequence"
+            9 = "SMS_MeteredProductRule"
+            11 = "SMS_Baseline"
+            14 = "SMS_OperatingSystemInstallPackage"
+            20 = "SMS_TaskSequencePackage"
+            21 = "SMS_DeviceSettingPackage"
+            22 = "SMS_DeviceSettingItem"
+            23 = "SMS_DriverPackage"
+            24 = "SMS_SoftwareUpdatesPackage"
+            25 = "SMS_Driver"
+            31 = "SMS_Application"
+            34 = "SMS_AuthorizationList"
+            36 = "SMS_DeviceEnrollmentProfile"
+            37 = "SMS_SoftwareUpdate"
+            38 = "SMS_ClientSettings"
+            47 = "SMS_AntimalwareSettings"
+            48 = "SMS_ConfigurationPolicy"
+            49 = "SMS_FirewallSettings"
+            52 = "SMS_UserStateManagementSettings"
+            53 = "SMS_FirewallPolicy"
+            56 = "SMS_WirelessProfileSettings"
+            57 = "SMS_VpnConnectionSettings"
+            58 = "SMS_ClientAuthCertificateSettings"
+            59 = "SMS_RemoteConnectionSettings"
+            60 = "SMS_TrustedRootCertificateSettings"
+            61 = "SMS_CommunicationsProvisioningSettings"
+            62 = "SMS_AppRestrictionSettings"
+            64 = "SMS_CompliancePolicySettings"
+            65 = "SMS_PfxCertificateSettings"
+            67 = "SMS_AllowOrDenyAppsSetting"
+            69 = "SMS_CustomConfigurationSettings"
+            70 = "SMS_TermsAndConditionsSettings"
+            71 = "SMS_EditionUpgradeSettings"
+            73 = "MDM_GenericAppConfiguration"
+            78 = "SMS_PassportForWorkProfileSettings"
+            80 = "SMS_AdvancedThreatProtectionSettings"
+            81 = "SMS_DeviceThreatProtectionSettings"
+            82 = "SMS_WSfBConfigurationData"
+            86 = "SMS_ComplianceNotificationSettings"
+            87 = "SMS_WindowsDefenderAntimalwareSettings"
+            88 = "SMS_FirewallComplianceSettings"
+            89 = "SMS_UacComplianceSettings"
+            200 = "SMS_CIAssignment"
+            201 = "SMS_Advertisement"
+            202 = "SMS_ClientSettingsAssignment"
+            207 = "SMS_PolicyProperty"
+            209 = "SMS_MDMCorpOwnedDevices"
+            210 = "SMS_MDMCorpEnrollmentProfiles"
+            211 = "SMS_WindowsDefenderApplicationGuard"
+            212 = "SMS_DeviceGuardSettings"
+            213 = "SMS_Scripts"
+            214 = "SMS_WindowsUpdateForBusinessConfigurationSettings"
+            215 = "SMS_ActionAccountResult"
+            216 = "SMS_ManagementInsights"
+            217 = "SMS_CoManagementSettings"
+            218 = "SMS_ExploitGuardSettings"
+            219 = "SMS_PhasedDeployment"
+            220 = "SMS_EdgeBrowserSettings"
+            222 = "SMS_M365ASettings"
+            223 = "SMS_OneDriveKnownFolderMigrationSettings"
+            224 = "SMS_ApplicationGroup"
+            225 = "SMS_BitlockerManagementSettings"
+            227 = "SMS_MachineOrchestrationGroup"
+            228 = "SMS_AntiMalwareSettingsPolicy"
+        }
+
+        $deploymentIntentHash = @{
+            0 = "Required"
+            1 = "Unknown"
+            2 = "Available"
+            3 = "Unknown"
+        }
     }
     Process
     {
@@ -358,6 +478,7 @@ function New-CMCollectionListCustom
             RefreshSchedule = $null
             CollectionVariables = $null
             MaintenanceWindows = $null
+            Deployments = $null
 
         }
 
@@ -489,6 +610,53 @@ function New-CMCollectionListCustom
 
         $collItem.MaintenanceWindows = $MaintenanceWindows
 
+        # Lets check if we have deployments
+        $wmiQuery = "Select deploymentID, DeploymentName, TargetName, DeploymentIntent, DeploymentType, TargetSubName from SMS_DeploymentInfo where CollectionID='$($item.CollectionID)'"
+        try 
+        {
+            [array]$deployments = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName -ErrorAction Stop
+        }
+        catch 
+        {
+            Write-CMTraceLog -Message "Error exporting getting collection deployments" -Severity Error
+            Write-CMTraceLog -Message "$($_)" -Severity Error
+            $global:ExitWithError = $true
+        }
+
+        # Lets add the deployments
+        if ($deployments.count -gt 0)
+        {
+            $deploymentsList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    
+            # First just all deployments except updates
+            foreach ($deployment in ($deployments.Where({$_.DeploymentType -ne 37})))
+            {
+                $deploymentsList.Add([pscustomobject]@{
+                    DeploymentID = $deployment.DeploymentID
+                    DeploymentName = $deployment.DeploymentName
+                    TargetName = $deployment.TargetName
+                    DeploymentIntent = If ($null -eq ($deploymentIntentHash[[int]($deployment.DeploymentIntent)])){'Unknown'}else{($deploymentIntentHash[[int]($deployment.DeploymentIntent)])}
+                    DeploymentType = If ($null -eq ($deploymentTypeHash[[int]($deployment.DeploymentType)])){'Unknown'}else{($deploymentTypeHash[[int]($deployment.DeploymentType)])}
+                    ActionName = $deployment.TargetSubName
+                })
+            }
+        
+            # Now all updates but just the update group or individual deployed update deploymentname, to limit the output
+            foreach ($deployment in ($deployments.Where({$_.DeploymentType -eq 37}) | Select-Object deploymentID, DeploymentName, DeploymentIntent, DeploymentType, TargetSubName -Unique)) 
+            {
+                $deploymentsList.Add([pscustomobject]@{
+                    DeploymentID = $deployment.DeploymentID
+                    DeploymentName = $deployment.DeploymentName
+                    TargetName = $null
+                    DeploymentIntent = If ($null -eq ($deploymentIntentHash[[int]($deployment.DeploymentIntent)])){'Unknown'}else{($deploymentIntentHash[[int]($deployment.DeploymentIntent)])}
+                    DeploymentType = If ($null -eq ($deploymentTypeHash[[int]($deployment.DeploymentType)])){'Unknown'}else{($deploymentTypeHash[[int]($deployment.DeploymentType)])}
+                    ActionName = $deployment.TargetSubName
+                })
+            }
+
+            $collItem.Deployments = $deploymentsList
+        }
+        
         $out.Add($collItem)
     }
     End
@@ -883,6 +1051,7 @@ if(-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyCon
 # Set the current location to be the site code.
 Set-Location "$($SiteCode):\" @initParams
 #endregion
+
 
 #region Main script
 Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
