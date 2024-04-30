@@ -206,7 +206,7 @@ function Remove-OldExportFolders
         $timeSpan = New-TimeSpan -Start $date -End (Get-Date)
         if ($timeSpan.TotalDays -gt $MaxExportFolderAgeInDays)
         {
-            Write-CMTraceLog -Message "Will delete: $($item.FullName) since it is $($timeSpan.TotalDays) days old"
+            Write-CMTraceLog -Message "Will delete: $($item.FullName) since it is $([math]::Round($timeSpan.TotalDays)) days old"
             try
             {
                 Remove-Item $item.FullName -Recurse -Force -ErrorAction Stop
@@ -329,10 +329,10 @@ Function Get-ConfigMgrObjectLocation
 #endregion
 
 #region convert to xml
-function ConvertTo-Xml {
+function ConvertTo-XmlCustom {
     param (
-        [Parameter(Mandatory=$true)]
-        $Object
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$Object
     )
 
     $settings = New-Object System.Xml.XmlWriterSettings
@@ -460,17 +460,37 @@ function New-CMCollectionListCustom
             2 = "Available"
             3 = "Unknown"
         }
+
+        $collectionTypeHash = @{
+            0 = "Other"
+            1 = "User"
+            2 = "Device"
+        }
+
     }
     Process
     {
         $item = $_ # $_ coming from pipeline
 
+        Write-CMTraceLog -Message "Working on collection: `"$($item.Name)`""
+
+        # Lets find the collection folder
+        $paramSplatting = @{
+            ObjectUniqueID = $item.CollectionID
+            ObjectTypeName = 'SMS_Collection_{0}' -f $collectionTypeHash[[int]($item.CollectionType)]
+        }    
+        
+        $resolvedItemPath = Get-ConfigMgrObjectLocation @paramSplatting
+
         $collItem = [pscustomobject]@{
+            SmsProviderObjectPath = 'SMS_Collection'
+            CollectionType = $collectionTypeHash[[int]($item.CollectionType)]
             CollectionID = $item.CollectionID
             Name = $item.Name
             LimitToCollectionID = $item.LimitToCollectionID
             LimitToCollectionName = $item.LimitToCollectionName
             IsBuiltIn = $item.IsBuiltIn
+            ObjectPath = $resolvedItemPath
             CollectionRules = $null
             RefreshManual = if ($item.RefreshType -eq 1) {$true}else{$false}
             RefreshIncremental = if ($item.RefreshType -band 4) {$true}else{$false}
@@ -562,6 +582,7 @@ function New-CMCollectionListCustom
 
         if (($item.CollectionVariablesCount -gt 0) -or ($item.MaintenanceWindowsCount -gt 0))
         {
+            Write-CMTraceLog -Message "Collection has variables or maintenance windows, need to load lazy properties"
             $wmiQuery = "Select * from SMS_CollectionSettings where CollectionID = '$($item.CollectionID)'"
             $collectionSettings = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName
             if ($collectionSettings)
@@ -614,6 +635,7 @@ function New-CMCollectionListCustom
         $wmiQuery = "Select deploymentID, DeploymentName, TargetName, DeploymentIntent, DeploymentType, TargetSubName from SMS_DeploymentInfo where CollectionID='$($item.CollectionID)'"
         try 
         {
+            Write-CMTraceLog -Message "Loading collection deployments"
             [array]$deployments = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName -ErrorAction Stop
         }
         catch 
@@ -626,6 +648,7 @@ function New-CMCollectionListCustom
         # Lets add the deployments
         if ($deployments.count -gt 0)
         {
+            Write-CMTraceLog -Message "Collection has deployments"
             $deploymentsList = [System.Collections.Generic.List[PSCustomObject]]::new()
     
             # First just all deployments except updates
@@ -655,6 +678,10 @@ function New-CMCollectionListCustom
             }
 
             $collItem.Deployments = $deploymentsList
+        }
+        else
+        {
+            Write-CMTraceLog -Message "Collection has no deployments"
         }
         
         $out.Add($collItem)
@@ -1054,19 +1081,46 @@ Set-Location "$($SiteCode):\" @initParams
 
 
 #region Main script
-Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
+try
+{
+    
+    Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
 
-Get-CMBaseline -Fast | Export-CMItemCustomFunction
+    Get-CMBaseline -Fast | Export-CMItemCustomFunction
 
-Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
+    Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
 
-Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
+    Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
 
-Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
+    Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
 
-Get-CMClientSetting | Export-CMItemCustomFunction
+    Get-CMClientSetting | Export-CMItemCustomFunction
 
-Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
+    Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
+    
+
+    # Lets export collections into one file
+    $itemExportRootFolder = '{0}\Collections' -f $global:FullExportFolderName
+    $itemFullName  = '{0}\CollectionList.xml' -f $itemExportRootFolder
+
+    # We might need to create the folder first
+    if (-not (Test-Path $itemExportRootFolder)) 
+    {
+        New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+    }
+
+
+    # Collections can be used in a script with Import-Clixml to get the same object as generated by this script
+    Get-CMCollection | New-CMCollectionListCustom | Export-Clixml -Depth 20 -Path $itemFullName -Force
+    
+    Write-CMTraceLog -Message "Collections exported to: $($itemFullName)"
+}
+catch
+{
+    Write-CMTraceLog -Message "Error during export" -Severity Error
+    Write-CMTraceLog -Message "$($_)" -Severity Error
+    $global:ExitWithError = $true
+}
 
 
 $stoptWatch.Stop()
