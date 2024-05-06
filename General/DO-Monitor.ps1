@@ -23,6 +23,6 @@ while ($true) {
             FileSize, 
             TotalBytesDownloaded,
             Status,
-            @{Expression={"{0:N2}" -f $((100 / $_.FileSize) * $_.TotalBytesDownloaded)+"%"};Label="Total%"} | Format-Table -AutoSize
+            @{Expression={"{0:N2}" -f $((100 / $_.FileSize) * $_.TotalBytesDownloaded)+"%"};Label="Total%"} | Sort-Object PredefinedCallerApplication, FileSize | Format-Table -AutoSize
     Start-Sleep -Seconds 2
 }
