@@ -574,6 +574,7 @@ else
     }
 }
 
+<#
 # lets download the AzCopy Tool
 $azCopyFullName = '{0}\AzCopy.exe' -f $ExportFolderTools
 $azCopyZipFullName = '{0}\AzCopy.zip' -f $ExportFolderTools
@@ -614,7 +615,7 @@ else
         Write-CMTraceLog -Message "$($_)"
     }
 }
-
+#>
 
 
 $GetConfigMgrApps = $true
