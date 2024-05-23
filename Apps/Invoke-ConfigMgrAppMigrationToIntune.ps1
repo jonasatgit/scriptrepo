@@ -802,6 +802,7 @@ if ($GetConfigMgrApps)
                 SoftwareVersion = $fullApp.SoftwareVersion
                 CI_ID = $fullApp.CI_ID
                 CI_UniqueID = $fullApp.CI_UniqueID
+                IsDeployed = $fullApp.IsDeployed
                 DeploymentTypesTotal = $fullApp.NumberOfDeploymentTypes
                 IsSuperseded = $fullApp.IsSuperseded
                 IsSuperseding = $fullApp.IsSuperseding
