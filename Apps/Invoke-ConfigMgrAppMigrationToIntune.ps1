@@ -836,7 +836,10 @@ if ($GetConfigMgrApps)
                 
                     # counting different XML node types with this method
                     $requirementsCount = 0
-                    $deploymentType.Requirements.Rule | ForEach-Object {$requirementsCount++}
+                    if ($deploymentType.Requirements.Rule)
+                    {
+                        $deploymentType.Requirements.Rule | ForEach-Object {$requirementsCount++}
+                    }
 
                     # Check for dependencies
                     if ([string]::IsNullOrEmpty($deploymentType.Dependencies.DeploymentTypeRule.DeploymentTypeExpression.Operands.DeploymentTypeIntentExpression.DeploymentTypeApplicationReference))
