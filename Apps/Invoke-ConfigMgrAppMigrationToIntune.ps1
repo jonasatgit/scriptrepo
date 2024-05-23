@@ -1042,7 +1042,7 @@ if ($GetConfigMgrApps)
                             ----             ----    -----
                             ExecutionContext String  System
                             ScriptType       Int32   0
-                            ScriptBody       String  if((Test-Path 'HKLM:\SOFTWARE\_50Hertz\Installed\Notepad++') {Write-Host 'Installed'}
+                            ScriptBody       String  if((Test-Path 'HKLM:\SOFTWARE\Installed\Notepad++') {Write-Host 'Installed'}
                             RunAs32Bit       Boolean true
                             
                             #>
