@@ -21,18 +21,19 @@ This script will analyze ConfigMgr applications, create Intune win32 app package
 The script is devided into different actions, which can be run separately in groups or all together.
 The individual actions are:
 
-    #1 GetConfigMgrAppInfo: Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
-    #2 AnalyzeConfigMgrAppInfo: Analyze ConfigMgr applications. The script will analyze the exported apps to 
-    give an overview of the apps and if they can be uploaded to Intune.
+    #1 GetConfigMgrAppInfo: 
+    Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
+    The script will also analyze the exported apps to mark apps with configurations not supported by the script or Intune.
     
-    #3 CreateIntuneWinFiles: Create Intune win32 app packages exported to the export folder. 
+    #2 CreateIntuneWinFiles: 
+    Create Intune win32 app packages exported to the export folder. 
     The script will create Intune win32 app packages from the source files of each app.
     The script will also download the Microsoft Win32 Content Prep Tool if it's not already downloaded.
     
-    #4 UploadAppsToIntune: Upload Intune win32 app packages to Intune. The script will upload the created Intune win32 app packages to Intune.
+    #3 UploadAppsToIntune: 
+    The script will upload selected apps to Intune.
 
-Actions #1 and #2 can be run together with the script mode GetConfigMgrAppInfoAndAnalyze.
-Actions #3 and #4 can be run together with the script mode CreateIntuneWinFilesAndUploadToIntune.
+    Actions #2 and #3 can be run together with the script mode CreateIntuneWinFilesAndUploadToIntune.
 
 To store the individual items the script will create the following folder under the ExportFolder:
     Content     - Contains the content of the ConfigMgr applications. Not used at the moment.
@@ -62,7 +63,25 @@ The maximum application run time in minutes. Will only be used if the deployment
 The URI to the Microsoft Win32 Content Prep Tool.
 
 .PARAMETER ScriptMode
-The script mode to run. Default is AnalyzeConfigMgrAppInfo.
+The script mode to run
+
+.PARAMETER EntraIDAppID
+The AppID of the Enterprise Application in Azure AD. 
+Only required if the script should use a custom app instead of the default app: "Microsoft Graph Command Line Tools" AppID=14d82eec-204b-4c2f-b7e8-296a70dab67e
+
+.PARAMETER EntraIDTenantID
+The TenantID of the Enterprise Application in Azure AD.
+Only required if the script should use a custom app instead of the default app.
+
+.PARAMETER PublisherIfNoneIsSet
+The publisher to use if none is set in the ConfigMgr application.
+Default is "IT".
+
+.PARAMETER DescriptionIfNoneIsSet
+The description to use if none is set in the ConfigMgr application.
+Default is "Imported app".
+
+
 
 #>
 param
@@ -80,7 +99,7 @@ param
     [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe',
     #[string]$AzCopyUri = "https://aka.ms/downloadazcopy-v10-windows",
     [Parameter(Mandatory = $false)]
-    [ValidateSet("GetConfigMgrAppInfo", "AnalyzeConfigMgrAppInfo", "GetConfigMgrAppInfoAndAnalyze", "CreateIntuneWinFiles", "UploadAppsToIntune", "CreateIntuneWinFilesAndUploadToIntune", "RunAllActions")]
+    [ValidateSet("GetConfigMgrAppInfo", "CreateIntuneWinFiles", "UploadAppsToIntune", "CreateIntuneWinFilesAndUploadToIntune", "RunAllActions")]
     [string]$ScriptMode,
     [Parameter(Mandatory = $false)]
     [string]$EntraIDAppID,
@@ -662,12 +681,12 @@ if ([string]::IsNullOrEmpty($ScriptMode))
     Write-CMTraceLog -Message "Parameter ScriptMode not specified. Will show GridView with script run options"
     $scriptModeSelectionHash = [ordered]@{
         "GetConfigMgrAppInfo" = "Step 1: Get information about ConfigMgr applications. All selected apps will be exported to a folder without content. Basis for all other actions."
-        "AnalyzeConfigMgrAppInfo" = "Step 2: The script will analyze the exported apps to give an overview of the apps and if they can be uploaded to Intune."
-        "CreateIntuneWinFiles" = "Step 3: The script will create Intune win32 app packages from the source files of each selected app."
-        "UploadAppsToIntune" = "Step 4: The script will upload created Intune win32 app packages to Intune to create an app."
-        "GetConfigMgrAppInfoAndAnalyze" = "Run step 1 and step 2 after each other"
-        "CreateIntuneWinFilesAndUploadToIntune" = "Run step 3 and step 4 after each other"
-        "RunAllActions" = "Run steps 1 to 4. Each step will pause and give you an option to select apps for the running step."
+        #"AnalyzeConfigMgrAppInfo" = "Step 2: The script will analyze the exported apps to give an overview of the apps and if they can be uploaded to Intune."
+        "CreateIntuneWinFiles" = "Step 2: The script will create Intune win32 app packages from the source files of each selected app."
+        "UploadAppsToIntune" = "Step 3: The script will upload created Intune win32 app packages to Intune to create an app."
+        #"GetConfigMgrAppInfoAndAnalyze" = "Run step 1 and step 2 after each other"
+        "CreateIntuneWinFilesAndUploadToIntune" = "Run step 2 and step 3 after each other"
+        "RunAllActions" = "Run steps 1 to 3. Each step will pause and give you an option to select apps for the running step."
     }
 
     $scriptModeSelection = $scriptModeSelectionHash | Out-GridView -Title 'Please select a script action' -OutputMode Single
@@ -975,7 +994,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                     # getting requirements
                     if ($requirementsCount -gt 0)
                     {
-                        Write-CMTraceLog -Message "The script does only support the operating system requirement. Any other requirements need to be set manually in Intune!" -Severity Warning
+                        #Write-CMTraceLog -Message "The script does only support the operating system requirement. Any other requirements need to be set manually in Intune!" -Severity Warning
 
                         $RequirementRulesList = [System.Collections.Generic.List[pscustomobject]]::new()
                         foreach ($reqRule in $deploymentType.Requirements.Rule)
@@ -1281,240 +1300,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
 }
 #endregion
 
-<#
-#region Analyze ConfigMgr apps
-if ($scriptMode -in ('AnalyzeConfigMgrAppInfo','RunAllActions'))
-{
-
-$cssForHTMLOutPut = @'
-<style>
-{
-    font-family: Arial, Helvetica, sans-serif;
-    border-collapse: collapse;
-    width: 70%;
-}
-
-h1 {
-    text-align: center;
-    font-size: 18px;
-}
-
-td, th {
-    border: 1px solid #ddd;
-    padding: 8px;
-}
-
-tr:nth-child(even){background-color: #f2f2f2;}
-
-tr:hover {background-color: #ddd;}
-
-tr {
-    font-size: 14px;
-}
-
-th {
-    padding-top: 12px;
-    padding-bottom: 12px;
-    text-align: left;
-    font-size: 14px;
-    background-color: #04AA6D;
-    color: white;
-}
-
-span {
-    font-size: 14px;
-    font-weight: bold;
-    color: red;
-}
-
-.center {
-    margin-left: auto;
-    margin-right: auto;
-}
-
-</style>
-'@
-    
-       
-    Write-CMTraceLog -Message "Will analyze ConfigMgr apps"
-
-    if (-not (Test-Path "$($ExportFolder)\AppDetails\AllAps.xml"))
-    {
-        Write-CMTraceLog -Message "File not found: `"$($ExportFolder)\AppDetails\AllAps.xml`". Run the script with the GetConfigMgrAppInfo or GetConfigMgrAppInfoAndAnalyze switch" -Severity Error
-        Exit 1
-    }
-
-    [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
-    Write-CMTraceLog -Message "Open Out-GridView for app selection"
-    $ogvTitle = "Select the apps you want to analyze"
-    [array]$selectedApps = $appInObj | Out-GridView -OutputMode Multiple -Title $ogvTitle
-    if ($selectedApps.count -eq 0)
-    {
-        Write-CMTraceLog -Message "Nothing selected. Will end script!"
-        Exit
-    }
-
-
-    Write-CMTraceLog -Message "Total apps to analyze: $($selectedApps.count)"
-
-    $checkObjList = [System.Collections.Generic.List[pscustomobject]]::new()
-    foreach($configMgrApp in $selectedApps)
-    {
-        $tmpObj = [PSCustomObject]@{
-            Name = $configMgrApp.Name
-            LogicalName = $configMgrApp.LogicalName
-            AppImportToIntunePossible = "Yes"
-            CheckTotalDeploymentTypes = "OK"
-            CheckIsSuperseded = "OK"
-            CheckIsSuperseding = "OK"
-            CheckTags = "OK"
-            CheckTechnology = "OK"
-            CheckLogonRequired = "OK"
-            CheckAllowUserInteraction = "OK"
-            CheckProgramVisibility = "OK"
-            CheckUnInstallSetting = "OK" #":  "SameAsInstall",
-            CheckRepairCommand = "OK"
-            CheckRepairFolder = "OK"
-            CheckSourceUpdateProductCode = "OK"
-            CheckRebootBehavior = "OK"
-            CheckHasDependency = "OK"
-            CheckExeToCloseBeforeExecution = "OK"
-            CheckCustomReturnCodes = "OK"
-            CheckRequirements = "OK"
-            CheckRulesWithGroups = "OK"
-            CheckRulesWithOr = "OK"
-        }
-
-        # DeploymentTypesTotal
-        if ($configMgrApp.DeploymentTypesTotal -gt 1)
-        {
-            $tmpObj.CheckTotalDeploymentTypes = "FAILED: App has more than one deployment type. This is not supported by Intune. And the script currently does not support the creation of multiple apps, one for each deployment type. Copy the app and remove all deployment types except one. Then run the script again."
-            $tmpObj.AppImportToIntunePossible = 'No'
-        }
-
-        # IsSuperseded
-        if ($configMgrApp.IsSuperseded -ieq 'True')
-        {
-            $tmpObj.CheckIsSuperseded = "FAILED: App is superseded. While Intune supports supersedence the script does not support supersedence right now. The app can still be created but the setting is ignored."
-        }
-
-        # IsSuperseding
-        if ($configMgrApp.IsSuperseding -ieq 'True')
-        {
-            $tmpObj.CheckIsSuperseding = "FAILED: App is superseding. While Intune supports supersedence the script does not support supersedence right now. The app can still be created but the setting is ignored."
-        }
-
-        # Tags
-        if($configMgrApp.Tags)
-        {
-            $tmpObj.CheckTags = "FAILED: Tags are not supported by the script right now. The app can still be created but the setting is ignored."
-        }
-
-        # Technology
-        if($configMgrApp.deploymentTypes[0].Technology -ne 'script')
-        {
-            $tmpObj.CheckTechnology = "FAILED: App technology: `"$($configMgrApp.deploymentTypes[0].Technology)`" The app cannot be created. Only 'script' is supported as technology by the script at the moment."
-            $tmpObj.AppImportToIntunePossible = 'No'
-        }
-
-        # LogonRequired
-        if($configMgrApp.deploymentTypes[0].LogonRequired -ine 'Whether or not a user is logged on')
-        {
-            $tmpObj.CheckLogonRequired = "FAILED: LogonRequired. `"$($configMgrApp.deploymentTypes[0].LogonRequired)`" Intune does not support a LogonRequired setting. The only supported method would be: 'Whether or not a user is logged on'. The app can still be created but the setting is ignored."
-        }
-
-        # AllowUserInteraction
-        if($configMgrApp.deploymentTypes[0].AllowUserInteraction -ne $false)
-        {
-            $tmpObj.CheckAllowUserInteraction = "FAILED: There is no Intune option to AllowUserInteraction. The app can still be created but the setting is ignored. Consider the use of ServceUI.exe or similar method to allow user interaction."
-        }
-
-        # ProgramVisibility
-        if (-Not ([string]::IsNullOrEmpty($configMgrApp.deploymentTypes[0].ProgramVisibility)))
-        {
-            if($configMgrApp.deploymentTypes[0].ProgramVisibility -inotmatch '(Normal|Hidden)')
-            {
-                # "ProgramVisibility":  "Normal", "Hidden", "System", "SystemHidden"
-                $tmpObj.CheckProgramVisibility = "FAILED: ProgramVisibility: `"$($configMgrApp.deploymentTypes[0].ProgramVisibility)`" There is no Intune option for ProgramVisibility and will always run apps hidden. The app can still be created but the setting is ignored."
-            }
-        }
-
-        # UnInstallSetting
-        if($configMgrApp.deploymentTypes[0].UnInstallSetting -ine "SameAsInstall")
-        {
-            $tmpObj.CheckUnInstallSetting = "FAILED: The uninstall content is not the same as the install content. Intune does not support different install and uninstall contens. The app can still be created but the setting is ignored."
-        }
-
-        # RepairCommand
-        if(-Not ([string]::IsNullOrEmpty($configMgrApp.deploymentTypes[0].RepairCommand)))
-        {
-            $tmpObj.CheckRepairCommand = "FAILED: There is no Intune option for RepairCommand. The app can still be created but the setting is ignored."
-        }
-
-        # RepairFolder
-        if (-Not ([string]::IsNullOrEmpty($configMgrApp.deploymentTypes[0].SourceUpdateProductCode)))
-        {
-            $tmpObj.CheckSourceUpdateProductCode = "FAILED: There is no Intune option for SourceUpdateProductCode. The app can still be created but the setting is ignored."
-        }
-
-        # RebootBehavior
-        <#
-        if(-Not ([string]::IsNullOrEmpty($configMgrApp.RebootBehavior)))
-        {
-            # "RebootBehavior":  "NoAction", "Always", "Promt", "AutoClose", "AutoCloseAndReboot", "Custom", "NotSupported"
-            # Device restart behavior. Possible values are: basedOnReturnCode, allow, suppress, force.
-            $tmpObj.CheckRebootBehavior = "There is no Intune option for RebootBehavior. The app can still be created but the setting is ignored."
-        }
-        #>
-<#
-        # HasDependency
-        if($configMgrApp.HasDependency -eq $true)
-        {
-            $tmpObj.CheckHasDependency = "FAILED: App has dependencies. While Intune supports dependencies, the script does not support it yet. The app can still be created but the setting is ignored."
-        }
-
-        # ExeToCloseBeforeExecution
-        if($configMgrApp.deploymentTypes[0].ExeToCloseBeforeExecution)
-        {
-            $tmpObj.CheckExeToCloseBeforeExecution = "FAILED: Intune does not support to close processes before running the installation. The app can still be created but the setting is ignored."
-        }
-
-        # CustomReturnCodes
-        if($configMgrApp.deploymentTypes[0].CustomReturnCodes)
-        {
-            $tmpObj.CheckCustomReturnCodes = "FAILED: The app has custom return codes set. The script does not support the creation of custom return codes yet. The app can still be created but the setting is ignored."
-        }
-
-        # Requirements
-        if($configMgrApp.deploymentTypes[0].Requirements)
-        {
-            $tmpObj.CheckRequirements = "FAILED: The app has requirements set. The script does not support the creation of requirements yet. The app can still be created but the setting is ignored."
-        }
-
-        # RulesWithGroups
-        if($configMgrApp.deploymentTypes[0].DetectionRules.RulesWithGroups)
-        {
-            $tmpObj.CheckRulesWithGroups = "FAILED: The app has detection rules with groups. Intune does not support grouping, but the app can still be created with a flat list of detection rules. Consider the use of a detection script with the same check logic instead."
-        }
-
-        # RulesWithOr
-        if($configMgrApp.deploymentTypes[0].DetectionRules.RulesWithOr)
-        {
-            $tmpObj.CheckRulesWithOr = "FAILED: The app has detection rules with the OR operator. Intune does not support the or operator for detection rules, but the app can still be created with a flat list of detection rules. Consider the use of a detection script with the same check logic instead."
-        }
-
-        $checkObjList.Add($tmpObj)        
-  
-    }
-
-    $resultFileFullName = '{0}\App-Check-Result.txt' -f $ExportFolder
-    $checkObjList | Format-List * | Out-File $resultFileFullName -Force -Encoding unicode
-
-
-
-}
-#endregion
-#>
 
 #region Win32AppCreation 
 if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntune','RunAllActions'))
@@ -1530,14 +1315,14 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
     [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
     Write-CMTraceLog -Message "Open Out-GridView for app selection"
     $ogvTitle = "Select the apps you want to create content for"
-    [array]$selectedApps = $appInObj | Out-GridView -OutputMode Multiple -Title $ogvTitle
-    if ($selectedApps.count -eq 0)
+    [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
+    if ($selectedAppsLimited.count -eq 0)
     {
         Write-CMTraceLog -Message "Nothing selected. Will end script!"
         Exit
     }
 
-    Write-CMTraceLog -Message "Total apps to create content for: $($selectedApps.count)"
+    Write-CMTraceLog -Message "Total apps to create content for: $($selectedAppsLimited.count)"
 
 
     # Lets check if the IntuneWinAppUtil.exe is present
@@ -1567,7 +1352,7 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
     }
     # download of the IntuneWinAppUtil.exe is done
 
-    foreach($configMgrApp in $selectedApps)
+    foreach($configMgrApp in $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID}))
     {
         if ($configMgrApp.AppImportToIntunePossible -ine 'Yes')
         {
