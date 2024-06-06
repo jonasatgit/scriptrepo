@@ -796,6 +796,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                 CI_ID = $fullApp.CI_ID
                 CI_UniqueID = $fullApp.CI_UniqueID
                 DeploymentTypesTotal = $fullApp.NumberOfDeploymentTypes
+                IsDeployed = $fullApp.IsDeployed
                 IsSuperseded = $fullApp.IsSuperseded
                 IsSuperseding = $fullApp.IsSuperseding
                 Description = $appDescription
