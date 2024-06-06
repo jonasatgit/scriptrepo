@@ -81,13 +81,24 @@ param
     #[string]$AzCopyUri = "https://aka.ms/downloadazcopy-v10-windows",
     [Parameter(Mandatory = $false)]
     [ValidateSet("GetConfigMgrAppInfo", "AnalyzeConfigMgrAppInfo", "GetConfigMgrAppInfoAndAnalyze", "CreateIntuneWinFiles", "UploadAppsToIntune", "CreateIntuneWinFilesAndUploadToIntune", "RunAllActions")]
-    [string]$ScriptMode
+    [string]$ScriptMode,
+    [Parameter(Mandatory = $false)]
+    [string]$EntraIDAppID,
+    [Parameter(Mandatory = $false)]
+    [string]$EntraIDTenantID,
+    [Parameter(Mandatory = $false)]
+    [string]$PublisherIfNoneIsSet = 'IT',
+    [Parameter(Mandatory = $false)]
+    [string]$DescriptionIfNoneIsSet = 'Imported app',
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("Console","Log","ConsoleAndLog")]
+    [string]$OutputMode = 'ConsoleAndLog'
 )
 
 
-
-#$LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
-$LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
+$global:LogOutputMode = $OutputMode
+#$Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
+$Global:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
 
 #region show script run options if none was passed
 if ([string]::IsNullOrEmpty($ScriptMode))
@@ -112,7 +123,7 @@ if ([string]::IsNullOrEmpty($ScriptMode))
 }
 #endregion
 
-Write-CMTraceLog -Message "Selected scriptmode: `"$ScriptMode`""
+
 
 # Array of displayed properties for the ConfigMgr applications shown in a GridView
 $arrayOfDisplayedProperties = @(
@@ -177,9 +188,13 @@ function Write-CMTraceLog
         # write to console only
         [Parameter(Mandatory=$false)]
         [ValidateSet("Console","Log","ConsoleAndLog")]
-        [string]$OutputMode = 'Log'
+        [string]$OutputMode = $global:LogOutputMode
     )
 
+    if ([string]::IsNullOrEmpty($OutputMode))
+    {
+        $OutputMode = 'Log'
+    }
 
     # save severity in single for cmtrace severity
     [single]$cmSeverity=1
@@ -617,7 +632,45 @@ function Wait-ForGraphRequestCompletion
 #endregion
 
 
-#region start script
+#regoon folder creation if not done already
+# Validate path and create if not there yet
+try 
+{
+    if (-not (Test-Path $ExportFolder)) 
+    {
+        Write-Host "Export folder: `"$($ExportFolder)`" does not exist. Will be created..."
+        New-Item -ItemType Directory -Path $ExportFolder -Force | Out-Null
+    }
+
+    # We also need some folders to store the exported data
+    $ExportFolderContent = '{0}\Content' -f $ExportFolder
+    $ExportFolderTools = '{0}\Tools' -f $ExportFolder
+    $ExportFolderAppDetails = '{0}\AppDetails' -f $ExportFolder
+    $ExportFolderIcons = '{0}\Icons' -f $ExportFolder
+    $ExportFolderScripts = '{0}\Scripts' -f $ExportFolder
+    $ExportFolderWin32Apps = '{0}\Win32Apps' -f $ExportFolder
+
+    foreach ($folder in ($ExportFolderContent, $ExportFolderTools, $ExportFolderAppDetails, $ExportFolderIcons, $ExportFolderScripts, $ExportFolderWin32Apps))
+    {
+        if (-not (Test-Path $folder))
+        {
+            Write-Host "Will create export folder: `"$($folder)`""
+            New-Item -ItemType Directory -Path $folder -Force | Out-Null   
+        }
+        else 
+        {
+            Write-Host "Folder: `"$($folder)`" does exist"
+        }
+    }
+}
+catch 
+{
+    Write-Host $_
+    Exit 1
+}
+#endregion
+
+#region initialize log
 $stoptWatch = New-Object System.Diagnostics.Stopwatch
 $stoptWatch.Start()
 
@@ -625,100 +678,48 @@ Rollover-Logfile -Logfile $Global:LogFilePath -MaxFileSizeKB 2048
 
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of script'
-
-# Validate path and create if not there yet
-if (-not (Test-Path $ExportFolder)) 
-{
-    Write-CMTraceLog -Message "Export folder: `"$($ExportFolder)`" does not exist. Will be created..."
-    New-Item -ItemType Directory -Path $ExportFolder -Force | Out-Null
-}
 Write-CMTraceLog -Message "Export will be made to folder: $($ExportFolder)"
-
-# We also need some folders to store the exported data
-$ExportFolderContent = '{0}\Content' -f $ExportFolder
-$ExportFolderTools = '{0}\Tools' -f $ExportFolder
-$ExportFolderAppDetails = '{0}\AppDetails' -f $ExportFolder
-$ExportFolderIcons = '{0}\Icons' -f $ExportFolder
-$ExportFolderScripts = '{0}\Scripts' -f $ExportFolder
-$ExportFolderWin32Apps = '{0}\Win32Apps' -f $ExportFolder
-
-foreach ($folder in ($ExportFolderContent, $ExportFolderTools, $ExportFolderAppDetails, $ExportFolderIcons, $ExportFolderScripts, $ExportFolderWin32Apps))
-{
-    if (-not (Test-Path $folder))
-    {
-        Write-CMTraceLog -Message "Will create export folder: `"$($folder)`""
-        New-Item -ItemType Directory -Path $folder -Force | Out-Null   
-    }
-    else 
-    {
-        Write-CMTraceLog -Message "Folder: `"$($folder)`" does exist"
-    }
-}
 #endregion
+
+
 
 #region Get the ConfigMgr apps
 if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunAllActions'))
 {
 
-    Write-CMTraceLog -Message "Will get ConfigMgr apps"
-
-    <#
-    Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
-    # Lets make sure we have the ConfigMgr modules
-    if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
-    {
-        Write-CMTraceLog -Message 'ConfigurationManager.psd1 not found. Stopping script' -Severity Error
-        Exit 1   
-    }
-    # Customizations
-    $initParams = @{}
-    #$initParams.Add("Verbose", $true) # Uncomment this line to enable verbose logging
-    #$initParams.Add("ErrorAction", "Stop") # Uncomment this line to stop the script on any errors
-
-    # Do not change anything below this line
-
-    # Import the ConfigurationManager.psd1 module 
-    if(-NOT (Get-Module ConfigurationManager)) 
-    {
-        try
-        {
-            Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams
-        }
-        Catch
-        {
-            Write-CMTraceLog -Message "Not able to load ConfigurationManager.psd1 $($_)" -Severity Error
-            Exit 1
-        }
-    }
-
-    # Connect to the site's drive if it is not already present
-    if(-NOT (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue))
-    {
-        New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
-    }
-
-    # Set the current location to be the site code.
-    Set-Location "$($SiteCode):\" @initParams
-    #endregion
-    #>
-
+    Write-CMTraceLog -Message "Will get list of ConfigMgr apps"
 
     $selectedApps = $null
     $appOutObj = [System.Collections.Generic.List[pscustomobject]]::new()
     #region get ConfigMgrApps and show them in a grudview
-    #$allApps = Get-CMApplication -Fast -ErrorAction SilentlyContinue
-    [array]$allApps = Get-ciminstance -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT $($arrayOfDisplayedProperties -join ',') FROM SMS_Application WHERE IsLatest = 'True'" -ErrorAction SilentlyContinue
-    if ($null -eq $allApps)
+
+    $cimSessionOptions = New-CimSessionOption -Protocol Dcom # could also be WSMAN, but with ConfigMgr DCOM should always work
+    $cimSession = New-CimSession -ComputerName $ProviderMachineName -SessionOption $cimSessionOptions
+
+    try 
     {
-        Write-CMTraceLog -Message "No applications found in ConfigMgr. Check permissions." -Severity Warning
+        [array]$allApps = Get-ciminstance -CimSession $cimSession -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT $($arrayOfDisplayedProperties -join ',') FROM SMS_Application WHERE IsLatest = 'True'" -ErrorAction Stop
+        if ($null -eq $allApps)
+        {
+            Write-CMTraceLog -Message "No applications found in ConfigMgr. Check permissions." -Severity Warning
+            Exit 1
+        }
+        else 
+        {
+            Write-CMTraceLog -Message "Open Out-GridView for app selection"
+            $ogvTitle = "Select the apps you want to export to Intune"
+            [array]$selectedApps = $allApps | Select-Object -Property $arrayOfDisplayedProperties | Out-GridView -OutputMode Multiple -Title $ogvTitle
+        }
+        
+    }
+    catch 
+    {
+        Write-CMTraceLog -Message "Could not connect to ConfigMgr SMSProvider" -Severity Error
+        Write-CMTraceLog -Message "$($_)"
         Exit 1
     }
-    else 
-    {
-        Write-CMTraceLog -Message "Open Out-GridView for app selection"
-        $ogvTitle = "Select the apps you want to export to Intune"
-        [array]$selectedApps = $allApps | Select-Object -Property $arrayOfDisplayedProperties | Out-GridView -OutputMode Multiple -Title $ogvTitle
-    }
+
+
     Write-CMTraceLog -Message "Total selected apps: $(($selectedApps).count)"
     #Lets now get some info about the app
     if ($selectedApps)
@@ -729,8 +730,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
             $appWithoutLazyProperties = Get-CimInstance -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT * FROM SMS_Application WHERE CI_ID = '$($app.CI_ID)'"
             $fullApp = $appWithoutLazyProperties | Get-CimInstance
             
-            #$fullApp = Get-CMApplication -Id $app.CI_ID
-
             [xml]$appXmlContent = $fullApp.SDMPackageXML
 
             if (-not ($null -eq $appXmlContent.AppMgmtDigest.Resources.Icon.Id) ) 
@@ -749,6 +748,27 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                 }
             }
 
+            # We might need to set a generic publisher
+            if ([string]::IsNullOrEmpty($appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Publisher))
+            {
+                $appPublisher = $PublisherIfNoneIsSet
+            }
+            else 
+            {
+                $appPublisher = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Publisher
+            }
+
+            # We might need to set a generic description
+            if ([string]::IsNullOrEmpty($appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Description))
+            {
+                $appDescription = $DescriptionIfNoneIsSet
+            }
+            else 
+            {
+                $appDescription = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Description
+            }
+
+
             Write-CMTraceLog -Message "Getting info of App: $($appXmlContent.AppMgmtDigest.Application.title.'#text')"
             $tmpApp = [PSCustomObject]@{
                 LogicalName = $appXmlContent.AppMgmtDigest.Application.LogicalName
@@ -761,15 +781,14 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                 DeploymentTypesTotal = $fullApp.NumberOfDeploymentTypes
                 IsSuperseded = $fullApp.IsSuperseded
                 IsSuperseding = $fullApp.IsSuperseding
-                Description = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Description
+                Description = $appDescription
                 Tags = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Tags.Tag
-                Publisher = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.Publisher
+                Publisher = $appPublisher
                 ReleaseDate = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.ReleaseDate
                 InfoUrl = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.InfoUrl
                 IconId = $appXmlContent.AppMgmtDigest.Resources.Icon.Id
                 IconPath = $IconPath
                 DeploymentTypes = $null
-                #IconData = $appXmlContent.AppMgmtDigest.Resources.Icon.Data
                 
             }
 
@@ -1558,7 +1577,15 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
     # Connect to Graph
     Write-CMTraceLog -Message "Connecting to Graph"
-    Connect-MgGraph -Scopes 'DeviceManagementApps.ReadWrite.All'
+    if ([string]::IsNullOrEmpty($EntraIDAppID))
+    {
+        Connect-MgGraph -Scopes 'DeviceManagementApps.ReadWrite.All' 
+    }
+    else
+    {
+        Connect-MgGraph -Scopes 'DeviceManagementApps.ReadWrite.All' -ClientId $EntraIDAppID -TenantId $EntraIDTenantID
+    }
+    
     $mgContext = Get-MgContext
     if (-NOT ($mgContext.Scopes -icontains 'DeviceManagementApps.ReadWrite.All'))
     {
@@ -1906,8 +1933,8 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         Write-CMTraceLog -Message "Creating Win32 app in Intune"
         $win32MobileAppRequest = Invoke-MgGraphRequest @paramSplatting
         if ($Win32MobileAppRequest.'@odata.type' -notlike "#microsoft.graph.win32LobApp") {
-            Write-Warning -Message "Failed to create Win32 app using constructed body. Passing converted body as JSON to output."
-            Write-Warning -Message ($Win32AppBody | ConvertTo-Json)
+            Write-CMTraceLog -Message "Failed to create Win32 app using constructed body" -Severity Error 
+            Write-CMTraceLog -Message "App JSON exported for analysis to: `"$appfileFullName`""
             continue
         }
 
@@ -1921,7 +1948,8 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
         $Win32MobileAppContentVersionRequest = Invoke-MgGraphRequest @paramSplatting
         if ([string]::IsNullOrEmpty($Win32MobileAppContentVersionRequest.id)) {
-            Write-Warning -Message "Failed to create contentVersions resource for Win32 app"
+            Write-CMTraceLog -Message "Failed to create contentVersions resource for Win32 app" -Severity Error
+            Continue
         }
 
         # maybe do this before running the upload stuff
@@ -1955,7 +1983,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "isDependency" = $false
         }     
         
-
+        Write-CMTraceLog -Message "Sending content metadata to Intune"
         $paramSplatting = @{
             Method = 'POST'
             Uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files"
@@ -1966,7 +1994,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
         $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose
         if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) {
-            Write-Warning -Message "Failed to create Azure Storage blob for contentVersions/files resource for Win32 app"
+            Write-CMTraceLog -Message "Metadata send failed" -Severity Error
         }
         else 
         {
@@ -1999,19 +2027,31 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Write-CMTraceLog -Message "Uploading file to Azure Storage blob, processing chunk '$($CurrentChunk)' of '$($ChunkCount)'"
 
             # if we need to renew the SAS token
-            
-            
             if ($SASRenewalTimer.Elapsed.TotalMinutes -gt 5) 
             {
                 $SASRenewalUri = '{0}/renewUpload' -f $Win32MobileAppFilesUri
 
-                $Headers = @{
-                    "Authorization" = "Bearer $($token.AccessToken)"
+                $paramSplatting = @{
+                    Method = 'POST'
+                    Uri = $SASRenewalUri
+                    ContentType = "application/json"
                 }
-                $RenewSASURIRequest = Invoke-WebRequest -Uri $SASRenewalUri -Method "POST" -Body "{}" -usebasicparsing -Headers $Headers
-                $RenewSASURIRequestResult = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
-            }
         
+                $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose
+
+                if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) {
+                    Write-Warning -Message "Failed to create Azure Storage blob for contentVersions/files resource for Win32 app"
+                }
+                else 
+                {
+                    # Wait for the Win32 app file content renewal request
+                    Write-Host -Message "Waiting for Intune service to process contentVersions/files request"
+                    $Win32MobileAppFilesUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)"
+                    $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
+                }
+            }
+            # renewal done
+
             
             $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=block&blockid=$($ChunkID)"
             $ISOEncoding = [System.Text.Encoding]::GetEncoding("iso-8859-1")
@@ -2037,7 +2077,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         # Finalize the upload with the blocklist
         $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=blocklist"
         $XML = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
-        foreach ($Chunk in $ChunkID) {
+        foreach ($Chunk in $ChunkIDs) {
             $XML += "<Latest>$($Chunk)</Latest>"
         }
         $XML += '</BlockList>'
