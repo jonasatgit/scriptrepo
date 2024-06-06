@@ -727,8 +727,8 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
         Write-CMTraceLog -Message "$($selectedApps.count) apps selected"
         foreach ($app in $selectedApps)
         {
-            $appWithoutLazyProperties = Get-CimInstance -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT * FROM SMS_Application WHERE CI_ID = '$($app.CI_ID)'"
-            $fullApp = $appWithoutLazyProperties | Get-CimInstance
+            $appWithoutLazyProperties = Get-CimInstance -CimSession $cimSession -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT * FROM SMS_Application WHERE CI_ID = '$($app.CI_ID)'"
+            $fullApp = $appWithoutLazyProperties | Get-CimInstance -CimSession $cimSession
             
             [xml]$appXmlContent = $fullApp.SDMPackageXML
 
