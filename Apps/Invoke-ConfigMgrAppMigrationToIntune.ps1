@@ -603,23 +603,23 @@ function Wait-ForGraphRequestCompletion
         {
             "Pending" 
             {
-                Write-Host -Message "Intune service request for operation '$($operation)' is in pending state, sleeping for 10 seconds"
+                Write-CMTraceLog -Message "Intune service request for operation '$($operation)' is in pending state, sleeping for 10 seconds"
                 Start-Sleep -Seconds 10
             }
             "Failed" 
             {
-                Write-Warning -Message "Intune service request for operation '$($operation)' failed"
+                Write-CMTraceLog -Message "Intune service request for operation '$($operation)' failed" -Severity Error
                 return $GraphRequest
             }
             "TimedOut" 
             {
-                Write-Warning -Message "Intune service request for operation '$($operation)' timed out"
+                Write-CMTraceLog -Message "Intune service request for operation '$($operation)' timed out" -Severity Error
                 return $GraphRequest
             }
         }
     }
     until ($uploadState -ilike "Success")
-    Write-Host -Message "Intune service request for operation '$($operation)' was successful with uploadState: $($GraphRequest.uploadState)"
+    Write-CMTraceLog -Message "Intune service request for operation '$($operation)' was successful with uploadState: $($GraphRequest.uploadState)"
 
     return $GraphRequest
 }
@@ -632,7 +632,7 @@ try
 {
     if (-not (Test-Path $ExportFolder)) 
     {
-        Write-Host "Export folder: `"$($ExportFolder)`" does not exist. Will be created..."
+        Write-Host "Export folder: `"$($ExportFolder)`" does not exist. Will be created..." # logfile not ready yet
         New-Item -ItemType Directory -Path $ExportFolder -Force | Out-Null
     }
 
@@ -681,10 +681,8 @@ if ([string]::IsNullOrEmpty($ScriptMode))
     Write-CMTraceLog -Message "Parameter ScriptMode not specified. Will show GridView with script run options"
     $scriptModeSelectionHash = [ordered]@{
         "GetConfigMgrAppInfo" = "Step 1: Get information about ConfigMgr applications. All selected apps will be exported to a folder without content. Basis for all other actions."
-        #"AnalyzeConfigMgrAppInfo" = "Step 2: The script will analyze the exported apps to give an overview of the apps and if they can be uploaded to Intune."
-        "CreateIntuneWinFiles" = "Step 2: The script will create Intune win32 app packages from the source files of each selected app."
-        "UploadAppsToIntune" = "Step 3: The script will upload created Intune win32 app packages to Intune to create an app."
-        #"GetConfigMgrAppInfoAndAnalyze" = "Run step 1 and step 2 after each other"
+        "CreateIntuneWinFiles" = "Step 2: The script will create Intune win32 app packages from the source files of each selected app. Step 1 must have been run before this step."
+        "UploadAppsToIntune" = "Step 3: The script will upload created Intune win32 app packages to Intune to create an app. Step 1 and 2 must have been run before this step."
         "CreateIntuneWinFilesAndUploadToIntune" = "Run step 2 and step 3 after each other"
         "RunAllActions" = "Run steps 1 to 3. Each step will pause and give you an option to select apps for the running step."
     }
@@ -699,7 +697,7 @@ if ([string]::IsNullOrEmpty($ScriptMode))
 #endregion
 
 #region Get the ConfigMgr apps
-if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunAllActions'))
+if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
 {
 
     Write-CMTraceLog -Message "Will get list of ConfigMgr apps"
@@ -816,6 +814,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                 CheckAllowUserInteraction = "OK"
                 CheckProgramVisibility = "OK"
                 CheckUnInstallSetting = "OK" #":  "SameAsInstall",
+                CheckNoUninstallCommand = "OK"
                 CheckRepairCommand = "OK"
                 CheckRepairFolder = "OK"
                 CheckSourceUpdateProductCode = "OK"
@@ -945,8 +944,15 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                     {
                         $intuneWinAppUtilSetupFile = $null
                         Write-CMTraceLog -Message "IntuneWinAppUtilSetupFile could not been determined. App cannot be imported into Intune." -Severity Error
-                    }                
-
+                    }  
+                    
+                    
+                $rebootBehaviorConversionHash = @{
+                    "BasedOnExitCode" = "basedOnReturnCode" # IntuneName: Determine behavior based on return codes
+                    "NoAction" = 'suppress' # IntuneName: No specific action
+                    "ProgramReboot" = "allow" # IntuneName:App install may force a device restart
+                    "ForceReboot" = 'force' # IntuneName: Intune will force a mandatory device restart
+                }
 
                     $tmpAppDeploymentType = [PSCustomObject]@{
                         LogicalName = $deploymentType.LogicalName
@@ -968,6 +974,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                         RunAs32Bit = ($deploymentType.Installer.InstallAction.Args.arg | Where-Object {$_.name -eq 'RunAs32Bit'}).'#text' # No Intune support
                         SourceUpdateProductCode = $deploymentType.Installer.CustomData.SourceUpdateProductCode # No Intune support
                         RebootBehavior = ($deploymentType.Installer.InstallAction.args.arg | Where-Object {$_.Name -eq 'PostInstallBehavior'}).'#text'
+                        RebootBehaviorIntune = $rebootBehaviorConversionHash[(($deploymentType.Installer.InstallAction.args.arg | Where-Object {$_.Name -eq 'PostInstallBehavior'}).'#text')]
                         ExecuteTime = $deploymentType.Installer.CustomData.ExecuteTime
                         MaxExecuteTime = $deploymentType.Installer.CustomData.MaxExecuteTime
                         RequirementsCount = $requirementsCount
@@ -1054,7 +1061,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                             ----             ----    -----
                             ExecutionContext String  System
                             ScriptType       Int32   0
-                            ScriptBody       String  if((Test-Path 'HKLM:\SOFTWARE\_50Hertz\Installed\Notepad++') {Write-Host 'Installed'}
+                            ScriptBody       String  if((Test-Path 'HKLM:\SOFTWARE\_Custom\Installed\Notepad++') {Write-Host 'Installed'}
                             RunAs32Bit       Boolean true
                             
                             #>
@@ -1091,8 +1098,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
 
                             $tmpDetectionItem.Type = 'MSI'
                             $tmpDetectionItem.TypeIntune = 'AppDetectionRuleMSI'
-                            # Code missind
-
+                            # Code missind to get MSI detection rules
 
                         }
                         'Local' 
@@ -1123,8 +1129,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
 
                             }                        
                         }
-                    }
-                    
+                    }                    
 
                     $appDeploymenTypeDetectionList.add($tmpDetectionItem)
                     $tmpAppDeploymentType.DetectionRules = $appDeploymenTypeDetectionList
@@ -1205,6 +1210,14 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
                 $tmpApp.AllChecksPassed = 'No'
             }
 
+            # NoUninstallCommand
+            if([string]::IsNullOrEmpty($tmpApp.deploymentTypes[0].UninstallCommandLine))
+            {
+                $tmpApp.CheckNoUninstallCommand = "FAILED: The uninstall command is missing. Intune requires an uninstall command. The app cannot be created."
+                $tmpApp.AppImportToIntunePossible = 'No'
+                $tmpApp.AllChecksPassed = 'No'
+            }
+
             # RepairCommand
             if(-Not ([string]::IsNullOrEmpty($tmpApp.deploymentTypes[0].RepairCommand)))
             {
@@ -1253,7 +1266,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
             # Requirements
             if($tmpApp.deploymentTypes[0].Requirements)
             {
-                $tmpApp.CheckRequirements = "FAILED: The app has requirements set. The script does not support the creation of requirements yet. The app can still be created but the setting is ignored."
+                $tmpApp.CheckRequirements = "FAILED: The app has requirements set. Currently the script will only set the minimum required requirements in Intune and cannot convert ConfigMgr requirements. The app can still be created but the setting is ignored."
                 $tmpApp.AllChecksPassed = 'No'
             }
 
@@ -1287,17 +1300,20 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','GetConfigMgrAppInfoAndAnalyze','RunA
     }
 
     # Show one app in json format as a result
-    $appOutObj[0] | ConvertTo-Json -Depth 20
-
+    #$appOutObj[0] | ConvertTo-Json -Depth 20
+    Write-CMTraceLog -Message "Export $($appOutObj.Count) app/s to different formats"
         
     $appfileFullName = '{0}\AllAps.xml' -f $ExportFolderAppDetails
-    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to work with them later in PowerShell"
+    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to work with them later in this script even on other devices"
     $appOutObj | Export-Clixml -Path $appfileFullName -Depth 100
 
-    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" for easy reading in a text editor"
     $appfileFullName = '{0}\AllAps.json' -f $ExportFolderAppDetails
+    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" for easy reading in a text editor"    
     $appOutObj | ConvertTo-Json -Depth 100 | Out-File -FilePath $appfileFullName -Encoding unicode
-    
+
+    $appfileFullName = '{0}\AllAps.csv' -f $ExportFolderAppDetails
+    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to analyze them in Excel"
+    $appOutObj | Select-Object -Property * -ExcludeProperty DeploymentTypes, IconId, IconPath | Export-Csv $appfileFullName -NoTypeInformation
 }
 #endregion
 
@@ -1316,7 +1332,7 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
     [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
     Write-CMTraceLog -Message "Open Out-GridView for app selection"
     $ogvTitle = "Select the apps you want to create content for"
-    [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
+    [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty CIUniqueID, DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
     if ($selectedAppsLimited.count -eq 0)
     {
         Write-CMTraceLog -Message "Nothing selected. Will end script!"
@@ -1348,6 +1364,8 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
         {
             Write-CMTraceLog -Message "IntuneWinAppUtil.exe download failed" -Severity Error
             Write-CMTraceLog -Message "$($_)"
+            Write-CMTraceLog -Message "You can also download the tool to: `"$ExportFolderTools`" manully"
+            Write-cmTraceLog -Message "From: `"$Win32ContentPrepToolUri`""
             Exit 1
         }
     }
@@ -1458,73 +1476,16 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
     [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
     Write-CMTraceLog -Message "Open Out-GridView for app selection"
     $ogvTitle = "Select the apps you want to upload to Intune"
-    [array]$selectedApps = $appInObj | Out-GridView -OutputMode Multiple -Title $ogvTitle
-    if ($selectedApps.count -eq 0)
+    [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty CIUniqueID, DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
+    if ($selectedAppsLimited.count -eq 0)
     {
         Write-CMTraceLog -Message "Nothing selected. Will end script!"
         Exit
     }
 
-    Write-CMTraceLog -Message "Total apps to upload to Intune: $($selectedApps.count)"    
+    Write-CMTraceLog -Message "Total apps to upload to Intune: $($selectedAppsLimited.count)"   
 
-    <#
-    # list of required modules
-    $listOfRequiredModules = [ordered]@{
-        'Microsoft.Graph.Authentication' = '' # no specific version needed at the moment
-    }
-
-    Write-CMTraceLog -Message "Getting list of installed modules"
-    $needNuGet = $false
-    $listOfInstalledModules = Get-InstalledModule -ErrorAction SilentlyContinue
-    foreach ($module in $listOfRequiredModules.GetEnumerator())
-    {   
-        if (-NOT($listOfInstalledModules | Where-Object {$_.Name -ieq $module.Name}))    
-        {
-            $needNuGet = $true   
-            Write-CMTraceLog -Message "We need to install $($module.Name) and might need NuGet as well"
-        }
-    }
-
-    if ($needNuGet)
-    {
-        #region Import nuget before anyting else
-        Write-CMTraceLog -Message "Getting list of installed package providers"
-        [version]$minimumVersion = '2.8.5.201'
-        $nuget = Get-PackageProvider -ErrorAction Ignore | Where-Object {$_.Name -ieq 'nuget'} # not using -name parameter du to autoinstall question
-        if (-Not($nuget))
-        {   
-            Write-CMTraceLog -Message "Need to install NuGet"
-            # Changed to MSI installer as the old way could not be enforced and needs to be approved by the user
-            # Install-PackageProvider -Name NuGet -MinimumVersion $minimumVersion -Force
-            $null = Find-PackageProvider -Name NuGet -ForceBootstrap -IncludeDependencies -MinimumVersion $minimumVersion -Force
-        }
-    }
-
-    # Install and or import modules 
-    $listOfInstalledModules = Get-InstalledModule -ErrorAction SilentlyContinue
-    foreach ($module in $listOfRequiredModules.GetEnumerator())
-    {   
-        if (-NOT($listOfInstalledModules | Where-Object {$_.Name -ieq $module.Name}))    
-        {   
-            Write-CMTraceLog -Message "Will install: $($module.Name)"
-            if (-NOT([string]::IsNullOrEmpty($module.Value)))
-            {
-                Install-Module $module.Name -Force -RequiredVersion $module.Value
-            }
-            else 
-            {
-                Install-Module $module.Name -Force
-            }               
-        }     
-    }
-
-    # Import the modules
-    foreach ($module in $listOfRequiredModules.GetEnumerator())
-    {
-        Import-Module $module.Name -Force
-    }
-    #>
-
+    # Check if the Microsoft.Graph.Authentication module is installed
     $requiredModule = 'Microsoft.Graph.Authentication'
     $moduleNotFound = $false
     try 
@@ -1591,7 +1552,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
     }
 
     # Get the list of existing apps
-    foreach($configMgrApp in $selectedApps)
+    foreach($configMgrApp in $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID}))
     {
 
         if ($configMgrApp.AppImportToIntunePossible -ine 'Yes')
@@ -1600,19 +1561,29 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Continue
         }
 
-        <#
-            Missing stuff:
-            "informationUrl"
-            "isFeatured"
-            "msiInformation": null,
-            "owner": "Contoso IT",
-            "privacyInformationUrl":
-        #>
-
         # we need the icon converted to base64
-        $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))
+        if ([string]::IsNullOrEmpty($configMgrApp.IconPath))
+        {
+            Write-CMTraceLog -Message "No icon found for: `"$($configMgrApp.Name)`"" -Severity Warning
+            $appIconEncodedBase64String = $null
+        }
+        else 
+        {
+            Write-CMTraceLog -Message "Converting icon to base64 for: `"$($configMgrApp.Name)`""
+            $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))
+        }
 
         Write-CMTraceLog -Message "Creating Win32App object for: `"$($configMgrApp.Name)`""
+
+        # getting reboot behavior
+        if ([string]::IsNullOrEmpty($configMgrApp.DeploymentTypes[0].RebootBehaviorIntune))
+        {
+            $appRebootBehavior = 'basedOnReturnCode'
+        }
+        else 
+        {
+            $appRebootBehavior = $configMgrApp.DeploymentTypes[0].RebootBehaviorIntune
+        }
 
         $appHashTable = [ordered]@{
             "@odata.type" = "#microsoft.graph.win32LobApp"
@@ -1627,7 +1598,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "setupFilePath" = $configMgrApp.DeploymentTypes[0].IntuneWinAppUtilSetupFile
             "uninstallCommandLine" = $configMgrApp.DeploymentTypes[0].UninstallCommandLine #-replace '\\', '\\'
             "installExperience" = @{
-                "deviceRestartBehavior" = "basedOnReturnCode" # $configMgrApp.DeploymentTypes[0].RebootBehavior # Possible values are: basedOnReturnCode, allow, suppress, force.
+                "deviceRestartBehavior" = $appRebootBehavior
                 "maxRunTimeInMinutes" = if([string]::IsNullOrEmpty($configMgrApp.DeploymentTypes[0].MaxExecuteTime)) {$MaxAppRunTimeInMinutes} else {$configMgrApp.DeploymentTypes[0].MaxExecuteTime}
                 "runAsAccount" = if($configMgrApp.DeploymentTypes[0].ExecutionContext -ieq 'Any'){'System'}else{$configMgrApp.DeploymentTypes[0].ExecutionContext} # System, User
             }
@@ -1900,7 +1871,6 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 }
             }
         }
-        #$appHashTable.rules = $detectionRulesListToAdd
         $appHashTable.detectionRules = $detectionRulesListToAdd
 
         Write-CMTraceLog -Message "Creating basic app requirement rule to run on x86 and x64 systems with a minimum Windows 10 version of 1607"
@@ -1921,10 +1891,11 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps'
             Body = ($appHashTable | ConvertTo-Json -Depth 100)
             ContentType = "application/json; charset=utf-8"
-            verbose = $true
+            #verbose = $true
         }
 
         Write-CMTraceLog -Message "Creating Win32 app in Intune"
+        Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
         $win32MobileAppRequest = Invoke-MgGraphRequest @paramSplatting
         if ($Win32MobileAppRequest.'@odata.type' -notlike "#microsoft.graph.win32LobApp") {
             Write-CMTraceLog -Message "Failed to create Win32 app using constructed body" -Severity Error 
@@ -1937,8 +1908,9 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Method = 'POST'
             Uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions"
             Body = "{}"
-            verbose = $true
+            #verbose = $true
         }
+        Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
 
         $Win32MobileAppContentVersionRequest = Invoke-MgGraphRequest @paramSplatting
         if ([string]::IsNullOrEmpty($Win32MobileAppContentVersionRequest.id)) {
@@ -1946,28 +1918,27 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Continue
         }
 
-        # maybe do this before running the upload stuff
         # Write the data to the app object
-        #$intuneWinFullName = '{0}\{1}\Test.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName #,$configMgrApp.DeploymentTypes[0].LogicalName
         $intuneWinFullName = '{0}\{1}\{2}.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName, $configMgrApp.DeploymentTypes[0].LogicalName
         Write-CMTraceLog -Message "Getting the contents of: `"$($intuneWinFullName)`""
         $intuneWinDetectionXMLFullName = '{0}\{1}\{2}.detection.xml' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName ,$configMgrApp.DeploymentTypes[0].LogicalName
         $IntuneWin32AppFile = [System.IO.Compression.ZipFile]::OpenRead($intuneWinFullName)
+        Write-CMTraceLog -Message "Extracting Detection.xml to read size and encryption data."
         $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'Detection.xml'} | ForEach-Object {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($_, $intuneWinDetectionXMLFullName, $true)
         }
 
+        Write-CMTraceLog -Message "Extracting IntunePackage.intunewin. That file will be uploaded to Intune."
         $IntunePackageFullName = '{0}\{1}\IntunePackage.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName
         $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'} | ForEach-Object {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($_, $IntunePackageFullName, $true)
         }
 
-        $IntunePackageIntuneWinMetadata = $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'} 
-
+        $IntunePackageIntuneWinMetadata = $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'}
+        # Close the file   
         $IntuneWin32AppFile.Dispose()
 
         [xml]$detectionXML = Get-content -Path $intuneWinDetectionXMLFullName
-
         $Win32AppFileBody = [ordered]@{
             "@odata.type" = "#microsoft.graph.mobileAppContentFile"
             "name" = "IntunePackage.intunewin" # from analysis this name is different than the name in the app json
@@ -1977,23 +1948,24 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "isDependency" = $false
         }     
         
+        #Write-CMTraceLog -Message ($Win32AppFileBody | ConvertTo-Json)
         Write-CMTraceLog -Message "Sending content metadata to Intune"
         $paramSplatting = @{
             Method = 'POST'
             Uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files"
             Body = $Win32AppFileBody | ConvertTo-Json
-            #ContentType = "application/json; charset=utf-8"
             ContentType = "application/json"
         }
+        Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
 
-        $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose
+        $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting
         if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) {
             Write-CMTraceLog -Message "Metadata send failed" -Severity Error
         }
         else 
         {
             # Wait for the Win32 app file content URI to be created
-            Write-Host -Message "Waiting for Intune service to process contentVersions/files request"
+            Write-CMTraceLog -Message "Waiting for Intune service to process contentVersions/files request and to get the file URI with SAS token"
             $Win32MobileAppFilesUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)"
             $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
         }
@@ -2017,12 +1989,11 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
             # Increment chunk to get the current chunk
             $CurrentChunk = $Chunk + 1
-
-            Write-CMTraceLog -Message "Uploading file to Azure Storage blob, processing chunk '$($CurrentChunk)' of '$($ChunkCount)'"
-
+            Write-Progress -Activity "Uploading File to Azure Storage" -status "Uploading chunk $CurrentChunk of $ChunkCount" -percentComplete ($CurrentChunk / $ChunkCount*100)
             # if we need to renew the SAS token
             if ($SASRenewalTimer.Elapsed.TotalMinutes -gt 5) 
             {
+                Write-CMTraceLog -Message "Renewing SAS token for Azure Storage blob"
                 $SASRenewalUri = '{0}/renewUpload' -f $Win32MobileAppFilesUri
 
                 $paramSplatting = @{
@@ -2033,16 +2004,18 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         
                 $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose
 
-                if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) {
-                    Write-Warning -Message "Failed to create Azure Storage blob for contentVersions/files resource for Win32 app"
+                if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) 
+                {
+                    Write-CMTraceLog -Message "Failed to renew SAS token for Azure Storage blob" -Severity Error
                 }
                 else 
                 {
                     # Wait for the Win32 app file content renewal request
-                    Write-Host -Message "Waiting for Intune service to process contentVersions/files request"
+                    Write-Host -Message "Waiting for Intune service to process SAS token renewal request"
                     $Win32MobileAppFilesUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)"
                     $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
                 }
+                $SASRenewalTimer.Restart()
             }
             # renewal done
 
@@ -2050,7 +2023,8 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=block&blockid=$($ChunkID)"
             $ISOEncoding = [System.Text.Encoding]::GetEncoding("iso-8859-1")
             $EncodedBytes = $ISOEncoding.GetString($Bytes)
-            # add the access token to the header
+
+            # We need to set the content type to "text/plain; charset=iso-8859-1" for the upload to work
             $Headers = @{
                 "content-type" = "text/plain; charset=iso-8859-1"
                 "x-ms-blob-type" = "BlockBlob"
@@ -2058,17 +2032,19 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         
             try	
             {
-                $WebResponse = Invoke-WebRequest $Uri -Method "Put" -Headers $Headers -Body $EncodedBytes -ErrorAction Stop -UseBasicParsing #-ContentType "text/plain; charset=iso-8859-1"
+                $WebResponse = Invoke-WebRequest $Uri -Method "Put" -Headers $Headers -Body $EncodedBytes -ErrorAction Stop -UseBasicParsing
             }
             catch 
             {
                 Write-CMTraceLog -Message "Failed to upload chunk to Azure Storage blob. Error message: $($_.Exception.Message)" -Severity Error
             } 
         }
-        
+        Write-Progress -Completed -Activity "Uploading File to Azure Storage"
+        $SASRenewalTimer.Stop()        
         $BinaryReader.Close()
      
         # Finalize the upload with the blocklist
+        Write-CMTraceLog -Message "Will finalize the upload with the blocklist of uploaded blocks"
         $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=blocklist"
         $XML = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
         foreach ($Chunk in $ChunkIDs) {
@@ -2089,7 +2065,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Write-CMTraceLog -Message "Failed to finalize Azure Storage blob upload. Error message: $($_.Exception.Message)" -Severity Error
         }
     
-
+        # Commit the file with the encryption info by building the JSON object with data from the Detection.xml file
         $IntuneWinEncryptionInfo = [ordered]@{
             "encryptionKey" = $detectionXML.ApplicationInfo.EncryptionInfo.EncryptionKey
             "macKey" = $detectionXML.ApplicationInfo.EncryptionInfo.macKey
@@ -2103,24 +2079,22 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "fileEncryptionInfo" = $IntuneWinEncryptionInfo
         }
 
-        $IntuneWinFileEncryptionInfoJSON = $IntuneWinFileEncryptionInfo | ConvertTo-Json
-
         # We need to commit the file
         $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)/commit"
         
         $paramSplatting = @{
             "Method" = 'POST'
             "Uri" = $uri
-            "Body" = $IntuneWinFileEncryptionInfoJSON
+            "Body" = ($IntuneWinFileEncryptionInfo | ConvertTo-Json)
             "ContentType" = "application/json"
-            "verbose" = $true
-            
+            #"verbose" = $true
         }
 
+        Write-CMTraceLog -Message "Committing the file we just uploaded"
+        Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])" 
         $Win32MobileAppFileContentCommitRequest = Invoke-MgGraphRequest @paramSplatting -Headers $headers
+        Write-CMTraceLog -Message "Waiting for Intune service to process file commit request"
         $Win32MobileAppFileContentCommitRequestResult = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
-        $Win32MobileAppFileContentCommitRequest
-        $Win32MobileAppFileContentCommitRequestResult
 
         # set commited content version
         $Win32AppFileCommitBody = [ordered]@{
@@ -2133,34 +2107,36 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)"
             "Body" = ($Win32AppFileCommitBody | ConvertTo-Json)
             "ContentType" = "application/json"
-            "verbose" = $true
+            #"verbose" = $true
         }
-
+        Write-CMTraceLog -Message "Setting the commited content version to the app and basically binding the file to the app"
+        Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
         Invoke-MgGraphRequest @paramSplatting
-
-
 
     
-        # set icon 
-        $largeIconBody = [ordered]@{
-            "@odata.type" = '#microsoft.graph.win32LobApp'
-            "largeIcon" = [ordered]@{
-                "type" = "image/png"
-                "value" = "$($appIconEncodedBase64String)"
+        # if we have an icon we need to upload it
+        if ($appIconEncodedBase64String)
+        {
+            Write-CMTraceLog -Message "Uploading icon to the new app"
+            $largeIconBody = [ordered]@{
+                "@odata.type" = '#microsoft.graph.win32LobApp'
+                "largeIcon" = [ordered]@{
+                    "type" = "image/png"
+                    "value" = "$($appIconEncodedBase64String)"
+                    }
                 }
+    
+    
+            $paramSplatting = @{
+                "Method" = 'PATCH'
+                "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)"
+                "Body" = ($largeIconBody | ConvertTo-Json) 
+                "ContentType" = "application/json"
+                #"verbose" = $true
             }
-
-
-        $paramSplatting = @{
-            "Method" = 'PATCH'
-            "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)"
-            "Body" = ($largeIconBody | ConvertTo-Json) 
-            "ContentType" = "application/json"
-            "verbose" = $true
+            Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
+            Invoke-MgGraphRequest @paramSplatting
         }
-
-        Invoke-MgGraphRequest @paramSplatting
-
     }      
 }
 
