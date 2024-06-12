@@ -457,7 +457,8 @@ Function Get-FilterEDM {
                 Add-Member -InputObject $DMSummary -NotePropertyName 'Settings' -NotePropertyValue @()
             }
             $SettingLogicalName = $Expression.Operands.SettingReference.SettingLogicalName
-            Switch ($Expression.Operands.SettingReference.SettingSourceType) {
+            Switch ($Expression.Operands.SettingReference.SettingSourceType) 
+            {
                 'Registry' {
                     Write-Verbose "registry Setting"
                     $RegSetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.SimpleSetting | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }      
@@ -535,37 +536,37 @@ Function Get-FilterEDM {
                     $DMSummary.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
-                'MSI' {
+                'MSI' 
+                {
                     $MSISetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.MSI | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }
-                    if ($Expression.Operands.SettingReference.DataType -eq 'Int64') {
-                        #Existensile detection
-                        Write-Verbose "MSI Exists on System"
-                        #$MSIDetection = "MSI Exists on System"
+                    if ($Expression.Operands.SettingReference.DataType -ieq 'Int64') 
+                    {
+                        # Exists detection
                     }
-                    elseif ($Expression.Operands.SettingReference.DataType -eq 'Version') {
-                        #Exists plus is a specific version of MSI
-                        Write-Verbose "MSI Version is..."
-                        #$MSIOperator = "The MSI $MSIDataType is $(Convert-EdmOperator $Expression.Operator) [$MSIVersion]."
+                    elseif ($Expression.Operands.SettingReference.DataType -ieq 'Version') 
+                    {
+                        # Exists plus is a specific version of MSI
                     }
-                    Else {
-                        Write-Verbose "Unknown MSI Configuration for product code."
+                    Else 
+                    {
+                        # "Unknown MSI Configuration for product code."
                     }
-                    #$tmpObj = @{'MsiSetting' = [PSCustomObject]@{
-                        $intuneOperator = $null
-                        $intuneOperator = $windowsInstallerRuleExpressionOperatorMapping[$Expression.Operator]
 
-                        $tmpObj = [PSCustomObject]@{
-                            DetectionType = 'MsiSetting'
-                            DetectionTypeIntune = 'AppDetectionRuleMSI'
-                            MSIProductCode  = $MSISetting.ProductCode
-                            MSIDataType     = $Expression.Operands.SettingReference.DataType
-                            MSIMethod       = $Expression.Operands.SettingReference.Method
-                            MSIDataValue    = $Expression.Operands.ConstantValue.Value
-                            MSIPropertyName = $Expression.Operands.SettingReference.PropertyPath
-                            Operator     = $Expression.Operator
-                            OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
-                        }
-                    #}
+                    $intuneOperator = $null
+                    $intuneOperator = $windowsInstallerRuleExpressionOperatorMapping[$Expression.Operator]
+
+                    $tmpObj = [PSCustomObject]@{
+                        DetectionType = 'MsiSetting'
+                        DetectionTypeIntune = 'AppDetectionRuleMSI'
+                        MSIProductCode  = $MSISetting.ProductCode
+                        MSIDataType     = $Expression.Operands.SettingReference.DataType
+                        MSIMethod       = $Expression.Operands.SettingReference.Method
+                        MSIDataValue    = $Expression.Operands.ConstantValue.Value
+                        MSIPropertyName = $Expression.Operands.SettingReference.PropertyPath
+                        Operator     = $Expression.Operator
+                        OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
+                    }
+
                     $DMSummary.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
@@ -813,10 +814,11 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 CheckLogonRequired = "OK"
                 CheckAllowUserInteraction = "OK"
                 CheckProgramVisibility = "OK"
-                CheckUnInstallSetting = "OK" #":  "SameAsInstall",
+                CheckUnInstallSetting = "OK" 
                 CheckNoUninstallCommand = "OK"
                 CheckRepairCommand = "OK"
                 CheckRepairFolder = "OK"
+                CheckSourcePath = "OK"
                 CheckSourceUpdateProductCode = "OK"
                 CheckRebootBehavior = "OK"
                 CheckHasDependency = "OK"
@@ -834,6 +836,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             {
                 foreach ($deploymentType in $appXmlContent.AppMgmtDigest.DeploymentType) 
                 {
+                    $noContentButShare = $false
                     if ($deploymentType.Installer.Contents.Content.Location.Count -gt 1) 
                     {
                         $installLocation = $deploymentType.Installer.Contents.Content.Location[0] -replace '\\$'
@@ -900,8 +903,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                         default { $LogonRequired = 'Whether or not a user is logged on' }
                     }
 
-                    #Extract file info for win32apputil -s parameter
-                    # Search the Install Command line for other the installer type
+                    # Extract file info for win32apputil -s parameter
                     $dtInstallCommandLine = $deploymentType.Installer.CustomData.InstallCommandLine
                     $Matches = $null
                     if ($dtInstallCommandLine -match "powershell" -and $dtInstallCommandLine -match "\.ps1") 
@@ -989,12 +991,14 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                     # In case we do not have a content path and instead the install or uninstall points to a share, correct that
                     if($tmpAppDeploymentType.InstallCommandLine -match '(\\\\[^ ]*)')
                     {
+                        $noContentButShare = $true
                         $tmpAppDeploymentType.InstallContent = ($tmpAppDeploymentType.InstallCommandLine -split ' ', 2)[0] | Split-Path -Parent   
                         $tmpAppDeploymentType.InstallCommandLine = $tmpAppDeploymentType.InstallCommandLine -replace ([regex]::Escape($tmpAppDeploymentType.InstallContent)) -replace '^\\'
                     }
 
                     if($tmpAppDeploymentType.UninstallCommandLine -match '(\\\\[^ ]*)')
                     {
+                        $noContentButShare = $true
                         $tmpAppDeploymentType.UninstallContent = ($tmpAppDeploymentType.UninstallCommandLine -split ' ', 2)[0] | Split-Path -Parent
                         $tmpAppDeploymentType.UninstallCommandLine = $tmpAppDeploymentType.UninstallCommandLine -replace ([regex]::Escape($tmpAppDeploymentType.UninstallContent)) -replace '^\\'
                     }
@@ -1041,6 +1045,10 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                         ScriptType = $null
                         ScriptFilePath = $null
                         RunAs32BitOn64BitSystem = $null
+                        ExecutionContext = $null
+                        ProductCode = $null
+                        PackageCode = $null
+                        PatchCodes = $null
                         RulesWithGroups = $false
                         RulesWithOr = $false                          
                         Rules = $null
@@ -1098,8 +1106,10 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
 
                             $tmpDetectionItem.Type = 'MSI'
                             $tmpDetectionItem.TypeIntune = 'AppDetectionRuleMSI'
-                            # Code missind to get MSI detection rules
-
+                            $tmpDetectionItem.ExecutionContext = ($deploymentType.Installer.DetectAction.Args.arg | Where-Object {$_.Name -ieq 'ExecutionContext'}).'#text'
+                            $tmpDetectionItem.ProductCode = ($deploymentType.Installer.DetectAction.Args.arg | Where-Object {$_.Name -ieq 'ProductCode'}).'#text'
+                            $tmpDetectionItem.PackageCode = ($deploymentType.Installer.DetectAction.Args.arg | Where-Object {$_.Name -ieq 'PackageCode'}).'#text'
+                            $tmpDetectionItem.PatchCodes = ($deploymentType.Installer.DetectAction.Args.arg | Where-Object {$_.Name -ieq 'PatchCodes'}).'#text'
                         }
                         'Local' 
                         {
@@ -1232,15 +1242,10 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 $tmpApp.AllChecksPassed = 'No'
             }
 
-            # RebootBehavior
-            <#
-            if(-Not ([string]::IsNullOrEmpty($tmpApp.RebootBehavior)))
+            if ($noContentButShare)
             {
-                # "RebootBehavior":  "NoAction", "Always", "Promt", "AutoClose", "AutoCloseAndReboot", "Custom", "NotSupported"
-                # Device restart behavior. Possible values are: basedOnReturnCode, allow, suppress, force.
-                $tmpApp.CheckRebootBehavior = "There is no Intune option for RebootBehavior. The app can still be created but the setting is ignored."
+                $tmpApp.CheckSourcePath = "NOTE: DeploymentType has no content path. Instead the un- or install command contains an UNC path. That path is used for the content creation"   
             }
-            #>
 
             # HasDependency
             if($tmpApp.HasDependency -eq $true)
@@ -1301,7 +1306,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
 
     # Show one app in json format as a result
     #$appOutObj[0] | ConvertTo-Json -Depth 20
-    Write-CMTraceLog -Message "Export $($appOutObj.Count) app/s to different formats"
+    Write-CMTraceLog -Message "Export total app/s: $($appOutObj.Count) to different files"
         
     $appfileFullName = '{0}\AllAps.xml' -f $ExportFolderAppDetails
     Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to work with them later in this script even on other devices"
