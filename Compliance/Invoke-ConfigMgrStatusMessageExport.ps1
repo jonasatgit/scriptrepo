@@ -12,6 +12,7 @@
 # if Microsoft has been advised of the possibility of such damages.
 # 
 #************************************************************************************************************
+
 <#
 .SYNOPSIS
 Script to analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune.
@@ -23,14 +24,23 @@ The script will then display the messages in a gridview and allow the user to se
 
 IMPORTANT: The script needs to run in the 32bit version of PowerShell in order to use the 32bit ConfigMgr dlls
 
+The following steps need to be done before running the script:
+1. Create a new database to store the exported audit messages in
+2. Run the script with the -ShowAuditTableDefinition switch to get the SQL command to create a required table
+3. Run the SQL command in the new database to create the table
+4. Run the script with the correct parameters every day to export audit messages and import them into the new table
+
 Script is based on: https://learn.microsoft.com/en-us/mem/configmgr/develop/core/servers/manage/about-configuration-manager-component-status-messages
 And: https://devblogs.microsoft.com/powershell-community/reading-configuration-manager-status-messages-with-powershell/
 
-.PARAMETER SQLServer
-The SQL server name (and instance name where appropriate)
+.PARAMETER CMSQLServer
+The SQL server name (and instance name where appropriate) of the ConfigMgr database
 
 .PARAMETER CMDatabase
 The name of the ConfigMgr database
+
+.PARAMETER AuditSQLServer
+The SQL server name (and instance name where appropriate) of the new database to store the exported audit messages in
 
 .PARAMETER AuditDatabase
 The name of the ConfigMgr database
@@ -40,34 +50,87 @@ The language in which the message text should be returned
 Default is en-us
 
 .PARAMETER RunSilent
-Bolean parameter to run the script without showing anything to the user.
+Switch parameter to run the script without showing anything to the user.
 Default is $false which will show a gridview with all messages and allow the user to select the messages to be imported into the AuditStatusMessages table.
-If set to $true, the script will not show the gridview and will import all messages into the AuditStatusMessages table directly
+If set, the script will not show the gridview and will import all messages into the AuditStatusMessages table directly
 
 .PARAMETER LogFolder
 The path to the folder to store the logfile in
 Default is the script folder
 
 #>
-
-
 [CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$False, HelpMessage="The SQL server name (and instance name where appropriate)")]
-    [string]$SQLServer = "CM02.contoso.local\INST022",
+    [string]$CMSQLServer = "CM02.contoso.local\INST02",
     [Parameter(Mandatory=$False, HelpMessage="The name of the ConfigMgr database")]
     [string]$CMDatabase = "CM_P02",
+    [Parameter(Mandatory=$False, HelpMessage="The SQL server name (and instance name where appropriate)")]
+    [string]$AuditSQLServer = "CM02.contoso.local\INST02",
     [Parameter(Mandatory=$False, HelpMessage="The name of the ConfigMgr database")]
     [string]$AuditDatabase = "CM_AuditData",
     [Parameter(Mandatory=$False, HelpMessage="The language in which the message text should be returned")]
     [ValidateSet("de-de", "en-us")]
     [string]$OutputLanguage = "en-us",
     [Parameter(Mandatory=$False, HelpMessage="OutMode")]
-    [bool]$RunSilent = $false,
+    [Switch]$RunSilent,
     [Parameter(Mandatory=$False, HelpMessage="The path to the folder to store the logfile in")]
-    [string]$LogFolder
+    [string]$LogFolder,
+    [Parameter(Mandatory=$False, HelpMessage="Show audit table definition")]
+    [switch]$ShowAuditTableDefinition,
+    [Parameter(Mandatory=$False, HelpMessage="If the custom audit table has no data yet, run the script once with this prameter and provide the minimum audit datetime value as string in the following format: yyyy-MM-dd HH:mm:ss.fff")]
+    [string]$MinAuditStartDatetimeString
 )
+
+#region audit table definition
+$auditTableInfo = @'
+------------------------------------------------------
+-- Table definition for AuditStatusMessages
+-- This table will store the exported audit messages
+-- Change the database name to your needs before running the script: "USE [CM_AuditData]"
+-- Run the  SQL script in SQL Management Stuido to create the table
+-- Then run the PowerShell script with the correct parameters to export the audit messages into the new table
+------------------------------------------------------
+USE [CM_AuditData]
+GO
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AuditStatusMessages](
+	[RecordID] [bigint] NOT NULL,
+	[SeverityName] [nvarchar](128) NULL,
+	[Severity] [int] NULL,
+	[MessageID] [int] NOT NULL,
+	[MessageType] [int] NULL,
+	[ModuleName] [nvarchar](128) NOT NULL,
+	[Component] [nvarchar](128) NOT NULL,
+	[MachineName] [nvarchar](128) NOT NULL,
+	[TimeUTC] [datetime] NOT NULL,
+	[MessageText] [nvarchar](max) NULL,
+ CONSTRAINT [AuditStatusMessages_PK] PRIMARY KEY CLUSTERED 
+(
+	[RecordID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 80, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[AuditStatusMessages]  WITH NOCHECK ADD  CONSTRAINT [StatusMessages_RecordID_Partition_CK] CHECK NOT FOR REPLICATION (([RecordID]>=(72057594037927936.) AND [RecordID]<=(144115188075855871.)))
+GO
+ALTER TABLE [dbo].[AuditStatusMessages] CHECK CONSTRAINT [StatusMessages_RecordID_Partition_CK]
+GO
+'@
+#endregion
+
+
+#region show audit definition
+if ($ShowAuditTableDefinition)
+{
+    Write-Host $auditTableInfo
+    break
+}
+#endregion
+
 
 #region check for 32bit powershell
 if ([Environment]::Is64BitProcess)
@@ -226,37 +289,6 @@ Write-CMTraceLog -Message "  "
 Write-CMTraceLog -Message "  "
 Write-CMTraceLog -Message "Starting script"
 
-$auditTableInfo = @'
-USE [CM_AuditData]
-GO
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[AuditStatusMessages](
-	[RecordID] [bigint] NOT NULL,
-	[SeverityName] [nvarchar](128) NULL,
-	[Severity] [int] NULL,
-	[MessageID] [int] NOT NULL,
-	[MessageType] [int] NULL,
-	[ModuleName] [nvarchar](128) NOT NULL,
-	[Component] [nvarchar](128) NOT NULL,
-	[MachineName] [nvarchar](128) NOT NULL,
-	[TimeUTC] [datetime] NOT NULL,
-	[MessageText] [nvarchar](max) NULL,
- CONSTRAINT [AuditStatusMessages_PK] PRIMARY KEY CLUSTERED 
-(
-	[RecordID] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 80, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[AuditStatusMessages]  WITH NOCHECK ADD  CONSTRAINT [StatusMessages_RecordID_Partition_CK] CHECK NOT FOR REPLICATION (([RecordID]>=(72057594037927936.) AND [RecordID]<=(144115188075855871.)))
-GO
-ALTER TABLE [dbo].[AuditStatusMessages] CHECK CONSTRAINT [StatusMessages_RecordID_Partition_CK]
-GO
-'@
-
-
 #region type definition
 Write-CMTraceLog -Message "Adding type definition for Win32Api"
 Add-Type -TypeDefinition @"
@@ -323,51 +355,65 @@ if (-NOT (Test-Path $dllPath))
 
 
 #region Getting last status messages time from custom audit table
-# before doing anything, we need the last adit log entry datetime from our custom DB
-try 
+if($MinAuditStartDatetimeString)
 {
-    $query = "SELECT convert(varchar, max(stat.TimeUTC), 121) as [LastTime] FROM [dbo].[AuditStatusMessages] stat"
-    $connectionString = "Server=$SQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
-    Write-CMTraceLog -Message "Connect to SQL to get last status messages time from custom audit table"
-    write-cmtracelog -Message "SQL connection string: `"$connectionString`""
-    Write-CMTraceLog -Message "SQL query: `"$query`""
-    $connection = New-Object System.Data.SqlClient.SqlConnection
-    $connection.ConnectionString = $connectionString
-    $connection.Open()
-    # Run the query
-    $command = $connection.CreateCommand()
-    $command.CommandText = $query
-    $reader = $command.ExecuteReader()
-    $table = new-object "System.Data.DataTable"
-    # Load data
-    $table.Load($reader) 
-    # Close the connection
-    $connection.Close()
+    $StartDateTimeValue = $MinAuditStartDatetimeString
 }
-catch 
+else
 {
-    Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
-    if ($connection.State -ieq 'open')
+    # before doing anything, we need the last adit log entry datetime from our custom DB
+    try 
     {
+        $query = "SELECT convert(varchar, max(stat.TimeUTC), 121) as [LastTime], Count(1) as [EntryCounter] FROM [dbo].[AuditStatusMessages] stat"
+        $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
+        Write-CMTraceLog -Message "Connect to SQL to get last status messages time from custom audit table"
+        write-cmtracelog -Message "SQL connection string: `"$connectionString`""
+        Write-CMTraceLog -Message "SQL query: `"$query`""
+        $connection = New-Object System.Data.SqlClient.SqlConnection
+        $connection.ConnectionString = $connectionString
+        $connection.Open()
+        # Run the query
+        $command = $connection.CreateCommand()
+        $command.CommandText = $query
+        $reader = $command.ExecuteReader()
+        $table = new-object "System.Data.DataTable"
+        # Load data
+        $table.Load($reader) 
+        # Close the connection
         $connection.Close()
     }
-    Write-CMTraceLog -Message "End script with error"
-    break
+    catch 
+    {
+        Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
+        if ($connection.State -ieq 'open')
+        {
+            $connection.Close()
+        }
+        Write-CMTraceLog -Message "End script with error"
+        break
+    }
+
+    if ($Table.Rows.EntryCounter[0] -eq 0)
+    {
+        Write-CMTraceLog -Message "No SQL results for startdatetime found with query!" -Severity Error
+        Write-CMTraceLog -Message "If the table was just created, get the minimum audit datetime with the following query from the ConfigMgr database:"
+        Write-CMTraceLog -Message "`"SELECT convert(varchar, min(smsgs.Time), 121) as [MinTime] FROM v_StatusMessage smsgs where smsgs.MessageType = 768`""
+        Write-CMTraceLog -Message "Then just once run the script again with the -MinAuditStartDatetimeString parameter"
+        Write-CMTraceLog -Message "End script with error"
+        break
+    }
+
+    $StartDateTimeValue = $table.LastTime
 }
 
-if ($Table.Rows.count -eq 0)
-{
-    Write-CMTraceLog -Message "No SQL results for startdatetime found with query!" -Severity Error
-    Write-CMTraceLog -Message "End script with error"
-    break
-}
 
-$StartDateTimeValue = $table.LastTime
+
+
 # regex to check if the value is indead in the format of a datetime like 2024-06-12 22:23:43.070
 if ($StartDateTimeValue -notmatch '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}$')
 {
     Write-CMTraceLog -Message "No valid datetime found in SQL results for startdatetime" -Severity Error
-    Write-CMTraceLog -Message "Current value: `"$StartDateTimeValue`" Expected format like: 2024-06-12 22:23:43.070"
+    Write-CMTraceLog -Message "Current value: `"$StartDateTimeValue`" Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
     Write-CMTraceLog -Message "End script with error"
     break
 }
@@ -409,7 +455,7 @@ Order by smsgs.Time DESC
 
 try 
 {    
-    $connectionString = "Server=$SQLServer;Database=$CMDatabase;Integrated Security=SSPI;"
+    $connectionString = "Server=$CMSQLServer;Database=$CMDatabase;Integrated Security=SSPI;"
     Write-CMTraceLog -Message "Connect to SQL to get all new audit messages from ConfigMgr DB since UTC time: `"$($StartDateTimeValue)`""
     write-cmtracelog -Message "SQL connection string: `"$connectionString`""
     $connection = New-Object System.Data.SqlClient.SqlConnection
@@ -428,6 +474,8 @@ try
 catch 
 {
     Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
+    Write-CMTraceLog -Message "In case the audit table is not available, you can get the defintion with the -ShowAuditTableDefinition switch"
+    Write-CMTraceLog -Message "Then run the SQL command in in the correct database to create the table"
     if ($connection.State -ieq 'open')
     {
         $connection.Close()
@@ -438,8 +486,8 @@ catch
 
 if ($Table.Rows.count -eq 0)
 {
-    Write-CMTraceLog "No new audit messages found in ConfigMgr DB since UTC time: $($StartDateTimeValue)" -Severity Warning
-    Write-CMTraceLog "End script"
+    Write-CMTraceLog -Message "No new audit messages found in ConfigMgr DB since UTC time: $($StartDateTimeValue)" -Severity Warning
+    Write-CMTraceLog -Message "End script"
     break
 }
 #endregion
@@ -511,7 +559,8 @@ foreach ($Row in $Table.Rows)
         $message = $bufferOutput.ToString().Replace("%11","").Replace("%12","").Replace("%3%4%5%6%7%8%9%10","").Replace("%1",$row.InsString1).Replace("%2",$Row.InsString2).Replace("%3",$Row.InsString3).Replace("%4",$Row.InsString4).Replace("%5",$Row.InsString5).Replace("%6",$Row.InsString6).Replace("%7",$Row.InsString7).Replace("%8",$Row.InsString8).Replace("%9",$Row.InsString9).Replace("%10",$Row.InsString10)
 
         # we need to replace dot at the end spaces at the end, line breaks and another dot at the end
-        $statusMessage.MessageText = $message -replace "[ .]+$" -replace "`r`n`r`n" -replace "[.]+$"
+        #$statusMessage.MessageText = $message -replace "[ .]+$" -replace "`r`n`r`n" -replace "[.]+$"
+        $statusMessage.MessageText = $message -replace "`r`n`r`n"
 
         $statusMessageList.Add($statusMessage)
     }
@@ -526,8 +575,8 @@ foreach ($Row in $Table.Rows)
 
 
 
-#region import to SQL
-if ($ShowGridview)
+#region show gridview if not run silent
+if (-Not ($RunSilent))
 {
     [array]$selectedStatusMessages = $statusMessageList | Out-GridView -OutputMode Multiple -Title 'Select the messages you want to import into the AuditStatusMessages table'
     if ($selectedStatusMessages.count -gt 0)
@@ -539,21 +588,21 @@ if ($ShowGridview)
         break
     }
 }
+#endregion
 
-if ($statusMessageList)
-{
-
-
+#region Import the messages into the AuditStatusMessages table
 $insertStatement = @'
 	INSERT INTO [CM_AuditData].[dbo].[AuditStatusMessages](RecordID,SeverityName,Severity,MessageID,MessageType,ModuleName,Component,MachineName,TimeUTC,MessageText)
 	VALUES ('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}')
 '@
 
 
+if ($statusMessageList)
+{
     Try 
     {
         #Define connction string of target database
-        $connectionString = "Server=$SQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
+        $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
         Write-CMTraceLog -Message "Connect to SQL to import the messages into the AuditStatusMessages table"
         write-cmtracelog -Message "SQL connection string: `"$connectionString`""
         $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
