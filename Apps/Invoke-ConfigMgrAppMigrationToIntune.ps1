@@ -1215,7 +1215,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 }
             }
 
-            if([string]::IsNullOrEmpty($tmp.deploymenttypes[0].IntuneWinAppUtilSetupFile))
+            if([string]::IsNullOrEmpty($tmpApp.deploymentTypes[0].IntuneWinAppUtilSetupFile))
             {
                 $tmpApp.CheckSetupFile = "NO IMPORT: IntuneWinSetup file could not been determined. App cannot be imported into Intune."
                 $tmpApp.AllChecksPassed = 'No'
