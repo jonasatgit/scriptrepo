@@ -814,6 +814,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 CheckLogonRequired = "OK"
                 CheckAllowUserInteraction = "OK"
                 CheckProgramVisibility = "OK"
+                CheckSetupFile = "OK"
                 CheckUnInstallSetting = "OK" 
                 CheckNoUninstallCommand = "OK"
                 CheckRepairCommand = "OK"
@@ -945,7 +946,8 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                     else 
                     {
                         $intuneWinAppUtilSetupFile = $null
-                        Write-CMTraceLog -Message "IntuneWinAppUtilSetupFile could not been determined. App cannot be imported into Intune." -Severity Error
+                        #Write-CMTraceLog -Message "IntuneWinAppUtilSetupFile could not been determined. App cannot be imported into Intune." -Severity Error
+                        #$tmpApp.AppImportToIntunePossible = 'No'
                     }  
                     
                     
@@ -1154,7 +1156,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             # DeploymentTypesTotal
             if ($tmpApp.DeploymentTypesTotal -gt 1)
             {
-                $tmpApp.CheckTotalDeploymentTypes = "FAILED: App has more than one deployment type. This is not supported by Intune. And the script currently does not support the creation of multiple apps, one for each deployment type. Copy the app and remove all deployment types except one. Then run the script again."
+                $tmpApp.CheckTotalDeploymentTypes = "NO IMPORT: App has more than one deployment type. This is not supported by Intune. And the script currently does not support the creation of multiple apps, one for each deployment type. Copy the app and remove all deployment types except one. Then run the script again."
                 $tmpApp.AppImportToIntunePossible = 'No'
                 $tmpApp.AllChecksPassed = 'No'
             }
@@ -1183,7 +1185,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             # Technology
             if($tmpApp.deploymentTypes[0].Technology -ne 'script')
             {
-                $tmpApp.CheckTechnology = "FAILED: App technology: `"$($tmpApp.deploymentTypes[0].Technology)`" The app cannot be created. Only 'script' is supported as technology by the script at the moment."
+                $tmpApp.CheckTechnology = "NO IMPORT: App technology: `"$($tmpApp.deploymentTypes[0].Technology)`" The app cannot be created. Only 'script' is supported as technology by the script at the moment."
                 $tmpApp.AppImportToIntunePossible = 'No'
                 $tmpApp.AllChecksPassed = 'No'
             }
@@ -1213,6 +1215,13 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 }
             }
 
+            if([string]::IsNullOrEmpty($tmp.deploymenttypes[0].IntuneWinAppUtilSetupFile))
+            {
+                $tmpApp.CheckSetupFile = "NO IMPORT: IntuneWinSetup file could not been determined. App cannot be imported into Intune."
+                $tmpApp.AllChecksPassed = 'No'
+                $tmpApp.AppImportToIntunePossible = 'No'
+            }
+
             # UnInstallSetting
             if($tmpApp.deploymentTypes[0].UnInstallSetting -ine "SameAsInstall")
             {
@@ -1223,7 +1232,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             # NoUninstallCommand
             if([string]::IsNullOrEmpty($tmpApp.deploymentTypes[0].UninstallCommandLine))
             {
-                $tmpApp.CheckNoUninstallCommand = "FAILED: The uninstall command is missing. Intune requires an uninstall command. The app cannot be created."
+                $tmpApp.CheckNoUninstallCommand = "NO IMPORT: The uninstall command is missing. Intune requires an uninstall command. The app cannot be created."
                 $tmpApp.AppImportToIntunePossible = 'No'
                 $tmpApp.AllChecksPassed = 'No'
             }
