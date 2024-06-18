@@ -45,7 +45,7 @@ To store the individual items the script will create the following folder under 
 
 The script will create a log file in the same directory as the script file.
 
-AppDetectionRuleMSI not yet implemented
+AppDetectionRuleMSI not yet implemented.
 
 .PARAMETER SiteCode
 The ConfigMgr site code.
