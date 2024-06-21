@@ -21,6 +21,7 @@
     Can be used in PowerShell or Azure Automation Runbook
     Source: https://github.com/jonasatgit/scriptrepo
    
+     Create Entra ID Groups based on device type
 #>
 
 # add type to uncompress file
@@ -36,9 +37,10 @@ catch [System.Exception]
 }
 
 # Are we running in Azure Automation?
-(Get-Command -Name Get-AutomationVariable -ErrorAction SilentlyContinue)
+if (Get-Command -Name Get-AutomationVariable -ErrorAction SilentlyContinue)
 {
     # Script running in Azure Automation
+    # Will use managed identity with Entra ID application permissions already set up
     Connect-AzAccount -Identity
     $token = Get-AzAccessToken -ResourceUrl "https://graph.microsoft.com"
     $secureString = ConvertTo-SecureString -String $token.Token -AsPlainText
@@ -48,7 +50,7 @@ catch [System.Exception]
 }
 else 
 {
-    # Install module Microsoft.Graph.Authentication und Microsoft.Graph.Groups
+    # Install module Microsoft.Graph.Authentication and Microsoft.Graph.Groups
     Install-Module -Name Microsoft.Graph.Authentication, Microsoft.Graph.Groups -Force -AllowClobber -Scope CurrentUser
 
     # import modules
@@ -138,12 +140,30 @@ $modelToGroupHash = @{
 }
 
 
-$csvData = Import-csv -Path $outCSVFileFullName -Delimiter ','
+# check delimiter. Can be ; or , depending on who created the file. Either Intune Download or test with Excel for examle
+$csvHeader = get-content $outCSVFileFullName -TotalCount 1 
+if ($csvHeader -imatch '(;.*;)')
+{
+    $csvDelimiter = ';'
+}
+elseif ($csvHeader -imatch '(,.*,)') 
+{
+    $csvDelimiter = ','
+}
+else
+{
+    Write-Output "No delimiter found in CSV file"
+    Exit 0
+}
+
+# import csv file
+$csvData = Import-csv -Path $outCSVFileFullName -Delimiter $csvDelimiter
+
+# loop through csv data
 foreach($item in $csvData)
 {
 
     # we need to find the device first to get the Entra ID object ID. We cannot add the device with just the "Azure AD Device ID" aka "deviceID"
-
     $deviceURI = 'https://graph.microsoft.com/v1.0/devices?$filter=deviceID eq ''{0}''&$select=id,deviceId,displayName' -f ($item.'Azure AD Device ID')
     $device = Invoke-MgGraphRequest -Method GET -Uri $deviceURI
 
@@ -157,6 +177,7 @@ foreach($item in $csvData)
             Write-Output "Group $groupName not found. Will skip device. Group should be created before running the script"
             <#
             Write-Output "Group $groupName not found. Will create"
+            # Should be done manually before running the script
             # create new entra id group
             $description = "This is a new group for Intune devices"
             $newGroup = New-MgGroup -DisplayName $groupName -Description $description -MailEnabled:$false -MailNickname $groupName -SecurityEnabled:$true
