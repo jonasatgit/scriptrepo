@@ -59,15 +59,31 @@ $pkgTypeHashTable = @{
 $messageStateHash = @{
     1 = 'SUCCESS'
     2 = 'PENDING'
-    3 = 'ERRORMaybe'
+    3 = 'ERROR'
 }
 #endregion
 #region get dps
-$query = "SELECT NALPath FROM SMS_SCI_SysResUse WHERE RoleName = 'SMS Distribution Point'"
+$query = "SELECT NALPath, NumberInstalled, NumberErrors, NumberInProgress, NumberUnknown FROM SMS_DPStatusInfo"
 [array]$DPList = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+ 
 $ServerName = @{label="ServerName";expression={$_.NALPath -replace '\["Display=\\' -replace '\\' -replace '"].*'}}
 $dpSiteCode = @{label="SiteCode"; expression={$_.NALPath -replace '.*("SMS_SITE=.*").*', '$1' -replace '"' -replace 'SMS_SITE='}}
-[array]$DPListWithName = $DPList | Select-Object $ServerName, $dpSiteCode -Unique
+[array]$DPListWithName = $DPList | Select-Object $ServerName, $dpSiteCode, NumberInstalled, NumberErrors, NumberInProgress, NumberUnknown
+[array]$DPListWithNALPath = $DPList | Select-Object $ServerName, NALPath
+ 
+$dpNALPathHash = @{}
+foreach($item in $DPListWithNALPath)
+{
+    if (-NOT $dpNALPathHash.ContainsKey($item.ServerName))
+    {  
+        # we need to add some \ for the NALPath to work in a WMI query     
+        # This will drastically speed up the WMI query, because we can get rid of the wildcard at the beginning of the string   
+        $dpNALPathHash[$item.ServerName] = ($item.NALPath -replace '\\', '\\')
+    }
+}
+ 
+ 
+# offer DP list for selection
 $dpSelection = $null
 if ($DPListWithName)
 {
@@ -78,17 +94,19 @@ else
     Write-Host 'No DPs found' -ForegroundColor Green
 }
 #endregion
-#region redistribute content
+#region create content info
+$dpContentList = [System.Collections.Generic.List[pscustomobject]]::new()
 if ($dpSelection)
 {
-    $dpContentList = [System.Collections.Generic.List[pscustomobject]]::new()
     foreach($dp in $dpSelection)
     {
         Write-Host "Getting list of assigned content for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
-        $query = "select PackageID, Status, PackageType from SMS_DistributionPoint where ServerNALPath like '%$($dp.ServerName)%'"
+        #$query = "select PackageID, Status, PackageType from SMS_DistributionPoint where ServerNALPath like '%$($dp.ServerName)%'"
+        $query = "select PackageID, Status, PackageType from SMS_DistributionPoint where ServerNALPath = '$($dpNALPathHash[($dp.ServerName)])'"
         [array]$contentAssignedToDP = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         Write-Host "Getting list of contentent from status summarizer for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
-        $query = "select PackageID, State from SMS_PackageStatusDistPointsSummarizer where ServerNALPath like '%$($dp.ServerName)%'"
+        #$query = "select PackageID, State from SMS_PackageStatusDistPointsSummarizer where ServerNALPath like '%$($dp.ServerName)%'"
+        $query = "select PackageID, State from SMS_PackageStatusDistPointsSummarizer where ServerNALPath = '$($dpNALPathHash[($dp.ServerName)])'"
         [array]$contentFromStatusSummarizer = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         # create hashtable to be able to lookup fast
         $dpContentStatusSummarizerHash = @{}
@@ -101,7 +119,7 @@ if ($dpSelection)
         }
  
         Write-Host "Getting list of content status messages for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
-        $query = "SELECT DPName, PackageID, MessageState FROM SMS_DPStatusDetails WHERE DPName = '$($dpServername)' and PackageID <> ''"
+        $query = "SELECT DPName, PackageID, MessageState FROM SMS_DPStatusDetails WHERE DPName = '$($dp.ServerName)' and PackageID <> ''"
         [array]$dpContentMessageStatusDetails = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         # create hashtable to be able to lookup fast
         $dpContentStateMessageHash = @{}
@@ -114,8 +132,9 @@ if ($dpSelection)
         }
  
         Write-Host "Getting overall DP status for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
-        $query = "SELECT * FROM SMS_DPStatusInfo Where Name = '$($dpServername)'"
+        $query = "SELECT * FROM SMS_DPStatusInfo Where Name = '$($dp.ServerName)'"
         [array]$smsDPStatusInfo = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+        
  
         if($contentAssignedToDP.count -gt 0)
         {
@@ -164,7 +183,7 @@ if ($dpSelection)
                     DPStatusInfoState = $DPStatusInfoState
                     OverallState = 'SUCCESS'
                 }
-              
+               
                 # add overall state to list
                 if($tmpObj.AssignedToDPState -ine 'Installed')
                 {
@@ -187,17 +206,22 @@ if ($dpSelection)
                 {
                     $tmpObj.OverallState = 'WARNING'
                 }
-                elseif($tmpObj.DPStatusInfoState -ine 'SUCCESS')
-                {
-                    $tmpObj.OverallState = 'FAILED'
-                }           
- 
                 # add item to list
                 $dpContentList.add($tmpObj)             
             
             }     
         }
     }
+}
+else
+{
+    Write-Host 'No DP selected' -ForegroundColor Green
+}
+#endregion
+ 
+#region redistribute
+if ($dpContentList.count -gt 0)
+{
     $title = 'Select packages for redistribution from a list of {0} packages. Current content jobs: {1}' -f $dpContentList.count, ($dpContentList | Where-Object {$_.OverallState -iin ('FAILED','WARNING')}).count
     [array]$selection = $dpContentList | Sort-Object ServerName, OverallState, PackageID | Out-GridView -Title $title -OutputMode Multiple
     # Lets re-distribute if we have a selection
@@ -216,10 +240,6 @@ if ($dpSelection)
     {
         Write-Host 'No content selected' -ForegroundColor Green
     }  
-}
-else
-{
-    Write-Host 'No DP selected' -ForegroundColor Green
 }
 Write-Host 'End of script' -ForegroundColor Green
 #endregion
