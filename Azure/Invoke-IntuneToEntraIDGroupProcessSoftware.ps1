@@ -23,14 +23,57 @@
    
     Create Entra ID Groups based on installed software
 
+    The script requires the system managed identity of the Intune Automation Account
+    to be active. The managed identity also needs to have the correct permissions set.
+    Run the script with the parameter: -ShowPermissionsScript
+    To output an example script to set the required permissions.   
+
 #>
 
 param(
-    [string]$SubscriptionId = '1dab7506-e24e-485a-9b55-442b1d89fd07',
-    [string]$storageAccountName = 'intuneautomation345345',
+    [string]$SubscriptionId = '1dab7506-e24e-485a-9a56-442b1d89fd07',
+    [string]$storageAccountName = 'intuneautomation345346',
     [string]$storageAccountContainerName = 'intunedata',
-    [array]$requiredModules = ('Microsoft.Graph.Authentication', 'Microsoft.Graph.Groups', 'Az.Accounts', 'Az.Storage')
+    [array]$requiredModules = ('Microsoft.Graph.Authentication', 'Microsoft.Graph.Groups', 'Az.Accounts', 'Az.Storage'),
+    [Switch]$ShowPermissionsScript
 )
+
+
+$permissionsScript = @'
+# RUN THE FOLLOWING SCRIPT TO ASSIGN MANAGED IDENTITY PERMISSIONS
+
+# REPLACE WITH THE ACTUAL VALUES
+$managedIdentityId = "<Managed-Identity-Object-ID>" 
+$resourceGroupName = "<Resource-Group-Name>"
+$storageAccountName = "<Storage-Account-Name>"
+ 
+Install-Module Microsoft.Graph -Scope CurrentUser # if not done alreaddy 
+ 
+# Permissions required to set permissions for the managed identity 
+Connect-MgGraph -Scopes "Application.Read.All", "AppRoleAssignment.ReadWrite.All", "RoleManagement.ReadWrite.Directory"
+ 
+# Permissions to read devices in Intune, read Entra ID groups and add devices to groups 
+$permissions = ("DeviceManagementManagedDevices.Read.All", "Device.ReadWrite.All", "Group.Read.All", "GroupMember.ReadWrite.All") 
+ 
+# Role Assignment 
+$msgraph = Get-MgServicePrincipal -Filter "AppId eq '00000003-0000-0000-c000-000000000000'" 
+foreach($permission in $permissions) 
+{ 
+    $role = $Msgraph.AppRoles| Where-Object {$_.Value -eq $permission}  
+    New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $managedIdentityId -PrincipalId $managedIdentityId -ResourceId $msgraph.Id -AppRoleId $role.Id 
+}
+
+# Assign permissions for Storage Account Access
+$storageAccount = Get-AzStorageAccount -ResourceGroupName $resourceGroupName -Name $storageAccountName
+New-AzRoleAssignment -ObjectId $managedIdentityId -RoleDefinitionName "Storage Blob Data Contributor" -Scope $storageAccount.Id
+
+'@
+
+if ($ShowPermissionsScript)
+{
+    Write-host $permissionsScript -ForegroundColor Green
+    break
+}
 
 <#
     The following is a definition of the JSON object that is used to define the report to be exported from Intune

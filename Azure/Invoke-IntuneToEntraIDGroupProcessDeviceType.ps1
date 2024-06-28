@@ -22,7 +22,46 @@
     Source: https://github.com/jonasatgit/scriptrepo
    
      Create Entra ID Groups based on device type
+
+    The script requires the system managed identity of the Intune Automation Account
+    to be active. The managed identity also needs to have the correct permissions set.
+    Run the script with the parameter: -ShowPermissionsScript
+    To output an example script to set the required permissions.   
+
 #>
+
+param(
+    [Switch]$ShowPermissionsScript
+)
+
+$permissionsScript = @'
+# RUN THE FOLLOWING SCRIPT TO ASSIGN MANAGED IDENTITY PERMISSIONS
+
+# REPLACE WITH THE ACTUAL VALUES
+$managedIdentityId = "<Managed-Identity-Object-ID>" 
+ 
+Install-Module Microsoft.Graph -Scope CurrentUser # if not done alreaddy 
+ 
+# Permissions required to set permissions for the managed identity 
+Connect-MgGraph -Scopes "Application.Read.All", "AppRoleAssignment.ReadWrite.All", "RoleManagement.ReadWrite.Directory"
+ 
+# Permissions to read devices in Intune, read Entra ID groups and add devices to groups 
+$permissions = ("DeviceManagementManagedDevices.Read.All", "Device.ReadWrite.All", "Group.Read.All", "GroupMember.ReadWrite.All") 
+ 
+# Role Assignment 
+$msgraph = Get-MgServicePrincipal -Filter "AppId eq '00000003-0000-0000-c000-000000000000'" 
+foreach($permission in $permissions) 
+{ 
+    $role = $Msgraph.AppRoles| Where-Object {$_.Value -eq $permission}  
+    New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $managedIdentityId -PrincipalId $managedIdentityId -ResourceId $msgraph.Id -AppRoleId $role.Id 
+}
+'@
+
+if ($ShowPermissionsScript)
+{
+    Write-host $permissionsScript -ForegroundColor Green
+    break
+}
 
 # add type to uncompress file
 try 
