@@ -647,8 +647,9 @@ function Wait-ForGraphRequestCompletion
 }
 #endregion
 
+## MAIN SCRIPT
 
-#regoon folder creation if not done already
+#region folder creation if not done already
 # Validate path and create if not there yet
 try 
 {
