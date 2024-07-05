@@ -19,7 +19,11 @@ Script to analyze ConfigMgr applications, create Intune win32 app packages and u
 .DESCRIPTION
 This script will analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune. 
 The script is devided into different actions, which can be run separately in groups or all together.
-The individual actions are:
+While the script was thourougly tested, it is recommended to test the script in a test environment before running it in production.
+And even in production, it is recommended to run the script in a controlled manner to avoid any issues.
+Make sure to properly test the script and the output of it. 
+
+The individual script actions are:
 
     #1 GetConfigMgrAppInfo: 
     Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
@@ -87,17 +91,16 @@ Default is "Imported app".
 param
 (
     # Parameter help description
-    [Parameter(Mandatory = $false)]
-    [string]$SiteCode = "P02", # Site code
-    [Parameter(Mandatory = $false)] 
-    [string]$ProviderMachineName = "CM02.contoso.local", # SMS Provider machine name
+    [Parameter(Mandatory = $true)]
+    [string]$SiteCode,
+    [Parameter(Mandatory = $true)] 
+    [string]$ProviderMachineName, # SMS Provider machine name
     [Parameter(Mandatory = $false)]
     [string]$ExportFolder = 'C:\ExportToIntune',
     [Parameter(Mandatory = $false)]
     [int]$MaxAppRunTimeInMinutes = 60, # Maximum application run time in minutes. Will only be used if the deployment type has no value set.
     [Parameter(Mandatory = $false)]
     [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe',
-    #[string]$AzCopyUri = "https://aka.ms/downloadazcopy-v10-windows",
     [Parameter(Mandatory = $false)]
     [ValidateSet("GetConfigMgrAppInfo", "CreateIntuneWinFiles", "UploadAppsToIntune", "CreateIntuneWinFilesAndUploadToIntune", "RunAllActions")]
     [string]$ScriptMode,
@@ -115,9 +118,9 @@ param
 )
 
 
-$global:LogOutputMode = $OutputMode
-#$Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
-$Global:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
+$script:LogOutputMode = $OutputMode
+#$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
+$script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
 
 # Array of displayed properties for the ConfigMgr applications shown in a GridView
 $arrayOfDisplayedProperties = @(
@@ -164,7 +167,7 @@ function Write-CMTraceLog
     (
         #Path to the log file
         [parameter(Mandatory=$false)]
-        [String]$LogFile=$Global:LogFilePath,
+        [String]$LogFile=$script:LogFilePath,
 
         #The information to log
         [parameter(Mandatory=$true)]
@@ -228,10 +231,10 @@ function Write-CMTraceLog
 }
 #endregion
     
-#region Rollover-Logfile
+#region Invoke-LogfileRollover
 <# 
 .Synopsis
-    Function Rollover-Logfile
+    Function Invoke-LogfileRollover
 
 .DESCRIPTION
     Will rename a logfile from ".log" to ".lo_". 
@@ -242,9 +245,9 @@ function Write-CMTraceLog
     Default value is 1024 KB.
 
 .EXAMPLE
-    Rollover-Logfile -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
+    Invoke-LogfileRollover -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
 #>
-Function Rollover-Logfile
+Function Invoke-LogfileRollover
 {
 #Validate path and write log or eventlog
 [CmdletBinding()]
@@ -316,56 +319,36 @@ function Get-SanitizedString
 #endregion
 
 
-
-#region Get-FilterEDM (Enhanced Detection Method)
+#region Get-EnhancedDetectionData
 <#
 .SYNOPSIS
-    Base structure coming from: https://github.com/paulwetter/DocumentConfigMgrCB
-    Slighlty altered to get the data required for Intune Win32 app creation process.
+    Function to get the enhanced detection data from the ConfigMgr application detection method XML
+
+.DESCRIPTION
+    The function will get the enhanced detection data from the ConfigMgr application detection method XML. 
+    The function will return a list of all settings and rules for each app.
+    The outobject will contain a flat list and a list with all settings and rules with group information.
+    Since the script runs through all rules, the function will be called recursively and will analyze each rule.
+    Parameter rulexpression will be changed with each internal call to the function to get all rules recursively.
+
+.PARAMETER EnhancedDetectionMethods
+    The full enhanced detection method XML coming from an ConfigMgr application deployment type object.
+
+.PARAMETER RuleExpression
+    The rule expression to analyze. Which is a part of the enhanced detection method XML.
 #>
-Function Get-FilterEDM {
+function Get-EnhancedDetectionData{
     [CmdletBinding()]
-    param (
-        [Parameter(Mandatory = $true)]
-        [xml]
-        $EnhancedDetectionMethods,
-        [Parameter(Mandatory = $true)]
-        $RuleExpression,
-        [Parameter(Mandatory = $false)]
-        $DMSummary = (New-Object PSObject),
-        [Parameter(Mandatory = $false)]
-        [Switch]$FlatDetectionList
-    )
+    param
+    (
+        # We need the full enhanced detection method XML to be able to search for the correct setting per each rule
+        # they are stored seperately in "Settings" and "Rule". Each Rule has a corresponding Setting
+        [xml]$EnhancedDetectionMethods, 
+        # The rule we currently work on
+        $RuleExpression
+    ) 
 
-    #region Required operator hashtables
-
-    <#
-    Type:	RegistryValueRuleExpressionOperator ConfigMgr
-    Accepted values:	Equals, NotEquals, GreaterThan, LessThan, Between, GreaterEquals, LessEquals, OneOf, NoneOf, BeginsWith, NotBeginsWith, EndsWith, NotEndsWith, Contains, NotContains
-
-    Type:	RegistryValueRuleExpressionOperator Intune
-    Accepted values:	"equal", "notEqual", "greaterThanOrEqual", "greaterThan", "lessThanOrEqual", "lessThan"
-
-
-    Type:	FileFolderRuleExpressionOperator of ConfigMgr
-    Accepted values:	Equals, NotEquals, GreaterThan, LessThan, Between, GreaterEquals, LessEquals, OneOf, NoneOf
-
-    Type:	FileFolderRuleExpressionOperator of Intune
-    Accepted values:	"equal", "notEqual", "greaterThanOrEqual", "greaterThan", "lessThanOrEqual", "lessThan"
-
-
-    Type:	WindowsInstallerRuleExpressionOperator of ConfigMgr
-    Accepted values:	Equals, NotEquals, GreaterThan, LessThan, GreaterEquals, LessEquals
-
-    Type:	WindowsInstallerRuleExpressionOperator of Intune
-    Accepted values:	"notConfigured", "equal", "notEqual", "greaterThanOrEqual", "greaterThan", "lessThanOrEqual", "lessThan"
-
-    Create code with GitHub Copilot:
-    Create three hashtables to match possible ConfigMgr operators to their equivalant in Intune. 
-    If there is no matching operator in Intune, set the Intune value to "NotSupported".
-
-    #>
-
+    #region lookup hashtables
     $registryValueRuleExpressionOperatorMapping = @{
         "Equals" = "equal"
         "NotEquals" = "notEqual"
@@ -406,185 +389,223 @@ Function Get-FilterEDM {
     }
     #endregion
 
-
+    # create new object to hold result data.
+    # will add all recursive gathered data to this object as well
+    $resultList = New-Object psobject
+    # The flat list will contain each detection without the group info
     $flatResultList = [System.Collections.Generic.List[pscustomobject]]::new()
-    foreach ($Expression in $RuleExpression) {
-        If ($Expression.Operator -eq 'And') {
-            Write-Verbose "adding an And"
-            if ($DMSummary.PSObject.Properties.Name -notcontains 'And') {
-                Add-Member -InputObject $DMSummary -NotePropertyName 'And' -NotePropertyValue @()
-            }
 
-            if ($FlatDetectionList)
+    foreach($operand in $RuleExpression)
+    {
+        # only "and" and "or" are of interest, because they are used for operand groups
+        # All other operators are used for settings. Like file size EQUALS 12 
+        If ($operand.Operator -ieq 'and') 
+        {
+            if ($resultList."And") # means there is an entry already
             {
-                [array]$TheseDetails = Get-FilterEDM -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $Expression.Operands.Expression -FlatDetectionList
-                $TheseDetails | ForEach-Object {$flatResultList.Add($_)}
+                # if we have multiple "and" operators we need to add a number to be able to add them to the object
+                $andCounter++
+                $resultList | Add-Member -MemberType NoteProperty -Name "And-$($andCounter)" -Value @()
             }
             else 
             {
-                $TheseDetails = Get-FilterEDM -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $Expression.Operands.Expression
-                foreach ($key in $TheseDetails.PSObject.Properties.Name) {
-                    $DMSummary.And += New-Object PSObject -Property @{$key = $($TheseDetails.$key) }
-                }
-            }
-        }
-        ElseIf ($Expression.Operator -eq 'Or') {
-            Write-Verbose "adding an Or"
-            if ($DMSummary.PSObject.Properties.Name -notcontains 'Or') {
-                Add-Member -InputObject $DMSummary -NotePropertyName 'Or' -NotePropertyValue @()
-            }        
+                $resultList | Add-Member -MemberType NoteProperty -Name "And" -Value @() -ErrorAction stop
+            }         
 
-            if ($FlatDetectionList)
+            # Lets get all sub-operands for this operator
+            $resultObj = Get-EnhancedDetectionData -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $operand.Operands.Expression
+            foreach ($item in $resultObj.ConfigMgrList)
             {
-                $tmpObj = [PSCustomObject]@{
-                    RulesWithOr = $true
+                if ($andCounter -gt 0)
+                {
+                    $resultList."And-$($andCounter)" += $item 
                 }
-                $flatResultList.Add($tmpObj)
+                else 
+                {
+                    $resultList."And" += $item 
+                }
+            }  
+            
+            # lets also add the data to the flat list
+            foreach ($item in $resultObj.FlatList)
+            {
+                $flatResultList.Add($item)
+            }
 
-                [array]$TheseDetails = Get-FilterEDM -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $Expression.Operands.Expression -FlatDetectionList
-                $TheseDetails | ForEach-Object {$flatResultList.Add($_)}
+        }
+        elseif ($operand.Operator -ieq 'or') 
+        {
+            if ($resultList."Or") # means there is an entry already
+            {
+                # if we have multiple "and" operators we need to add a number to be able to add them to the object
+                $orCounter++
+                $resultList | Add-Member -MemberType NoteProperty -Name "Or-$($orCounter)" -Value @()
             }
             else 
             {
-                $TheseDetails = Get-FilterEDM -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $Expression.Operands.Expression
-                foreach ($key in $TheseDetails.PSObject.Properties.Name) {
-                    $DMSummary.Or += New-Object PSObject -Property @{$key = $($TheseDetails.$key) }
+                $resultList | Add-Member -MemberType NoteProperty -Name "Or" -Value @()
+            }
+
+            # we need to add an info about the OR operator seperatly, because it is not supported by Intune at the moment
+            $tmpObj = [PSCustomObject]@{
+                RulesWithOr = $true
+            }
+            $flatResultList.Add($tmpObj)
+
+            # Lets get all sub-operands for this operator
+            $resultObj = Get-EnhancedDetectionData -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $operand.Operands.Expression
+            foreach ($item in $resultObj.ConfigMgrList)
+            {
+                if ($orCounter -gt 0)
+                {
+                    $resultList."Or-$($orCounter)" += $item 
+
+                }
+                else 
+                {
+                    $resultList."Or" += $item 
                 }
             }
-        }
-        Else {
-            if ($DMSummary.PSObject.Properties.Name -notcontains 'Settings') {
-                Add-Member -InputObject $DMSummary -NotePropertyName 'Settings' -NotePropertyValue @()
-            }
-            $SettingLogicalName = $Expression.Operands.SettingReference.SettingLogicalName
-            Switch ($Expression.Operands.SettingReference.SettingSourceType) 
+
+            # lets also add the data to the flat list
+            foreach ($item in $resultObj.FlatList)
             {
-                'Registry' {
-                    Write-Verbose "registry Setting"
+                $flatResultList.Add($item)
+            }
+
+        }
+        else 
+        {
+            # This if clause limits the settings sections in our custom object
+            if ($resultList.PSObject.Properties.Name -inotcontains 'Settings') 
+            {
+                $resultList | Add-Member -MemberType NoteProperty -Name 'Settings' -Value @()
+            }
+
+            $SettingLogicalName = $operand.Operands.SettingReference.SettingLogicalName
+            Write-Verbose $SettingLogicalName
+            Switch ($operand.Operands.SettingReference.SettingSourceType) 
+            {                
+                'Registry'
+                {
                     $RegSetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.SimpleSetting | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }      
-                    #$tmpObj = New-Object PSObject -Property @{
-                        #'RegSetting' = [PSCustomObject]@{
-                        $intuneOperator = $null
-                        $intuneOperator = $registryValueRuleExpressionOperatorMapping[$Expression.Operator]
+                    $intuneOperator = $null
+                    $intuneOperator = $registryValueRuleExpressionOperatorMapping[$operand.Operator]
 
-                        $tmpObj = [PSCustomObject]@{
-                            DetectionType = 'RegSetting'
-                            DetectionTypeIntune = 'AppDetectionRuleRegistry'
-                            RegHive     = $RegSetting.RegistryDiscoverySource.Hive
-                            RegKey      = $RegSetting.RegistryDiscoverySource.Key
-                            RegValue    = $RegSetting.RegistryDiscoverySource.ValueName
-                            Is32BitOn64BitSystem    = if($RegSetting.RegistryDiscoverySource.Is64Bit -ieq 'false'){$true}else{$false}
-                            RegMethod   = $Expression.Operands.SettingReference.Method
-                            RegData     = $Expression.Operands.ConstantValue.Value
-                            RegDataList = $Expression.Operands.ConstantValueList.ConstantValue.Value
-                            RegDataType = $Expression.Operands.SettingReference.DataType
-                            Operator = $Expression.Operator
-                            OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
-                        }
-
-                    #}
-                    $DMSummary.Settings += $tmpObj
+                    $tmpObj = [PSCustomObject]@{
+                        DetectionType = 'RegSetting'
+                        DetectionTypeIntune = 'AppDetectionRuleRegistry'
+                        RegHive     = $RegSetting.RegistryDiscoverySource.Hive
+                        RegKey      = $RegSetting.RegistryDiscoverySource.Key
+                        RegValue    = $RegSetting.RegistryDiscoverySource.ValueName
+                        Is32BitOn64BitSystem    = if($RegSetting.RegistryDiscoverySource.Is64Bit -ieq 'false'){$true}else{$false}
+                        RegMethod   = $operand.Operands.SettingReference.Method
+                        RegData     = $operand.Operands.ConstantValue.Value
+                        RegDataList = $operand.Operands.ConstantValueList.ConstantValue.Value
+                        RegDataType = $operand.Operands.SettingReference.DataType
+                        Operator = $operand.Operator
+                        OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
+                    }
+                    $resultList.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
-                'File' {
+                'File' 
+                {
                     $FileSetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.File | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }
-                    #$tmpObj = @{'FileSetting' = [PSCustomObject]@{
+                    $intuneOperator = $null
+                    $intuneOperator = $fileFolderRuleExpressionOperatorMapping[$operand.Operator]
 
-                        $intuneOperator = $null
-                        $intuneOperator = $fileFolderRuleExpressionOperatorMapping[$Expression.Operator]
-
-                        $tmpObj = [PSCustomObject]@{
-                            DetectionType = 'FileSetting'
-                            DetectionTypeIntune = 'AppDetectionRuleFileOrFolder'
-                            ParentFolder             = $FileSetting.Path
-                            FileName                 = $FileSetting.Filter
-                            Is32BitOn64BitSystem                = if($FileSetting.Is64Bit -ieq 'false'){$true}else{$false}
-                            Operator             = $Expression.Operator
-                            OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
-                            FileMethod               = $Expression.Operands.SettingReference.Method
-                            FileValueList            = $Expression.Operands.ConstantValueList.ConstantValue.Value
-                            FileValue                = $Expression.Operands.ConstantValue.Value
-                            FilePropertyName         = $Expression.Operands.SettingReference.PropertyPath
-                            FilePropertyNameDataType = $Expression.Operands.SettingReference.DataType
-                        }
-
-                    #}
-                    $DMSummary.Settings += $tmpObj
+                    $tmpObj = [PSCustomObject]@{
+                        DetectionType = 'FileSetting'
+                        DetectionTypeIntune = 'AppDetectionRuleFileOrFolder'
+                        ParentFolder             = $FileSetting.Path
+                        FileName                 = $FileSetting.Filter
+                        Is32BitOn64BitSystem     = if($FileSetting.Is64Bit -ieq 'false'){$true}else{$false}
+                        Operator                 = $operand.Operator
+                        OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
+                        FileMethod               = $operand.Operands.SettingReference.Method
+                        FileValueList            = $operand.Operands.ConstantValueList.ConstantValue.Value
+                        FileValue                = $operand.Operands.ConstantValue.Value
+                        FilePropertyName         = $operand.Operands.SettingReference.PropertyPath
+                        FilePropertyNameDataType = $operand.Operands.SettingReference.DataType
+                    }
+                    $resultList.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
-                'Folder' {
+                'Folder' 
+                {
                     $FolderSetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.Folder | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }
-                    #$tmpObj = @{'FolderSetting' = [PSCustomObject]@{
-                        $intuneOperator = $null
-                        $intuneOperator = $fileFolderRuleExpressionOperatorMapping[$Expression.Operator]
+                    $intuneOperator = $null
+                    $intuneOperator = $fileFolderRuleExpressionOperatorMapping[$operand.Operator]
 
-                        $tmpObj = [PSCustomObject]@{
-                            DetectionType = 'FolderSetting'
-                            DetectionTypeIntune = 'AppDetectionRuleFileOrFolder'
-                            ParentFolder               = $FolderSetting.Path
-                            FolderName                 = $FolderSetting.Filter
-                            Is32BitOn64BitSystem                = if($FolderSetting.Is64Bit -ieq 'false'){$true}else{$false}
-                            Operator             = $Expression.Operator
-                            OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
-                            FolderMethod               = $Expression.Operands.SettingReference.Method
-                            FolderValueList            = $Expression.Operands.ConstantValueList.ConstantValue.Value
-                            FolderValue                = $Expression.Operands.ConstantValue.Value
-                            FolderPropertyName         = $Expression.Operands.SettingReference.PropertyPath
-                            FolderPropertyNameDataType = $Expression.Operands.SettingReference.DataType
-                        }
-                    #}
-                    $DMSummary.Settings += $tmpObj
+                    $tmpObj = [PSCustomObject]@{
+                        DetectionType = 'FolderSetting'
+                        DetectionTypeIntune = 'AppDetectionRuleFileOrFolder'
+                        ParentFolder               = $FolderSetting.Path
+                        FolderName                 = $FolderSetting.Filter
+                        Is32BitOn64BitSystem                = if($FolderSetting.Is64Bit -ieq 'false'){$true}else{$false}
+                        Operator             = $operand.Operator
+                        OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
+                        FolderMethod               = $operand.Operands.SettingReference.Method
+                        FolderValueList            = $operand.Operands.ConstantValueList.ConstantValue.Value
+                        FolderValue                = $operand.Operands.ConstantValue.Value
+                        FolderPropertyName         = $operand.Operands.SettingReference.PropertyPath
+                        FolderPropertyNameDataType = $operand.Operands.SettingReference.DataType
+                    }
+                    $resultList.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
                 'MSI' 
                 {
+                    $MSIDetectionMethod = $null
                     $MSISetting = $EnhancedDetectionMethods.EnhancedDetectionMethod.Settings.MSI | Where-Object { $_.LogicalName -eq "$SettingLogicalName" }
-                    if ($Expression.Operands.SettingReference.DataType -ieq 'Int64') 
+                    if ($operand.Operands.SettingReference.DataType -ieq 'Int64') 
                     {
                         # Exists detection
+                        $MSIDetectionMethod = 'MSI exists'
                     }
-                    elseif ($Expression.Operands.SettingReference.DataType -ieq 'Version') 
+                    elseif ($operand.Operands.SettingReference.DataType -ieq 'Version') 
                     {
                         # Exists plus is a specific version of MSI
+                        $MSIDetectionMethod = 'MSI exists and specific version'
                     }
                     Else 
                     {
                         # "Unknown MSI Configuration for product code."
+                        $MSIDetectionMethod = 'Unknown'
                     }
 
                     $intuneOperator = $null
-                    $intuneOperator = $windowsInstallerRuleExpressionOperatorMapping[$Expression.Operator]
+                    $intuneOperator = $windowsInstallerRuleExpressionOperatorMapping[$operand.Operator]
 
                     $tmpObj = [PSCustomObject]@{
                         DetectionType = 'MsiSetting'
                         DetectionTypeIntune = 'AppDetectionRuleMSI'
                         MSIProductCode  = $MSISetting.ProductCode
-                        MSIDataType     = $Expression.Operands.SettingReference.DataType
-                        MSIMethod       = $Expression.Operands.SettingReference.Method
-                        MSIDataValue    = $Expression.Operands.ConstantValue.Value
-                        MSIPropertyName = $Expression.Operands.SettingReference.PropertyPath
-                        Operator     = $Expression.Operator
+                        MSIDataType     = $operand.Operands.SettingReference.DataType
+                        MSIMethod       = $operand.Operands.SettingReference.Method
+                        MSIDetectionMethod = $MSIDetectionMethod
+                        MSIDataValue    = $operand.Operands.ConstantValue.Value
+                        MSIPropertyName = $operand.Operands.SettingReference.PropertyPath
+                        Operator     = $operand.Operator
                         OperatorIntune = if([string]::IsNullOrEmpty($intuneOperator)){'NotSupported'}else{$intuneOperator}
                     }
-
-                    $DMSummary.Settings += $tmpObj
+                    $resultList.Settings += $tmpObj
                     $flatResultList.Add($tmpObj)
                 }
             }
         }
     }
 
-    if ($FlatDetectionList)
-    {
-        return $flatResultList
+    $outObj = [pscustomobject]@{
+        FlatList = $flatResultList
+        ConfigMgrList = $resultList
     }
-    else 
-    {
-        return $DMSummary
-    }
-    
+
+    return $outObj 
 }
 #endregion
+
 
 #region Wait-ForGraphRequestCompletion 
 function Wait-ForGraphRequestCompletion 
@@ -669,7 +690,7 @@ catch
 $stoptWatch = New-Object System.Diagnostics.Stopwatch
 $stoptWatch.Start()
 
-Rollover-Logfile -Logfile $Global:LogFilePath -MaxFileSizeKB 2048
+Invoke-LogfileRollover -Logfile $script:LogFilePath -MaxFileSizeKB 2048
 
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of script'
@@ -1064,7 +1085,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                     {
                         'Script' 
                         {
-
                             <#
                             $deploymentType.Installer.DetectAction.Args
                             Name             Type    #text
@@ -1072,8 +1092,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                             ExecutionContext String  System
                             ScriptType       Int32   0
                             ScriptBody       String  if((Test-Path 'HKLM:\SOFTWARE\_Custom\Installed\Notepad++') {Write-Host 'Installed'}
-                            RunAs32Bit       Boolean true
-                            
+                            RunAs32Bit       Boolean true                            
                             #>
 
                             Switch ($deploymentType.Installer.DetectAction.Args.Arg[1].'#text') 
@@ -1105,7 +1124,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                         }
                         'MSI' 
                         {
-
                             $tmpDetectionItem.Type = 'MSI'
                             $tmpDetectionItem.TypeIntune = 'AppDetectionRuleMSI'
                             $tmpDetectionItem.ExecutionContext = ($deploymentType.Installer.DetectAction.Args.arg | Where-Object {$_.Name -ieq 'ExecutionContext'}).'#text'
@@ -1117,10 +1135,11 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                         {
 
                             $tmpDetectionItem.Type = 'Enhanced'
-
                             [xml]$edmData = $deploymentType.Installer.DetectAction.args.arg[1].'#text'
-                            $tmpDetectionItem.Rules = Get-FilterEDM -EnhancedDetectionMethods $edmData -RuleExpression $edmData.EnhancedDetectionMethod.Rule.Expression
-                            $tmpDetectionItem.RulesFlat = Get-FilterEDM -EnhancedDetectionMethods $edmData -RuleExpression $edmData.EnhancedDetectionMethod.Rule.Expression -FlatDetectionList
+                            
+                            $tmpRulesObject = Get-EnhancedDetectionData -EnhancedDetectionMethods $edmData -RuleExpression $edmData.EnhancedDetectionMethod.Rule.Expression
+                            $tmpDetectionItem.Rules = $tmpRulesObject.ConfigMgrList
+                            $tmpDetectionItem.RulesFlat = $tmpRulesObject.FlatList
                             $tmpDetectionItem.RulesWithGroups = $deploymentType.Installer.DetectAction.args.arg[1].'#text' -imatch ([regex]::Escape('<Expression IsGroup="true">'))
                             $tmpDetectionItem.RulesWithOr = $tmpDetectionItem.RulesFlat.RulesWithOR
 
@@ -1132,7 +1151,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                                 # Lets remove the RulesWithOr sub object
                                 $tmpDetectionItem.RulesFlat = $tmpDetectionItem.RulesFlat | Where-Object {$_.RulesWithOr -eq $null}
                             }
-
                         }
                         Default
                         {
@@ -1150,7 +1168,6 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             }
 
             $tmpApp.DeploymentTypes = $appDeploymenTypesList
-
 
             # Lets now check Intune compatability
             # DeploymentTypesTotal
@@ -1404,6 +1421,7 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
 
         try 
         {
+            Write-CMTraceLog -Message "Will run IntuneWinAppUtil.exe to pack content. Might take a while depending on content size"
             $arguments = @(
                 '-s'
                 "`"$intuneWinAppUtilCommand`""
@@ -1430,6 +1448,7 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
             $intunewinLogName = '{0}\{1}.log' -f $intuneWinAppUtilOutputFolder, ($configMgrApp.DeploymentTypes[0].LogicalName)
             If($stdout -imatch 'File (?<filepath>.*) has been generated successfully')
             {
+                Write-CMTraceLog -Message "File created successfully"
                 $intuneWinFullName = $Matches.filepath -replace "'" -replace '"'
                 $newName = '{0}.intunewin' -f $configMgrApp.DeploymentTypes[0].LogicalName
                 $intuneWinFullNameFinal = '{0}\{1}' -f ($intuneWinFullName | Split-Path -Parent), $newName
@@ -1444,9 +1463,7 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
             else 
             {
                 Write-CMTraceLog -Message "IntuneWinAppUtil failed to create the intunewin file." -Severity Error 
-                Write-CMTraceLog -Message "More details can be found in the log here: `"$($intunewinLogName)`""
             } 
-
             $stdout | Out-File -FilePath $intunewinLogName -Force -Encoding unicode -ErrorAction SilentlyContinue
             $stderr | Out-File -FilePath $intunewinLogName -Append -Encoding unicode -ErrorAction SilentlyContinue
 
@@ -1454,9 +1471,9 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
         catch 
         {
             Write-CMTraceLog -Message "IntuneWinAppUtil failed to create the intunewin file." -Severity Error 
-            Write-CMTraceLog -Message "More details can be found in the log here: `"$($intunewinLogName)`""
             Write-CMTraceLog -Message "$($_)"
         }
+        Write-CMTraceLog -Message "More details can be found in the log here: `"$($intunewinLogName)`""
     }
 }
 #endregion
@@ -1986,13 +2003,13 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
         Write-CMTraceLog -Message "Trying to upload the file to Intune: $($IntunePackageFullName)"
         $ChunkSizeInBytes = 1024l * 1024l * 6l;
-        $SASRenewalTimer = [System.Diagnostics.Stopwatch]::StartNew()
         $FileSize = (Get-Item -Path $IntunePackageFullName).Length
         $ChunkCount = [System.Math]::Ceiling($FileSize / $ChunkSizeInBytes)
         $BinaryReader = New-Object -TypeName System.IO.BinaryReader([System.IO.File]::Open($IntunePackageFullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite))
         $Position = $BinaryReader.BaseStream.Seek(0, [System.IO.SeekOrigin]::Begin)
 
         $ChunkIDs = @()
+        $SASRenewalTimer = [System.Diagnostics.Stopwatch]::StartNew()
         for ($Chunk = 0; $Chunk -lt $ChunkCount; $Chunk++) 
         {
             $ChunkID = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($Chunk.ToString("0000")))
@@ -2016,7 +2033,13 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                     ContentType = "application/json"
                 }
         
-                $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose
+                try {
+                    $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose    
+                }
+                catch {
+                    Write-CMTraceLog -Message "$($_)" -Severity Error
+                }
+                
 
                 if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) 
                 {
@@ -2052,6 +2075,10 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             {
                 Write-CMTraceLog -Message "Failed to upload chunk to Azure Storage blob. Error message: $($_.Exception.Message)" -Severity Error
             } 
+
+            #Write-CMTraceLog -Message "Sleeping"
+            #Start-Sleep -Seconds 360
+
         }
         Write-Progress -Completed -Activity "Uploading File to Azure Storage"
         $SASRenewalTimer.Stop()        
@@ -2101,7 +2128,6 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "Uri" = $uri
             "Body" = ($IntuneWinFileEncryptionInfo | ConvertTo-Json)
             "ContentType" = "application/json"
-            #"verbose" = $true
         }
 
         Write-CMTraceLog -Message "Committing the file we just uploaded"
@@ -2121,7 +2147,6 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)"
             "Body" = ($Win32AppFileCommitBody | ConvertTo-Json)
             "ContentType" = "application/json"
-            #"verbose" = $true
         }
         Write-CMTraceLog -Message "Setting the commited content version to the app and basically binding the file to the app"
         Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
@@ -2146,7 +2171,6 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)"
                 "Body" = ($largeIconBody | ConvertTo-Json) 
                 "ContentType" = "application/json"
-                #"verbose" = $true
             }
             Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
             Invoke-MgGraphRequest @paramSplatting
@@ -2155,7 +2179,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 }
 
 Write-CMTraceLog -Message "End of script"
-Write-CMTraceLog -Message "Runtime: $($stoptWatch.Elapsed.TotalMinutes) minutes"
+Write-CMTraceLog -Message "Runtime: $([math]::Round($stoptWatch.Elapsed.TotalMinutes)) minutes and $([math]::Round($stoptWatch.Elapsed.Seconds)) seconds"
 $stoptWatch.Stop()
 
 
