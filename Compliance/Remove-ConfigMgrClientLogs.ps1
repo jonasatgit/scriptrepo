@@ -25,10 +25,12 @@
 
 .PARAMETER DetectionReturnValue
     A dummy parameter to catch any return value coming from the ConfigMgr detection script.
-    Could be used to pass a value from the detection script to the remediation script, but is not used in this script to keep the script konsistent.
+    Could be used to pass a value from the detection script to the remediation script, but is not used in this script to keep the script consistent.
 
 .PARAMETER FolderPath
-    The path to the ConfigMgr client log folder. If not specified, the script will get the log folder path from the registry.
+    The path to the ConfigMgr client log folder. If not specified, the script will get the log folder path from the registry automatically.
+    The auto-detected path is coming from: HKLM:\SOFTWARE\Microsoft\CCM\Logging\@Global\LogDirectory
+    Typically the log folder path should be detected automatically, since it can vary. Specifically on Management Points.
 
 .PARAMETER DaysToKeep
     The number of days to keep log files. Log files older than this number of days will be deleted.
@@ -39,11 +41,11 @@
     If set to $false, the script will only output the number of log files that would be deleted.
 
 .PARAMETER FileNamesToExclude
-    An array of file names to exclude from the deletion process. "*"" as wildcard is supported.
+    An array of file names to exclude from the deletion process. "*" as wildcard is supported.
     Cannot be used with FileNamesToInclude together.
 
 .PARAMETER FileNamesToInclude
-    An array of file names to include in the deletion process. "*"" as wildcard is supported.
+    An array of file names to include in the deletion process. "*" as wildcard is supported.
     Cannot be used with FileNamesToExclude together.
 
 .EXAMPLE
