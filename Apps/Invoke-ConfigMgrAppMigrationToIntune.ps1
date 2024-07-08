@@ -613,8 +613,21 @@ function Wait-ForGraphRequestCompletion
     [CmdletBinding()]
     param (
         [Parameter()]
-        [string]$Uri
+        [string]$Uri,
+        [Parameter()]
+        [string]$Stage      
     )
+
+    if ($Stage )
+    {
+        # We need to test for a specific stage
+        $successString = '{0}Success' -f $Stage    
+    }
+    else 
+    {
+        $successString = 'Success'
+    }
+    
     do {
         $GraphRequest = Invoke-MgGraphRequest -Uri $Uri -Method "GET"
 
@@ -640,7 +653,7 @@ function Wait-ForGraphRequestCompletion
             }
         }
     }
-    until ($uploadState -ilike "Success")
+    until ($GraphRequest.uploadState -imatch $successString)
     Write-CMTraceLog -Message "Intune service request for operation '$($operation)' was successful with uploadState: $($GraphRequest.uploadState)"
 
     return $GraphRequest
@@ -1999,10 +2012,10 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             # Wait for the Win32 app file content URI to be created
             Write-CMTraceLog -Message "Waiting for Intune service to process contentVersions/files request and to get the file URI with SAS token"
             $Win32MobileAppFilesUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)"
-            $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
+            $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri -Stage 'azureStorageUriRequest'
         }
 
-        Write-CMTraceLog -Message "Trying to upload the file to Intune: $($IntunePackageFullName)"
+        Write-CMTraceLog -Message "Trying to upload file to Intune Azure Storage. File: $($IntunePackageFullName)"
         $ChunkSizeInBytes = 1024l * 1024l * 6l;
         $FileSize = (Get-Item -Path $IntunePackageFullName).Length
         $ChunkCount = [System.Math]::Ceiling($FileSize / $ChunkSizeInBytes)
@@ -2021,9 +2034,18 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
 
             # Increment chunk to get the current chunk
             $CurrentChunk = $Chunk + 1
-            Write-Progress -Activity "Uploading File to Azure Storage" -status "Uploading chunk $CurrentChunk of $ChunkCount" -percentComplete ($CurrentChunk / $ChunkCount*100)
-            # if we need to renew the SAS token
-            if ($SASRenewalTimer.Elapsed.TotalMinutes -gt 5) 
+            
+            <#
+            # Test of renewal process
+            if ($Chunk -eq 2)
+            {
+                Write-CMTraceLog -Message "Sleeping"
+                Start-Sleep -Milliseconds 450000
+            }
+            #>
+
+            # if we need to renew the SAS token if it is older than 7 minutes
+            if ($currentChunk -lt $ChunkCount -and $SASRenewalTimer.ElapsedMilliseconds -ge 450000)
             {
                 Write-CMTraceLog -Message "Renewing SAS token for Azure Storage blob"
                 $SASRenewalUri = '{0}/renewUpload' -f $Win32MobileAppFilesUri
@@ -2031,32 +2053,25 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 $paramSplatting = @{
                     Method = 'POST'
                     Uri = $SASRenewalUri
+                    Body = ''
                     ContentType = "application/json"
                 }
         
-                try {
-                    $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting -Verbose    
+                try 
+                {
+                    $Win32MobileAppFileContentRequest = Invoke-MgGraphRequest @paramSplatting
                 }
-                catch {
+                catch 
+                {
                     Write-CMTraceLog -Message "$($_)" -Severity Error
                 }
                 
-
-                if ([string]::IsNullOrEmpty($Win32MobileAppFileContentRequest.id)) 
-                {
-                    Write-CMTraceLog -Message "Failed to renew SAS token for Azure Storage blob" -Severity Error
-                }
-                else 
-                {
-                    # Wait for the Win32 app file content renewal request
-                    Write-Host -Message "Waiting for Intune service to process SAS token renewal request"
-                    $Win32MobileAppFilesUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)"
-                    $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
-                }
+                # Wait for the Win32 app file content renewal request
+                Write-CMTraceLog -Message "Waiting for Intune service to process SAS token renewal request"
+                $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri -Stage 'AzureStorageUriRenewal'
                 $SASRenewalTimer.Restart()
+                # renewal done
             }
-            # renewal done
-
             
             $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=block&blockid=$($ChunkID)"
             $ISOEncoding = [System.Text.Encoding]::GetEncoding("iso-8859-1")
@@ -2068,6 +2083,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 "x-ms-blob-type" = "BlockBlob"
             }
         
+            Write-Progress -Activity "Uploading File to Azure Storage" -status "Uploading chunk $CurrentChunk of $ChunkCount" -percentComplete ($CurrentChunk / $ChunkCount*100)
             try	
             {
                 $WebResponse = Invoke-WebRequest $Uri -Method "Put" -Headers $Headers -Body $EncodedBytes -ErrorAction Stop -UseBasicParsing
@@ -2076,12 +2092,9 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             {
                 Write-CMTraceLog -Message "Failed to upload chunk to Azure Storage blob. Error message: $($_.Exception.Message)" -Severity Error
             } 
-
-            #Write-CMTraceLog -Message "Sleeping"
-            #Start-Sleep -Seconds 360
-
         }
         Write-Progress -Completed -Activity "Uploading File to Azure Storage"
+        Write-CMTraceLog -Message "Uploaded all chunks to Azure Storage blob"
         $SASRenewalTimer.Stop()        
         $BinaryReader.Close()
      
@@ -2122,7 +2135,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         }
 
         # We need to commit the file
-        $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Win32MobileAppRequest.id)/microsoft.graph.win32LobApp/contentVersions/$($Win32MobileAppContentVersionRequest.id)/files/$($Win32MobileAppFileContentRequest.id)/commit"
+        $uri = '{0}/commit' -f $Win32MobileAppFilesUri
         
         $paramSplatting = @{
             "Method" = 'POST'
