@@ -28,11 +28,17 @@
     The output contains the following information:
     TypeName        = Type of item. Like: UpdateClassification, Company, ProductFamily or Product 
     InstanceName    = Name of item. Like: Windows 10, Windows 11 or Updates, Security Updates
-    Action          = Can be one of the following:
-            NewCategory     = A new item was added to WSUS
-            RemovedCategory = An item has been removed from WSUS
+    ExpectedState   = Can be one of the following:
             Activated       = An item has been activated and will be synct from Microsoft Update
-            Deactivated     =  An item has been deactivated and will no longer be synct from Microsoft Update
+            Deactivated     = An item has been deactivated and will no longer be synct from Microsoft Update
+            Present     	= An item is extected to be present in WSUS
+    
+    State           = The current state of the item. Can be one of the following:
+            New             = A new item was added to WSUS
+            Removed         = An item has been removed from WSUS
+            Activated       = An item is activated and will be synct from Microsoft Update
+            Deactivated     = An item is deactivated and will no longer be synct from Microsoft Update
+            No changes      = No changes detected
        
     Source: https://github.com/jonasatgit/scriptrepo
 
@@ -65,6 +71,10 @@
 
 .PARAMETER MaxFiles
     How many json files should be kept. Default is 10.
+
+.PARAMETER CacheFolder
+    Folder where the JSON files are stored. Default is the script root folder.
+    Folder must exist, otherwise the script will use the script root folder.
 
 .EXAMPLE
     Get-ConfigMgrWSUSSubscriptions.ps1
@@ -102,14 +112,28 @@ param
     [Parameter(Mandatory=$false)]
     [switch]$SendMailOnlyWhenChangesFound,
     [Parameter(Mandatory=$false)]
-    [int]$MaxFiles = 10
+    [int]$MaxFiles = 10,
+    [Parameter(Mandatory=$false)]
+    [String]$CacheFolder
 )
 #endregion
 
 #region Initializing
 $scriptPath = $PSScriptRoot
 $scriptName = $MyInvocation.MyCommand.Name
-$jsonFileName = '{0}\{1}_{2}.json' -f $scriptPath, ($scriptName -replace '.ps1'), (Get-Date -Format 'yyyyMMdd-hhmm')
+
+if ($CacheFolder)
+{
+    if (-NOT (Test-Path $CacheFolder))
+    {
+        Write-Verbose "Folder does not exist: `"$($CacheFolder)`", will use script root folder instead"
+    }
+}
+else 
+{
+    $CacheFolder = $scriptPath
+}
+$jsonFileName = '{0}\{1}_{2}.json' -f $CacheFolder, ($scriptName -replace '.ps1'), (Get-Date -Format 'yyyyMMdd-hhmm')
 #endregion
 
 $VerbosePreference = 'SilentlyContinue'
@@ -158,7 +182,7 @@ if (-NOT($SMSCategoryInstance))
 
 
 #region Export JSON if script has never run or JSON was deleted
-[array]$listOfJsonFiles = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $scriptPath
+[array]$listOfJsonFiles = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $CacheFolder
 if (-NOT ($listOfJsonFiles))
 {
     $SMSCategoryInstance | Select-Object CategoryInstance_UniqueID, CategoryTypeName, LocalizedCategoryInstanceName, AllowSubscription, IsSubscribed | ConvertTo-Json | Out-File $jsonFileName -Encoding utf8 -Force
@@ -174,7 +198,7 @@ if ($listOfJsonFiles.count -ge $maxFiles)
 #endregion
 
 #region get latest json definition and output new file
-$latestJsonDefinitionFile = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $scriptPath | Sort-Object -Property Name -Descending | Select-Object -First 1
+$latestJsonDefinitionFile = Get-ChildItem -Filter "$($scriptName -replace '.ps1')*.json" -Path $CacheFolder | Sort-Object -Property Name -Descending | Select-Object -First 1
 $latestJsonDefinitionObject = Get-content -Path $latestJsonDefinitionFile.FullName | ConvertFrom-Json
 
 #region Test if new items have arrived or if settings have changed
