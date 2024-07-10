@@ -188,28 +188,31 @@ foreach ($CategoryInstance in $SMSCategoryInstance)
     
     if(-NOT($referenceObject))
     {
-        $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, Action
+        $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, ExpectedState, State
         $tmpObj.TypeName = $CategoryInstance.CategoryTypeName
         $tmpObj.InstanceName = $CategoryInstance.LocalizedCategoryInstanceName
-        $tmpObj.Action = 'NewCategory'
+        $tmpObj.ExpectedState = ''
+        $tmpObj.State = 'New'
         [void]$compareResultArrayList.Add($tmpObj)
     }
     else 
     {
         if ($referenceObject.IsSubscribed -ine $CategoryInstance.IsSubscribed)
         {
-            $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, Action
+            $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, ExpectedState, State
             # looks like a setting has been changed
             $tmpObj.TypeName = $CategoryInstance.CategoryTypeName
             $tmpObj.InstanceName = $CategoryInstance.LocalizedCategoryInstanceName
             if ($CategoryInstance.IsSubscribed -ieq 'True')
             {
-                $tmpObj.Action = 'Activated'
+                $tmpObj.ExpectedState = 'Deactivated'
+                $tmpObj.State = 'Activated'
                 [void]$compareResultArrayList.Add($tmpObj)                      
             }
             else 
             {
-                $tmpObj.Action = 'Deactivated'
+                $tmpObj.ExpectedState = 'Activated'
+                $tmpObj.State = 'Deactivated'
                 [void]$compareResultArrayList.Add($tmpObj)                    
             }
         }        
@@ -223,10 +226,11 @@ foreach ($CategoryInstance in $latestJsonDefinitionObject)
     $referenceObject = $SMSCategoryInstance.Where({$_.CategoryInstance_UniqueID -eq $CategoryInstance.CategoryInstance_UniqueID})
     if(-NOT($referenceObject))
     {
-        $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, Action
+        $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, ExpectedState, State
         $tmpObj.TypeName = $CategoryInstance.CategoryTypeName
         $tmpObj.InstanceName = $CategoryInstance.LocalizedCategoryInstanceName
-        $tmpObj.Action = 'RemovedCategory'
+        $tmpObj.ExpectedState = 'Present'
+        $tmpObj.State = 'Removed'
         [void]$compareResultArrayList.Add($tmpObj)
     }
 }
@@ -234,10 +238,11 @@ foreach ($CategoryInstance in $latestJsonDefinitionObject)
 
 if ($compareResultArrayList.count -eq 0)
 {
-    $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, Action
+    $tmpObj = New-Object pscustomobject | Select-Object TypeName, InstanceName, ExpectedState, State
     $tmpObj.TypeName = 'Unknown'
     $tmpObj.InstanceName = 'Unknown'
-    $tmpObj.Action = 'No changes'
+    $tmpObj.ExpectedState = 'Unknown'
+    $tmpObj.State = 'No changes'
     [void]$compareResultArrayList.Add($tmpObj)    
 }
 #endregion
@@ -259,7 +264,7 @@ Switch ($OutputMode)
     }
     'HTMLMail'
     {
-        if ($SendMailOnlyWhenChangesFound -and ($compareResultArrayList[0].Action -eq 'No changes'))
+        if ($SendMailOnlyWhenChangesFound -and ($compareResultArrayList[0].State -eq 'No changes'))
         {
             Write-Host 'No changes found. No email send.' -ForegroundColor Yellow
             Exit
