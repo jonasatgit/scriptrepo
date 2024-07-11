@@ -673,14 +673,14 @@ try
     }
 
     # We also need some folders to store the exported data
-    $ExportFolderContent = '{0}\Content' -f $ExportFolder
+    #$ExportFolderContent = '{0}\Content' -f $ExportFolder
     $ExportFolderTools = '{0}\Tools' -f $ExportFolder
     $ExportFolderAppDetails = '{0}\AppDetails' -f $ExportFolder
     $ExportFolderIcons = '{0}\Icons' -f $ExportFolder
     $ExportFolderScripts = '{0}\Scripts' -f $ExportFolder
     $ExportFolderWin32Apps = '{0}\Win32Apps' -f $ExportFolder
 
-    foreach ($folder in ($ExportFolderContent, $ExportFolderTools, $ExportFolderAppDetails, $ExportFolderIcons, $ExportFolderScripts, $ExportFolderWin32Apps))
+    foreach ($folder in ($ExportFolderTools, $ExportFolderAppDetails, $ExportFolderIcons, $ExportFolderScripts, $ExportFolderWin32Apps))
     {
         if (-not (Test-Path $folder))
         {
