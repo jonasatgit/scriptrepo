@@ -1763,7 +1763,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         Write-Progress -Id 0 -Activity "Upload apps to Intune" -status "Working on app: $appCounter of $($selectedAppList.count) `"$($configMgrApp.Name)`"" -percentComplete ($appCounter / $selectedAppList.count*100)
         if ($configMgrApp.AppImportToIntunePossible -ine 'Yes')
         {
-            Write-CMTraceLog -Message 'App cannot be imported into Intune. Will be skipped.' -Severity Warning
+            Write-CMTraceLog -Message "App: `"$($configMgrApp.NameSanitized)`" cannot be imported into Intune. Will be skipped." -Severity Warning
             Continue
         }
 
@@ -1806,15 +1806,22 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
                 $configMgrApp.IconPath = $configMgrApp.IconPath -replace '^.*?Icons', $ExportFolderIcons    
             }
 
-            Write-CMTraceLog -Message "Converting icon to base64 string for: `"$($configMgrApp.Name)`""
-            try 
+            if (Test-Path $configMgrApp.IconPath)
             {
-                $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))    
+                Write-CMTraceLog -Message "Converting icon to base64 string for: `"$($configMgrApp.Name)`""
+                try 
+                {
+                    $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))    
+                }
+                catch 
+                {
+                    Write-CMTraceLog -Message "Icon conversion to base 64 string failed. $($_)" -Severity Warning
+                    Write-CMTraceLog -Message "Error will be ignored." -Severity Warning
+                }
             }
-            catch 
+            else 
             {
-                Write-CMTraceLog -Message "Icon conversion to base 64 string failed. $($_)" -Severity Warning
-                Write-CMTraceLog -Message "Error will be ignored." -Severity Warning
+                Write-CMTraceLog -Message "Icon file not found. Will skip icon upload." -Severity Warning
             }
             
         }
@@ -2128,7 +2135,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         $appHashTable.requirementRule = $requirementRule
 
 
-        $appfileFullName = '{0}\{1}-Intune.json' -f $ExportFolderAppDetails, $tmpApp.LogicalName
+        $appfileFullName = '{0}\{1}-Intune.json' -f $ExportFolderAppDetails, $configMgrApp.LogicalName
         Write-CMTraceLog -Message "Writing Intune app details to file: `"$($appfileFullName)`""
         ($appHashTable | ConvertTo-Json -Depth 100) | Out-File -FilePath $appfileFullName -Encoding unicode
 
