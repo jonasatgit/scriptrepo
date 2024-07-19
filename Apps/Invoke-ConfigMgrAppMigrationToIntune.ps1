@@ -25,22 +25,21 @@ Make sure to properly test the script and the output of it.
 
 The individual script actions are:
 
-    #1 GetConfigMgrAppInfo: 
+    #1 Step1GetConfigMgrAppInfo: 
     Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
     The script will also analyze the exported apps to mark apps with configurations not supported by the script or Intune.
     
-    #2 CreateIntuneWinFiles: 
+    #2 Step2CreateIntuneWinFiles: 
     Create Intune win32 app packages exported to the export folder. 
     The script will create Intune win32 app packages from the source files of each app.
     The script will also download the Microsoft Win32 Content Prep Tool if it's not already downloaded.
     
-    #3 UploadAppsToIntune: 
+    #3 Step3UploadAppsToIntune: 
     The script will upload selected apps to Intune.
 
     Actions #2 and #3 can be run together with the script mode CreateIntuneWinFilesAndUploadToIntune.
 
 To store the individual items the script will create the following folder under the ExportFolder:
-    Content     - Contains the content of the ConfigMgr applications. Not used at the moment.
     Tools       - Contains the tools used by the script. Currently just the Microsoft Win32 Content Prep Tool.
     AppDetails  - Contains the details of the ConfigMgr applications. In JSON and XML format. JSON to be able to analyze the data in an easy way. The XML will be used by the script.
     Icons       - Contains exported icons of each ConfigMgr applications.
@@ -50,6 +49,21 @@ To store the individual items the script will create the following folder under 
 The script will create a log file in the same directory as the script file.
 
 AppDetectionRuleMSI not yet implemented.
+
+.PARAMETER Step1GetConfigMgrAppInfo
+Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
+
+.PARAMETER Step2CreateIntuneWinFiles
+Create Intune win32 app packages exported to the export folder.
+
+.PARAMETER Step3UploadAppsToIntune
+The script will upload selected apps to Intune.
+
+.PARAMETER CreateIntuneWinFilesAndUploadToIntune
+Run the script in CreateIntuneWinFiles and UploadAppsToIntune mode.
+
+.PARAMETER RunAllActions
+Run all actions of the script.
 
 .PARAMETER SiteCode
 The ConfigMgr site code.
@@ -65,9 +79,6 @@ The maximum application run time in minutes. Will only be used if the deployment
 
 .PARAMETER Win32ContentPrepToolUri
 The URI to the Microsoft Win32 Content Prep Tool.
-
-.PARAMETER ScriptMode
-The script mode to run
 
 .PARAMETER EntraIDAppID
 The AppID of the Enterprise Application in Azure AD. 
@@ -88,30 +99,55 @@ Default is "Imported app".
 
 
 #>
+[CmdletBinding(DefaultParameterSetName='Default')]
 param
 (
-    # Parameter help description
-    [Parameter(Mandatory = $true)]
-    [string]$SiteCode,
-    [Parameter(Mandatory = $true)] 
-    [string]$ProviderMachineName, # SMS Provider machine name
+    [Parameter(Mandatory=$false, ParameterSetName='GetConfigMgrAppInfo')]
+    [Switch]$Step1GetConfigMgrAppInfo,
+
+    [Parameter(Mandatory=$false, ParameterSetName='CreateIntuneWinFiles')]
+    [Switch]$Step2CreateIntuneWinFiles,
+
+    [Parameter(Mandatory=$false, ParameterSetName='UploadAppsToIntune')]
+    [Switch]$Step3UploadAppsToIntune,
+
+    [Parameter(Mandatory=$false, ParameterSetName='CreateIntuneWinFilesAndUploadToIntune')]
+    [Switch]$CreateIntuneWinFilesAndUploadToIntune,
+
+    [Parameter(Mandatory=$false, ParameterSetName='RunAllActions')]
+    [Switch]$RunAllActions,
+
+    [Parameter(Mandatory=$true, ParameterSetName='GetConfigMgrAppInfo')]
+    [Parameter(Mandatory=$true, ParameterSetName='RunAllActions')]
+    [string]$Sitecode,
+
+    [Parameter(Mandatory=$true, ParameterSetName='GetConfigMgrAppInfo')]
+    [Parameter(Mandatory=$true, ParameterSetName='RunAllActions')]
+    [string]$Providermachinename,
+
     [Parameter(Mandatory = $false)]
     [string]$ExportFolder = 'C:\ExportToIntune',
+
     [Parameter(Mandatory = $false)]
     [int]$MaxAppRunTimeInMinutes = 60, # Maximum application run time in minutes. Will only be used if the deployment type has no value set.
+
     [Parameter(Mandatory = $false)]
     [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe',
-    [Parameter(Mandatory = $false)]
-    [ValidateSet("GetConfigMgrAppInfo", "CreateIntuneWinFiles", "UploadAppsToIntune", "CreateIntuneWinFilesAndUploadToIntune", "RunAllActions")]
-    [string]$ScriptMode,
-    [Parameter(Mandatory = $false)]
+
+    [Parameter(Mandatory=$false, ParameterSetName='UploadAppsToIntune')]
+    [Parameter(Mandatory=$false, ParameterSetName='RunAllActions')]
     [string]$EntraIDAppID,
-    [Parameter(Mandatory = $false)]
+
+    [Parameter(Mandatory=$false, ParameterSetName='UploadAppsToIntune')]
+    [Parameter(Mandatory=$false, ParameterSetName='RunAllActions')]
     [string]$EntraIDTenantID,
+
     [Parameter(Mandatory = $false)]
     [string]$PublisherIfNoneIsSet = 'IT',
+
     [Parameter(Mandatory = $false)]
     [string]$DescriptionIfNoneIsSet = 'Imported app',
+
     [Parameter(Mandatory = $false)]
     [ValidateSet("Console","Log","ConsoleAndLog")]
     [string]$OutputMode = 'ConsoleAndLog'
@@ -146,7 +182,7 @@ $arrayOfDisplayedProperties = @(
 if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     # Not really required if we have write access to the export folder
-    #Write-Warning 'The process needs admin rights to run. Please re-run the process with admin rights.' 
+    Write-Warning 'The script does not run with admin privileges. In that case the script needs write access to the export folder' 
     #Read-Host -Prompt "Press any key to exit"
     #Exit 0 
 }
@@ -660,15 +696,103 @@ function Wait-ForGraphRequestCompletion
 }
 #endregion
 
+#region function Out-DataFile
+<#
+    Function to replace app data in existing app files
+#>
+function Out-DataFile
+{
+    param
+    (
+        $FilePath,
+        $OutObject
+    )
+
+    $appOutObj = [System.Collections.Generic.List[pscustomobject]]::new()
+    # we need to add the apps we want to replace to our new $appOutObj variable
+    foreach ($appItem in $OutObject)
+    {
+        $appOutObj.Add($appItem)      
+    }
+
+    $fileExtension = [System.IO.Path]::GetExtension($FilePath)
+
+    if (Test-Path $FilePath)
+    {
+        Write-CMTraceLog -Message "File exists: `"$($FilePath)`" will replace selected apps" -Severity Warning
+        Write-CMTraceLog -Message "Import data from file"
+        # import
+        Switch($fileExtension)
+        {
+            '.xml'
+            {
+                [array]$importedAppsList = Import-Clixml $FilePath -ErrorAction Stop
+            }
+            '.json'
+            {
+                [array]$importedAppsList = Get-Content $FilePath -ErrorAction Stop | ConvertFrom-Json
+            }
+            '.csv'
+            {
+                [array]$importedAppsList = Import-Csv $FilePath -ErrorAction Stop
+            }
+        }
+
+        # lets now replace the apps which were selected for export. Maybe all, maybe just one
+        foreach ($appItem in $importedAppsList)
+        {
+            # outobject contains selected apps which should be exported and replaced
+            # $appItem is an app which exists in the exported file already
+            # But if the app is not in the selection, we can safely add it to our out object
+            # All other selected apps coming from the file will be ignored, because they are already part of our new out object
+            if ($appItem.LogicalName -notin $OutObject.LogicalName)
+            {
+                $appOutObj.Add($appItem)      
+            }
+        }
+    }
+
+    # Export either replaced data or the normal out data
+    Switch($fileExtension)
+    {
+        '.xml'
+        {
+            Write-CMTraceLog -Message "Export all apps to: `"$($FilePath)`" to be able to work with them later in this script even on other devices"
+            $appOutObj| Export-Clixml -Path $FilePath -Depth 100
+        }
+        '.json'
+        {
+            Write-CMTraceLog -Message "Export all apps to: `"$($FilePath)`" for easy reading in a text editor"    
+            $appOutObj | ConvertTo-Json -Depth 100 | Out-File -FilePath $FilePath -Encoding unicode
+        }
+        '.csv'
+        {
+            Write-CMTraceLog -Message "Export all apps to: `"$($FilePath)`" to be able to analyze them in Excel"
+            $appOutObj| Select-Object -Property * -ExcludeProperty DeploymentTypes, IconId, IconPath | Export-Csv $FilePath -NoTypeInformation
+        }
+    }
+}
+
 ## MAIN SCRIPT
+
+#region before doing anything lets check if a run modes was picked
+if (-NOT ($Step1GetConfigMgrAppInfo -or $Step2CreateIntuneWinFiles -or $Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $RunAllActions))
+{
+    Write-Warning 'Specify the run mode of the script via one of the switch parameters:'
+    Write-Warning 'Step1GetConfigMgrAppInfo or Step2CreateIntuneWinFiles or Step3UploadAppsToIntune or CreateIntuneWinFilesAndUploadToIntune or RunAllActions'
+    break
+}
+#endregion
+
 
 #region folder creation if not done already
 # Validate path and create if not there yet
+Write-Host "Start of script" -ForegroundColor Green
 try 
 {
     if (-not (Test-Path $ExportFolder)) 
     {
-        Write-Host "Export folder: `"$($ExportFolder)`" does not exist. Will be created..." # logfile not ready yet
+        Write-Host "Export folder: `"$($ExportFolder)`" does not exist. Will be created..." -ForegroundColor Green # logfile not ready yet
         New-Item -ItemType Directory -Path $ExportFolder -Force | Out-Null
     }
 
@@ -684,12 +808,12 @@ try
     {
         if (-not (Test-Path $folder))
         {
-            Write-Host "Will create export folder: `"$($folder)`""
+            Write-Host "Will create export folder: `"$($folder)`"" -ForegroundColor Green
             New-Item -ItemType Directory -Path $folder -Force | Out-Null   
         }
         else 
         {
-            Write-Host "Folder: `"$($folder)`" does exist"
+            Write-Host "Folder: `"$($folder)`" does exist" -ForegroundColor Green
         }
     }
 }
@@ -707,33 +831,12 @@ $stoptWatch.Start()
 Invoke-LogfileRollover -Logfile $script:LogFilePath -MaxFileSizeKB 2048
 
 Write-CMTraceLog -Message '   '
-Write-CMTraceLog -Message 'Start of script'
+Write-CMTraceLog -Message 'Start of main script'
 Write-CMTraceLog -Message "Export will be made to folder: $($ExportFolder)"
 #endregion
 
-#region show script run options if none was passed
-if ([string]::IsNullOrEmpty($ScriptMode))
-{
-    Write-CMTraceLog -Message "Parameter ScriptMode not specified. Will show GridView with script run options"
-    $scriptModeSelectionHash = [ordered]@{
-        "GetConfigMgrAppInfo" = "Step 1: Get information about ConfigMgr applications. All selected apps will be exported to a folder without content. Basis for all other actions."
-        "CreateIntuneWinFiles" = "Step 2: The script will create Intune win32 app packages from the source files of each selected app. Step 1 must have been run before this step."
-        "UploadAppsToIntune" = "Step 3: The script will upload created Intune win32 app packages to Intune to create an app. Step 1 and 2 must have been run before this step."
-        "CreateIntuneWinFilesAndUploadToIntune" = "Run step 2 and step 3 after each other"
-        "RunAllActions" = "Run steps 1 to 3. Each step will pause and give you an option to select apps for the running step."
-    }
-
-    $scriptModeSelection = $scriptModeSelectionHash | Out-GridView -Title 'Please select a script action' -OutputMode Single
-    if ($scriptModeSelection.Name)
-    {
-        $ScriptMode =  $scriptModeSelection.Name  
-    }
-    
-}
-#endregion
-
 #region Get the ConfigMgr apps
-if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
+if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
 {
 
     Write-CMTraceLog -Message "Will get list of ConfigMgr apps"
@@ -774,13 +877,16 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
     if ($selectedApps)
     {
         Write-CMTraceLog -Message "$($selectedApps.count) apps selected"
+        $appCounter = 0
         foreach ($app in $selectedApps)
         {
+            $appCounter++
+            Write-Progress -Activity "Analyze ConfigMgr apps" -status "Analyze app: $appCounter of $($selectedApps.count)" -percentComplete ($appCounter / $selectedApps.count*100)
             $appWithoutLazyProperties = Get-CimInstance -CimSession $cimSession -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT * FROM SMS_Application WHERE CI_ID = '$($app.CI_ID)'"
             $fullApp = $appWithoutLazyProperties | Get-CimInstance -CimSession $cimSession
             
             [xml]$appXmlContent = $fullApp.SDMPackageXML
-
+            
             if (-not ($null -eq $appXmlContent.AppMgmtDigest.Resources.Icon.Id) ) 
             {
                 $IconPath = '{0}\{1}.png' -f $ExportFolderIcons, $appXmlContent.AppMgmtDigest.Resources.Icon.Id
@@ -822,6 +928,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
             $tmpApp = [PSCustomObject]@{
                 AppImportToIntunePossible = "Yes"
                 AllChecksPassed = 'Yes'
+                IntunewinFileExists = 'No'
                 LogicalName = $appXmlContent.AppMgmtDigest.Application.LogicalName
                 Name = $appXmlContent.AppMgmtDigest.Application.title.'#text'
                 NameSanitized = Get-SanitizedString -String ($appXmlContent.AppMgmtDigest.Application.title.'#text')
@@ -840,6 +947,7 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
                 InfoUrl = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.InfoUrl
                 IconId = $appXmlContent.AppMgmtDigest.Resources.Icon.Id
                 IconPath = $IconPath
+                IntunewinFilePath = $null
                 DeploymentTypes = $null
                 CheckTotalDeploymentTypes = "OK"
                 CheckIsSuperseded = "OK"
@@ -1343,45 +1451,56 @@ if ($scriptMode -in ('GetConfigMgrAppInfo','RunAllActions'))
 
         }
     }
+    Write-Progress -Completed -Activity "Analyze ConfigMgr apps"
+    if ($appOutObj.Count -gt 0)
+    {
 
-    # Show one app in json format as a result
-    #$appOutObj[0] | ConvertTo-Json -Depth 20
-    Write-CMTraceLog -Message "Export total app/s: $($appOutObj.Count) to different files"
-        
-    $appfileFullName = '{0}\AllAps.xml' -f $ExportFolderAppDetails
-    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to work with them later in this script even on other devices"
-    $appOutObj | Export-Clixml -Path $appfileFullName -Depth 100
+        $appfileFullName = '{0}\AllAps.xml' -f $ExportFolderAppDetails
+        Out-DataFile -FilePath $appfileFullName -OutObject $appOutObj
 
-    $appfileFullName = '{0}\AllAps.json' -f $ExportFolderAppDetails
-    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" for easy reading in a text editor"    
-    $appOutObj | ConvertTo-Json -Depth 100 | Out-File -FilePath $appfileFullName -Encoding unicode
+        $appfileFullName = '{0}\AllAps.json' -f $ExportFolderAppDetails
+        Out-DataFile -FilePath $appfileFullName -OutObject $appOutObj
 
-    $appfileFullName = '{0}\AllAps.csv' -f $ExportFolderAppDetails
-    Write-CMTraceLog -Message "Export all apps to: `"$($appfileFullName)`" to be able to analyze them in Excel"
-    $appOutObj | Select-Object -Property * -ExcludeProperty DeploymentTypes, IconId, IconPath | Export-Csv $appfileFullName -NoTypeInformation
+        $appfileFullName = '{0}\AllAps.csv' -f $ExportFolderAppDetails
+        Out-DataFile -FilePath $appfileFullName -OutObject $appOutObj
+
+    }
+    else 
+    {
+        Write-CMTraceLog -Message "Nothing selected."
+    }
 }
 #endregion
 
 
 #region Win32AppCreation 
-if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntune','RunAllActions'))
+if ($Step2CreateIntuneWinFiles -or $CreateIntuneWinFilesAndUploadToIntune -or $RunAllActions)
 {
 
     Write-CMTraceLog -Message "Start creating Win32AppContent files for Intune"
     if (-not (Test-Path "$($ExportFolder)\AppDetails\AllAps.xml"))
     {
         Write-CMTraceLog -Message "File not found: `"$($ExportFolder)\AppDetails\AllAps.xml`". Run the script with the GetConfigMgrAppInfo or GetConfigMgrAppInfoAndAnalyze switch" -Severity Error
-        Exit 1
+        Write-CMTraceLog -Message "End of script"
+        break
     }
 
     [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
+    if ($appInObj.count -eq 0)
+    {
+        Write-CMTraceLog -Message "File: `"$("$($ExportFolder)\AppDetails\AllAps.xml")`" does not contain any app data." -Severity Warning
+        Write-CMTraceLog -Message "Re-run the script with parameter: `"-Step1GetConfigMgrAppInfo`" first." -Severity Warning
+        Write-CMTraceLog -Message "End of script"
+        break
+    }
+
     Write-CMTraceLog -Message "Open Out-GridView for app selection"
     $ogvTitle = "Select the apps you want to create content for"
     [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty CIUniqueID, DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
     if ($selectedAppsLimited.count -eq 0)
     {
         Write-CMTraceLog -Message "Nothing selected. Will end script!"
-        Exit
+        break
     }
 
     Write-CMTraceLog -Message "Total apps to create content for: $($selectedAppsLimited.count)"
@@ -1409,15 +1528,20 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
         {
             Write-CMTraceLog -Message "IntuneWinAppUtil.exe download failed" -Severity Error
             Write-CMTraceLog -Message "$($_)"
-            Write-CMTraceLog -Message "You can also download the tool to: `"$ExportFolderTools`" manully"
+            Write-CMTraceLog -Message "You can also download the tool to: `"$ExportFolderTools`" manually"
             Write-cmTraceLog -Message "From: `"$Win32ContentPrepToolUri`""
-            Exit 1
+            Write-CMTraceLog -Message "End of script"
+            break
         }
     }
     # download of the IntuneWinAppUtil.exe is done
-
-    foreach($configMgrApp in $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID}))
+    $appCounter = 0
+    # we now need the full list of properties, hence the where clause
+    [array]$selectedAppList = $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID})
+    foreach($configMgrApp in $selectedAppList)
     {
+        $appCounter++
+        Write-Progress -Activity "Create intunewin file for ConfigMgr apps" -status "Working on app: $appCounter of $($selectedAppList.count) `"$($configMgrApp.Name)`"" -percentComplete ($appCounter / $selectedAppList.count*100)
         if ($configMgrApp.AppImportToIntunePossible -ine 'Yes')
         {
             Write-CMTraceLog -Message 'App cannot be imported into Intune. Will be skipped.' -Severity Warning
@@ -1473,6 +1597,8 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
                 }
 
                 Rename-Item -Path $intuneWinFullName -NewName $newName -Force
+                $configMgrApp.IntunewinFileExists = 'Yes'
+                $configMgrApp.IntunewinFilePath = $intuneWinFullNameFinal
             }
             else 
             {
@@ -1489,14 +1615,36 @@ if ($scriptMode -in ('CreateIntuneWinFiles','CreateIntuneWinFilesAndUploadToIntu
         }
         Write-CMTraceLog -Message "More details can be found in the log here: `"$($intunewinLogName)`""
     }
+    Write-Progress -Completed -Activity "Create intunewin file for ConfigMgr apps"
+
+    # we need to write the status back to the Files
+    $appfileFullName = '{0}\AllAps.xml' -f $ExportFolderAppDetails
+    Out-DataFile -FilePath $appfileFullName -OutObject $selectedAppList
+
+    $appfileFullName = '{0}\AllAps.json' -f $ExportFolderAppDetails
+    Out-DataFile -FilePath $appfileFullName -OutObject $selectedAppList
+
+    $appfileFullName = '{0}\AllAps.csv' -f $ExportFolderAppDetails
+    Out-DataFile -FilePath $appfileFullName -OutObject $selectedAppList
 }
 #endregion
 
 #region UploadToIntune
-if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune','RunAllActions'))
+if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $RunAllActions)
 {
-    Write-CMTraceLog -Message "Start app upload to Intune"
+    if ($EntraIDAppID)
+    {
+        # we also need the tenant id in that case
+        if ([string]::IsNullOrEmpty($EntraIDTenantID))
+        {
+            Write-CMTraceLog -Message "Please also set parameter -EntraIDTenantID to be able to use your own Entra ID app registration" -Severity Warning
+            Write-CMTraceLog -Message "Will stop script"
+            Exit
+        }
 
+    }
+
+    Write-CMTraceLog -Message "Start app upload to Intune"
 
     # we need to extract some files
     try 
@@ -1507,18 +1655,27 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
     {
         Write-CMTraceLog -Message "An error occurred while loading System.IO.Compression.FileSystem assembly." -Severity Error
         Write-CMTraceLog -Message "Error message: $($_)"
-        Exit 0
+        break
     }
 
     # Load apps from file
     if (-not (Test-Path "$($ExportFolder)\AppDetails\AllAps.xml"))
     {
         Write-CMTraceLog -Message "File not found: `"$($ExportFolder)\AppDetails\AllAps.xml`". Run the script with the GetConfigMgrAppInfo or GetConfigMgrAppInfoAndAnalyze switch" -Severity Error
-        Exit 1
+        Write-CMTraceLog -Message "End of script"
+        break
     }
 
 
     [array]$appInObj = Import-Clixml -Path "$($ExportFolder)\AppDetails\AllAps.xml"
+    if ($appInObj.count -eq 0)
+    {
+        Write-CMTraceLog -Message "File: `"$("$($ExportFolder)\AppDetails\AllAps.xml")`" does not contain any app data." -Severity Warning
+        Write-CMTraceLog -Message "Re-run the script with parameter: `"-Step1GetConfigMgrAppInfo`" first." -Severity Warning
+        Write-CMTraceLog -Message "End of script"
+        break
+    }
+
     Write-CMTraceLog -Message "Open Out-GridView for app selection"
     $ogvTitle = "Select the apps you want to upload to Intune"
     [array]$selectedAppsLimited = $appInObj | Select-Object -Property * -ExcludeProperty CIUniqueID, DeploymentTypes, IconId, IconPath | Out-GridView -OutputMode Multiple -Title $ogvTitle
@@ -1597,12 +1754,41 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
     }
 
     # Get the list of existing apps
-    foreach($configMgrApp in $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID}))
+    $appCounter = 0 
+    # we now need the full list of properties, hence the where clause
+    [array]$selectedAppList = $appInObj.Where({$_.CI_ID -in $selectedAppsLimited.CI_ID})
+    foreach($configMgrApp in $selectedAppList)
     {
-
+        $appCounter++
+        Write-Progress -Id 0 -Activity "Upload apps to Intune" -status "Working on app: $appCounter of $($selectedAppList.count) `"$($configMgrApp.Name)`"" -percentComplete ($appCounter / $selectedAppList.count*100)
         if ($configMgrApp.AppImportToIntunePossible -ine 'Yes')
         {
             Write-CMTraceLog -Message 'App cannot be imported into Intune. Will be skipped.' -Severity Warning
+            Continue
+        }
+
+        # Lets check if the file exists. Important if the export folder has been copied
+        if ($configMgrApp.IntunewinFileExists -ieq 'Yes')
+        {
+            # lets make sure we have the right export folder
+            # The path could have changed since last time the script ran
+            if ($configMgrApp.IntunewinFilePath -inotmatch [regex]::Escape($ExportFolderWin32Apps))
+            {
+                Write-CMTraceLog -Message 'Intunewin file path does not match with export folder. Folder might be moved since file creation. Path will be replaced with current path.' -Severity Warning
+                $configMgrApp.IntunewinFilePath = $configMgrApp.IntunewinFilePath -replace '^.*?Win32Apps', $ExportFolderWin32Apps     
+            }
+
+            # Lets now chekc if the file is there or not
+            if (-Not (Test-Path $configMgrApp.IntunewinFilePath))
+            {
+                Write-CMTraceLog -Message 'IntunewinFile missing. App cannot be imported into Intune. Will be skipped.' -Severity Warning
+                Write-CMTraceLog -Message "Expected file not found: `"$($configMgrApp.IntunewinFilePath)`"" -Severity Warning
+                Continue               
+            }
+        }
+        else 
+        {
+            Write-CMTraceLog -Message 'Intunewin file not yet created for app. App cannot be imported into Intune. Will be skipped.' -Severity Warning
             Continue
         }
 
@@ -1614,8 +1800,23 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
         }
         else 
         {
-            Write-CMTraceLog -Message "Converting icon to base64 for: `"$($configMgrApp.Name)`""
-            $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))
+            if ($configMgrApp.IconPath -inotmatch [regex]::Escape($ExportFolderIcons))
+            {
+                Write-CMTraceLog -Message 'Icon file path does not match with export folder. Folder might be moved since file creation. Path will be replaced with current path.' -Severity Warning
+                $configMgrApp.IconPath = $configMgrApp.IconPath -replace '^.*?Icons', $ExportFolderIcons    
+            }
+
+            Write-CMTraceLog -Message "Converting icon to base64 string for: `"$($configMgrApp.Name)`""
+            try 
+            {
+                $appIconEncodedBase64String = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes("$($configMgrApp.IconPath)"))    
+            }
+            catch 
+            {
+                Write-CMTraceLog -Message "Icon conversion to base 64 string failed. $($_)" -Severity Warning
+                Write-CMTraceLog -Message "Error will be ignored." -Severity Warning
+            }
+            
         }
 
         Write-CMTraceLog -Message "Creating Win32App object for: `"$($configMgrApp.Name)`""
@@ -2083,7 +2284,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 "x-ms-blob-type" = "BlockBlob"
             }
         
-            Write-Progress -Activity "Uploading File to Azure Storage" -status "Uploading chunk $CurrentChunk of $ChunkCount" -percentComplete ($CurrentChunk / $ChunkCount*100)
+            Write-Progress -Id 1 -ParentId 0 -Activity "Uploading File to Azure Storage" -status "Uploading chunk $CurrentChunk of $ChunkCount" -percentComplete ($CurrentChunk / $ChunkCount*100)
             try	
             {
                 $WebResponse = Invoke-WebRequest $Uri -Method "Put" -Headers $Headers -Body $EncodedBytes -ErrorAction Stop -UseBasicParsing
@@ -2093,7 +2294,7 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
                 Write-CMTraceLog -Message "Failed to upload chunk to Azure Storage blob. Error message: $($_.Exception.Message)" -Severity Error
             } 
         }
-        Write-Progress -Completed -Activity "Uploading File to Azure Storage"
+        Write-Progress -Id 1 -ParentId 0 -Completed -Activity "Uploading File to Azure Storage"
         Write-CMTraceLog -Message "Uploaded all chunks to Azure Storage blob"
         $SASRenewalTimer.Stop()        
         $BinaryReader.Close()
@@ -2189,7 +2390,8 @@ if ($scriptMode -in ('CreateIntuneWinFilesAndUploadToIntune','UploadAppsToIntune
             Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
             Invoke-MgGraphRequest @paramSplatting
         }
-    }      
+    }   
+    Write-Progress -Id 0 -Completed -Activity "Upload apps to Intune"    
 }
 
 Write-CMTraceLog -Message "End of script"
