@@ -17,6 +17,14 @@
 .SYNOPSIS
     Sample script to "monitor" and "wait" for the Enrollment ID and Device Join event to be found in the Event Viewer when using a Bulk Enrollment provisioning package.
 
+.DESCRIPTION
+    This script will monitor the Event Viewer for the Enrollment ID and Device Join event when using a Bulk Enrollment provisioning package. 
+    The script will wait for the Enrollment ID and Device Join event to be found in the Event Viewer. 
+    The script will exit if the Enrollment ID and Device Join event is not found within the specified time.
+    The script is intended to be used in a script that applies a Bulk Enrollment provisioning package or as a standalone script run after 
+    the Bulk Enrollment provisioning package has been applied.
+    Example: Install-ProvisioningPackage -PackagePath "C:\temp\EntraIDJoinPackage.ppkg" -ForceInstall -QuietInstall -LogsDirectoryPath "C:\Temp"
+
 .PARAMETER WaitTimeoutSeconds
     The number of seconds to wait for the Enrollment ID and Device Join event to be found in the Event Viewer. Default is 20 seconds.
 
