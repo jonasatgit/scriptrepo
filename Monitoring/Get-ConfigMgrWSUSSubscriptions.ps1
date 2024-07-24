@@ -48,6 +48,8 @@
         Will show changes in a GridView
     "HTMLMail": 
         Will send an email containing a list of changes
+        
+        IMPOPRTANT: Send-CustomMonitoringMail.ps1 must be in the same folder as this script
     
 .PARAMETER ProviderMachineName
     Name/FQDN of the ConfigMgr SMS provider machine. 

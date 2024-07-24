@@ -11,20 +11,99 @@
 # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
 # if Microsoft has been advised of the possibility of such damages.
 #************************************************************************************************************
- 
+
+<#
+.SYNOPSIS
+    This script will check the version of SQL Server Reporting Services and PowerBI Report Server and compare it to the version 
+    of the SQL Server Reporting Services in a ConfigMgr environment.
+
+.DESCRIPTION
+    This script will check the version of SQL Server Reporting Services and PowerBI Report Server and compare it to the version 
+    of the SQL Server Reporting Services in a ConfigMgr environment. The script will output the results in the console as a single object.
+
+    The script will use the following websites to get the latest versions of SQL Server Reporting Services and PowerBI Report Server:
+    https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services
+    https://learn.microsoft.com/en-us/power-bi/report-server/changelog
+
+    The script has different output modes. Use parameter -OutputMode to select the output mode which is best for you.
+
+.PARAMETER ProviderMachineName
+    The parameter ProviderMachineName is the name of the ConfigMgr Provider machine. Default is the local machine.
+
+.PARAMETER SiteCode
+    The parameter SiteCode is the ConfigMgr site code. If not provided, the script will try to get the site code from the SMS ProviderMachine.
+
+.PARAMETER ForceWSMANConnection
+    The parameter ForceWSMANConnection will force the script to use WSMAN for the CIMSession. Default is DCOM.
+
+.PARAMETER ProxyURI
+    The parameter ProxyURI is the URI of the proxy server to use for the web requests.
+
+.PARAMETER OutputMode
+    The parameter OutputMode has two possible options:
+    "Object": Will show the results in the console as a single object
+
+    "VersionList": Will show a GridView with all the versions found on the websites
+
+    "HTMLMail": Will send an email containing a table with the results
+    
+    IMPOPRTANT: Send-CustomMonitoringMail.ps1 must be in the same folder as this script
+
+.PARAMETER MailSubject
+    The parameter MailSubject is the subject of the email. Default is 'Status about SQL Server Reporting Services Versions'.
+
+.PARAMETER MailInfotext
+    The parameter MailInfotext is the text of the email. Default is 'Status about SQL Server Reporting Services Versions'.
+
+.PARAMETER SendMailOnlyWhenNewVersionsFound
+    The parameter SendMailOnlyWhenNewVersionsFound will only send an email if new versions are found. Default is to send an email always.
+
+.PARAMETER ReportServerVersionListURI
+    The parameter ReportServerVersionListURI is the URI of the website where the script will get the versions of SQL Server Reporting Services. 
+    Default is 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services'.
+
+.PARAMETER PowerBIReportServerVersionListURI
+    The parameter PowerBIReportServerVersionListURI is the URI of the website where the script will get the versions of PowerBI Report Server. 
+    Default is 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog'.
+
+.LINK
+    https://github.com/jonasatgit/scriptrepo
+
+#>
+
+[CmdletBinding()]
 param
 (
     [Parameter(Mandatory=$false)]
     [string]$ProviderMachineName = $env:ComputerName,
 
     [Parameter(Mandatory=$false)]
-    [string]$siteCode,
+    [string]$SiteCode,
  
     [Parameter(Mandatory=$false)]
     [Switch]$ForceWSMANConnection,
        
     [Parameter(Mandatory=$false)]
-    [string]$ProxyURI
+    [string]$ProxyURI,
+
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("Object", "HTMLMail", "VersionList")]
+    [string]$OutputMode = 'Object',
+
+    [Parameter(Mandatory=$false)]
+    [String]$MailSubject = 'Status about SQL Server Reporting Services Versions',
+
+    [Parameter(Mandatory=$false)]
+    [String]$MailInfotext = 'Status about SQL Server Reporting Services Versions',
+
+    [Parameter(Mandatory=$false)]
+    [switch]$SendMailOnlyWhenNewVersionsFound,
+
+    [Parameter(Mandatory=$false)]
+    [string]$ReportServerVersionListURI = 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services',
+
+    [Parameter(Mandatory=$false)]
+    [string]$PowerBIReportServerVersionListURI = 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog'
  
     #[Parameter(Mandatory=$false)]
     #[string]$ProxyUser,
@@ -99,13 +178,12 @@ if ($simplifiedListOfReportServers.count -gt 0)
     $versionObjectList = [System.Collections.Generic.List[PSCustomObject]]::new()
  
     # GETTING DATA FOR SQL SERVER REPORTING SERVICES
-    # SQL Server PowerBi Report Server
-    $uri = 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services'
+    # SQL Server Report Server
     try
     {
         # Define the base parameters for Invoke-WebRequest
         $params = @{
-            Uri = $uri
+            Uri = $ReportServerVersionListURI
             UseBasicParsing = $true
             ErrorAction = 'Stop'
         }
@@ -164,12 +242,11 @@ if ($simplifiedListOfReportServers.count -gt 0)
  
     # GETTING DATA FOR POWERBI REPORT SERVER
     # SQL Server PowerBi Report Server
-    $uri = 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog'
     try
     {
         # Define the base parameters for Invoke-WebRequest
         $params = @{
-            Uri = $uri
+            Uri = $PowerBIReportServerVersionListURI
             UseBasicParsing = $true
             ErrorAction = 'Stop'
         }
@@ -221,6 +298,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
  
     $finalServerList = [System.Collections.Generic.List[pscustomobject]]::new()
     # Lets now test the servers
+    $newVersionFound = $false
     foreach($Server in $simplifiedListOfReportServers)
     {
         # Find matching version to find SQL Reporting Server Type and related versions
@@ -228,7 +306,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
        
         if($buildVersionListEqualServerVersion.count -eq 0)
         {
-            Write-Output "Report Server Build Version not found in list from version website: `"$($Server.BuildVersion)`""
+            Write-Verbose "Report Server Build Version not found in list from version website: `"$($Server.BuildVersion)`""
             $Server.Status = "Report Server Build Version not found in list from version website: `"$($Server.BuildVersion)`""
         }
         else
@@ -248,9 +326,10 @@ if ($simplifiedListOfReportServers.count -gt 0)
                 $Server.BuildVersionLatest = ($buildVersionListGreaterEqualServerVersion | Select-Object -First 1).Build
                 if($buildVersionListGreaterEqualServerVersion.count -eq 1)
                 {
-                    Write-Output "Report Server Build Version is latest version: `"$($Server.BuildVersion)`""
+                    Write-Verbose "Report Server Build Version is latest version: `"$($Server.BuildVersion)`""
                     $Server.Status = "Report Server Build Version is latest version: `"$($Server.BuildVersion)`""
                     $server.VersionStringLatest = $buildVersionListEqualServerVersion[0].VersionString
+                    $newVersionFound = $true
                 }
                 else
                 {
@@ -259,6 +338,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
                     Write-Host $outString
                     $Server.Status = $outString
                     $server.VersionStringLatest = ($buildVersionListGreaterEqualServerVersion | Select-Object -First 1).VersionString
+                    $newVersionFound = $true
                 }
             }
         }
@@ -270,4 +350,30 @@ else
     Write-Host "No Report Servers in ConfigMgr environment found"
 }
  
-$finalServerList | Format-List
+Switch ($OutputMode)
+{
+    'Object'
+    {
+        $finalServerList | Format-List
+    }
+    'VersionList'
+    {
+        $versionObjectList | Out-GridView
+    }
+    'HTMLMail'
+    {
+        if ($SendMailOnlyWhenNewVersionsFound -and ($newVersionFound -eq $false))
+        {
+            Write-Host 'No changes found. No email send.' -ForegroundColor Yellow
+            Exit
+        }
+
+        # Reference email script
+        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+        $MailInfotext = '<br>{0}' -f $MailInfotext
+        Send-CustomMonitoringMail -MailMessageObject $finalServerList -MailSubject $MailSubject -MailInfotext $MailInfotext        
+    }
+}
+
+
