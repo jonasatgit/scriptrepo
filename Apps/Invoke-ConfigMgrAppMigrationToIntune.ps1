@@ -66,13 +66,13 @@ Run the script in CreateIntuneWinFiles and UploadAppsToIntune mode.
 Run all actions of the script.
 
 .PARAMETER SiteCode
-The ConfigMgr site code.
+The ConfigMgr site code. Required only for the first action.
 
 .PARAMETER ProviderMachineName
-The ConfigMgr SMS Provider machine name.
+The ConfigMgr SMS Provider machine name. Required only for the first action.
 
 .PARAMETER ExportFolder
-The folder where the exported content will be stored.
+The folder where the exported content will be stored. Required for all actions.
 
 .PARAMETER MaxAppRunTimeInMinutes
 The maximum application run time in minutes. Will only be used if the deployment type has no value set.
@@ -144,8 +144,8 @@ param
     [Parameter(Mandatory=$true, ParameterSetName='RunAllActions')]
     [string]$Providermachinename,
 
-    [Parameter(Mandatory = $false)]
-    [string]$ExportFolder = 'C:\ExportToIntune',
+    [Parameter(Mandatory = $True)]
+    [string]$ExportFolder,
 
     [Parameter(Mandatory = $false)]
     [int]$MaxAppRunTimeInMinutes = 60, # Maximum application run time in minutes. Will only be used if the deployment type has no value set.
@@ -249,7 +249,7 @@ function Write-CMTraceLog
         # write to console only
         [Parameter(Mandatory=$false)]
         [ValidateSet("Console","Log","ConsoleAndLog")]
-        [string]$OutputMode = $global:LogOutputMode
+        [string]$OutputMode = $script:LogOutputMode
     )
 
     if ([string]::IsNullOrEmpty($OutputMode))
@@ -899,7 +899,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
         foreach ($app in $selectedApps)
         {
             $appCounter++
-            Write-Progress -Activity "Analyze ConfigMgr apps" -status "Analyze app: $appCounter of $($selectedApps.count)" -percentComplete ($appCounter / $selectedApps.count*100)
+            Write-Progress -Activity "Analyze ConfigMgr apps" -status "Analyze app: $appCounter of $($selectedApps.count) - `"$($app.LocalizedDisplayName)`"" -percentComplete ($appCounter / $selectedApps.count*100)
             $appWithoutLazyProperties = Get-CimInstance -CimSession $cimSession -Namespace "Root\SMS\Site_$($SiteCode)" -Query "SELECT * FROM SMS_Application WHERE CI_ID = '$($app.CI_ID)'"
             $fullApp = $appWithoutLazyProperties | Get-CimInstance -CimSession $cimSession
             
@@ -942,7 +942,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
             }
 
 
-            Write-CMTraceLog -Message "Getting info of App: $($appXmlContent.AppMgmtDigest.Application.title.'#text')"
+            Write-CMTraceLog -Message "Getting info of App: $($appXmlContent.AppMgmtDigest.Application.title.'#text')" -OutputMode Log
             $tmpApp = [PSCustomObject]@{
                 AppImportToIntunePossible = "Yes"
                 AllChecksPassed = 'Yes'
@@ -988,11 +988,12 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                 CheckCustomReturnCodes = "OK"
                 CheckRequirements = "OK"
                 CheckRulesWithGroups = "OK"
-                CheckRulesWithOr = "OK"                
+                CheckRulesWithOr = "OK"
+                CheckUnsupportedOperators = "OK"              
                 
             }
 
-            Write-CMTraceLog -Message "Getting deploymenttype info for app"
+            Write-CMTraceLog -Message "Getting deploymenttype info for app" -OutputMode Log
             $appDeploymenTypesList = [System.Collections.Generic.List[pscustomobject]]::new()
             if ($fullApp.NumberOfDeploymentTypes -ge 1)
             {
@@ -1455,14 +1456,21 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                 $tmpApp.AllChecksPassed = 'No'
             }
 
+            # Check for unsupported operators
+            [array]$unsupportedOperators = $tmpApp.deploymentTypes[0].DetectionRules.RulesFlat | Where-Object {$_.OperatorIntune -ieq 'NotSupported'}
+            if ($unsupportedOperators.Count -gt 0)
+            {
+                $tmpApp.CheckUnsupportedOperators = "FAILED: The app has detection rules with unsupported operators. The app can still be created without the detection rules with unsupported operators. Consider the use of a detection script with the same check logic instead."
+                $tmpApp.AllChecksPassed = 'No'
+            }
 
 
             $appfileFullName = '{0}\{1}.xml' -f $ExportFolderAppDetails, $tmpApp.LogicalName
-            Write-CMTraceLog -Message "Export app to: `"$($appfileFullName)`" to be able to work with them later in PowerShell"
+            Write-CMTraceLog -Message "Export app to: `"$($appfileFullName)`" to be able to work with them later in PowerShell" -OutputMode Log
             $tmpApp | Export-Clixml -Path $appfileFullName -Depth 100
 
             $appfileFullName = '{0}\{1}.json' -f $ExportFolderAppDetails, $tmpApp.LogicalName
-            write-CMTraceLog -Message "Export app to: `"$($appfileFullName)`" for easy reading in a text editor"
+            write-CMTraceLog -Message "Export app to: `"$($appfileFullName)`" for easy reading in a text editor" -OutputMode Log
             $tmpApp | ConvertTo-Json -Depth 100 | Out-File -FilePath $appfileFullName -Encoding unicode
             
             $appOutObj.Add($tmpApp)
