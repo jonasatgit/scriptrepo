@@ -1,3 +1,8 @@
+<#
+.SYNOPSIS
+Script to analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune.
+
+.DESCRIPTION
 #************************************************************************************************************
 # Disclaimer
 #
@@ -12,11 +17,8 @@
 # if Microsoft has been advised of the possibility of such damages.
 # 
 #************************************************************************************************************
-<#
-.SYNOPSIS
-Script to analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune.
 
-.DESCRIPTION
+
 This script will analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune. 
 The script is devided into different actions, which can be run separately in groups or all together.
 While the script was thourougly tested, it is recommended to test the script in a test environment before running it in production.
@@ -26,7 +28,7 @@ Make sure to properly test the script and the output of it.
 The individual script actions are:
 
     #1 Step1GetConfigMgrAppInfo: 
-    Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
+    Get information about ConfigMgr applications. Metadata for all selected apps will be exported to a folder without content.
     The script will also analyze the exported apps to mark apps with configurations not supported by the script or Intune.
     
     #2 Step2CreateIntuneWinFiles: 
@@ -46,9 +48,7 @@ To store the individual items the script will create the following folder under 
     Scripts     - Contains exported scripts if a ConfigMgr application is configured to use script detection types.
     Win32Apps   - Contains the exported Intune win32 app packages.
 
-The script will create a log file in the same directory as the script file.
-
-AppDetectionRuleMSI not yet implemented.
+The script will create a log file in the same directory as the export and not next to the script.
 
 .PARAMETER Step1GetConfigMgrAppInfo
 Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
@@ -81,11 +81,11 @@ The maximum application run time in minutes. Will only be used if the deployment
 The URI to the Microsoft Win32 Content Prep Tool.
 
 .PARAMETER EntraIDAppID
-The AppID of the Enterprise Application in Azure AD. 
+The AppID of the Enterprise Application in Entra ID with permission: "DeviceManagementApps.ReadWrite.All". 
 Only required if the script should use a custom app instead of the default app: "Microsoft Graph Command Line Tools" AppID=14d82eec-204b-4c2f-b7e8-296a70dab67e
 
 .PARAMETER EntraIDTenantID
-The TenantID of the Enterprise Application in Azure AD.
+The TenantID of the Enterprise Application in Entra ID.
 Only required if the script should use a custom app instead of the default app.
 
 .PARAMETER PublisherIfNoneIsSet
@@ -96,7 +96,26 @@ Default is "IT".
 The description to use if none is set in the ConfigMgr application.
 Default is "Imported app".
 
+.EXAMPLE
+Get a Grid-View which shows all ConfigMgr applications to export metadata about them to an export folder.
 
+Invoke-ConfigMgrAppMigrationToIntune.ps1 -Step1GetConfigMgrAppInfo -SiteCode 'P01' -ProviderMachineName 'CM01' -ExportFolder 'C:\ExportToIntune'
+
+.EXAMPLE
+Get a Grid-View of exported ConfigMgr applications and create intunewin files for them.
+
+.\Invoke-ConfigMgrAppMigrationToIntune.ps1 -Step2CreateIntuneWinFiles -ExportFolder 'C:\ExportToIntune'
+
+.EXAMPLE
+Get a Grid-View of exported ConfigMgr applications and upload them to Intune.
+
+.\Invoke-ConfigMgrAppMigrationToIntune.ps1 -Step3UploadAppsToIntune -ExportFolder 'C:\ExportToIntune'
+
+.EXAMPLE
+Get a Grid-View of exported ConfigMgr applications and upload them to Intune via a custom Entra ID app registration.
+Entra-ID app needs to be registered in Entra ID with permission: "DeviceManagementApps.ReadWrite.All". 
+
+.\Invoke-ConfigMgrAppMigrationToIntune.ps1 -Step3UploadAppsToIntune -ExportFolder 'C:\ExportToIntune' -EntraIDAppID '365908cc-fd28-43f7-94d2-f88a65b1ea21' -EntraIDTenantID 'contoso.onmicrosoft.com'
 
 #>
 [CmdletBinding(DefaultParameterSetName='Default')]
@@ -187,6 +206,15 @@ if(-not ([System.Security.Principal.WindowsPrincipal][System.Security.Principal.
     #Exit 0 
 }
 #endregion
+
+#region before doing anything lets check if a run modes was picked
+if (-NOT ($Step1GetConfigMgrAppInfo -or $Step2CreateIntuneWinFiles -or $Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $RunAllActions))
+{
+    Get-Help $($MyInvocation.MyCommand.Definition)
+    break
+}
+#endregion
+
 
 
 #region Write-CMTraceLog
@@ -774,16 +802,6 @@ function Out-DataFile
 }
 
 ## MAIN SCRIPT
-
-#region before doing anything lets check if a run modes was picked
-if (-NOT ($Step1GetConfigMgrAppInfo -or $Step2CreateIntuneWinFiles -or $Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $RunAllActions))
-{
-    Write-Warning 'Specify the run mode of the script via one of the switch parameters:'
-    Write-Warning 'Step1GetConfigMgrAppInfo or Step2CreateIntuneWinFiles or Step3UploadAppsToIntune or CreateIntuneWinFilesAndUploadToIntune or RunAllActions'
-    break
-}
-#endregion
-
 
 #region folder creation if not done already
 # Validate path and create if not there yet
