@@ -1,23 +1,23 @@
-#************************************************************************************************************
-# Disclaimer
-#
-# This sample script is not supported under any Microsoft standard support program or service. This sample
-# script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
-# including, without limitation, any implied warranties of merchantability or of fitness for a particular
-# purpose. The entire risk arising out of the use or performance of this sample script and documentation
-# remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
-# production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
-# damages for loss of business profits, business interruption, loss of business information, or other
-# pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
-# if Microsoft has been advised of the possibility of such damages.
-#************************************************************************************************************
-
 <#
 .SYNOPSIS
     This script will check the version of SQL Server Reporting Services and PowerBI Report Server and compare it to the version 
     of the SQL Server Reporting Services in a ConfigMgr environment.
 
 .DESCRIPTION
+    #************************************************************************************************************
+    # Disclaimer
+    #
+    # This sample script is not supported under any Microsoft standard support program or service. This sample
+    # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+    # including, without limitation, any implied warranties of merchantability or of fitness for a particular
+    # purpose. The entire risk arising out of the use or performance of this sample script and documentation
+    # remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+    # production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+    # damages for loss of business profits, business interruption, loss of business information, or other
+    # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+    # if Microsoft has been advised of the possibility of such damages.
+    #************************************************************************************************************
+
     This script will check the version of SQL Server Reporting Services and PowerBI Report Server and compare it to the version 
     of the SQL Server Reporting Services in a ConfigMgr environment. The script will output the results in the console as a single object.
 
@@ -293,7 +293,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
     }
  
     # Total List results
-    Write-Output "Found $($versionObjectList.count) versions of Report Server"
+    Write-Verbose "Found $($versionObjectList.count) versions of Report Server"
  
  
     $finalServerList = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -335,7 +335,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
                 {
                     $latestBuild = ($buildVersionListGreaterEqualServerVersion | Select-Object -First 1).Build
                     $outString = 'Report Server Build Version "{0}" is {1} version/s behind latest version: "{2}"' -f ($Server.BuildVersion), ($buildVersionListGreaterEqualServerVersion.count -1), $latestBuild
-                    Write-Host $outString
+                    Write-Verbose $outString
                     $Server.Status = $outString
                     $server.VersionStringLatest = ($buildVersionListGreaterEqualServerVersion | Select-Object -First 1).VersionString
                     $newVersionFound = $true
@@ -348,6 +348,7 @@ if ($simplifiedListOfReportServers.count -gt 0)
 else
 {
     Write-Host "No Report Servers in ConfigMgr environment found"
+    break
 }
  
 Switch ($OutputMode)
