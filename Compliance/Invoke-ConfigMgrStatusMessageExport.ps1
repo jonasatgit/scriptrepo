@@ -1,3 +1,8 @@
+<#
+.SYNOPSIS
+This script will connect to the ConfigMgr database and retrieve all audit messages since the last run.
+
+.DESCRIPTION
 #************************************************************************************************************
 # Disclaimer
 #
@@ -13,13 +18,8 @@
 # 
 #************************************************************************************************************
 
-<#
-.SYNOPSIS
-Script to analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune.
-
-.DESCRIPTION
 This script will connect to the ConfigMgr database and retrieve all audit messages since the last run. 
-It will then load the correct message DLL and replace the placeholders with the actual data. 
+It will then load the correct message DLL and replace the placeholders with the actual data, since the message text is stored in the DLLs and not in SQL.
 The script will then display the messages in a gridview and allow the user to select the messages to be exported to a new table in the ConfigMgr database.
 
 IMPORTANT: The script needs to run in the 32bit version of PowerShell in order to use the 32bit ConfigMgr dlls
@@ -61,6 +61,14 @@ If set, the script will not show the gridview and will import all messages into 
 .PARAMETER LogFolder
 The path to the folder to store the logfile in
 Default is the script folder
+
+.PARAMETER ShowAuditTableDefinition
+Show the table definition for the custom audit table and exit the script
+
+.PARAMETER MinAuditStartDatetimeString
+If the custom audit table has no data yet, run the script once with this prameter and provide the minimum audit datetime value 
+as string in the following format: yyyy-MM-dd HH:mm:ss.fff"
+This will be used as the start datetime for the query to get all audit messages since that date
 
 #>
 [CmdletBinding()]
@@ -113,6 +121,7 @@ CREATE TABLE [dbo].[AuditStatusMessages](
 	[MessageType] [int] NULL,
 	[ModuleName] [nvarchar](128) NOT NULL,
 	[Component] [nvarchar](128) NOT NULL,
+    [Win32Error] [int] NULL,
 	[MachineName] [nvarchar](128) NOT NULL,
 	[TimeUTC] [datetime] NOT NULL,
 	[DeleteTimeUTC] [datetime] NOT NULL,
@@ -449,10 +458,13 @@ SELECT smsgs.RecordID
 	,smsgs.SiteCode
 	,smsgs.TopLevelSiteCode
 	,smsgs.Component
+    ,smsgs.Win32Error
+    -- Required for the DLL call to work
 	,Case when smsgs.ID&0xF0000000 = '1073741824' THEN '1073741824' --Informational
         WHEN smsgs.ID&0xF0000000 = '-2147483648' THEN '2147483648' --Warning
         WHEN smsgs.ID&0xF0000000 = '-1073741824' THEN '3221225472' --Error
-		END As [Severity]
+		END As [SeverityID]
+    ,smsgs.ID&0xF0000000 as [Severity]
 	,CASE smsgs.ID&0xF0000000
 		WHEN -1073741824 THEN 'Error'
 		WHEN 1073741824 THEN 'Informational'
@@ -554,6 +566,7 @@ foreach ($Row in $Table.Rows)
                 MachineName = $Row.MachineName
                 Component = $Row.Component
                 ModuleName = $Row.ModuleName
+                Win32Error = $Row.Win32Error
                 MessageID = $Row.MessageID
                 MessageText = $null
                 }
@@ -580,7 +593,7 @@ foreach ($Row in $Table.Rows)
         $result = [Win32Api.kernel32]::FormatMessage(
                 0x00000800 -bor 0x00000200 # FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS
                 ,$moduleHandle
-                ,($Row.Severity) -bor ($Row.MessageID)  
+                ,($Row.SeverityID) -bor ($Row.MessageID)  # We need a positive number here
                 ,0 # languageID. 0 = Default.
                 ,$bufferOutput
                 ,$bufferSize
@@ -637,10 +650,10 @@ if (-Not ($RunSilent))
 
 
 #region Import the messages into the AuditStatusMessages table
-$insertStatement = @'
-	INSERT INTO [CM_AuditData].[dbo].[AuditStatusMessages](RecordID,SeverityName,Severity,SiteCode,TopLevelSiteCode,MessageID,MessageType,ModuleName,Component,MachineName,TimeUTC,DeleteTimeUTC,MessageText)
-	VALUES ('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}','{10}','{11}','{12}')
-'@
+$insertStatement = @"
+	INSERT INTO [$($AuditDatabase)].[dbo].[AuditStatusMessages](RecordID,SeverityName,Severity,SiteCode,TopLevelSiteCode,MessageID,MessageType,ModuleName,Component,Win32Error,MachineName,TimeUTC,DeleteTimeUTC,MessageText)
+	VALUES ('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}','{10}','{11}','{12}','{13}')
+"@
 
 
 if ($statusMessageList)
@@ -672,7 +685,7 @@ if ($statusMessageList)
     {
         Try
         {    
-            $cmd.CommandText = $insertStatement -f $entry.RecordID,$entry.SeverityName,$entry.Severity,$entry.SiteCode,$entry.TopLevelSiteCode,$entry.MessageID,$entry.MessageType,$entry.ModuleName,$entry.Component,$entry.MachineName,$entry.TimeUTC,$entry.DeleteTimeUTC,$entry.MessageText
+            $cmd.CommandText = $insertStatement -f $entry.RecordID,$entry.SeverityName,$entry.Severity,$entry.SiteCode,$entry.TopLevelSiteCode,$entry.MessageID,$entry.MessageType,$entry.ModuleName,$entry.Component,$entry.Win32Error,$entry.MachineName,$entry.TimeUTC,$entry.DeleteTimeUTC,$entry.MessageText
             $null = $cmd.ExecuteNonQuery()
         }
         Catch
