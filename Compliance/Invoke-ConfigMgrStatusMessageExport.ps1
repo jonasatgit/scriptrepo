@@ -23,6 +23,8 @@ It will then load the correct message DLL and replace the placeholders with the 
 The script will then display the messages in a gridview and allow the user to select the messages to be exported to a new table in the ConfigMgr database.
 
 IMPORTANT: The script needs to run in the 32bit version of PowerShell in order to use the 32bit ConfigMgr dlls
+IMPORTANT: The script needs to run with the correct permissions to access the ConfigMgr database and the new database to store the exported audit messages in
+IMPORTANT: The script needs the ConfigMgr admin console installed on the machine to get the correct language DLLs
 
 The following steps need to be done before running the script:
 1. Create a new database to store the exported audit messages in
