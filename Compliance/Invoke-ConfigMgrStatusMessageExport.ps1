@@ -68,43 +68,84 @@ Default is the script folder
 Show the table definition for the custom audit table and exit the script
 
 .PARAMETER MinAuditStartDatetimeString
-If the custom audit table has no data yet, run the script once with this prameter and provide the minimum audit datetime value 
-as string in the following format: yyyy-MM-dd HH:mm:ss.fff"
-This will be used as the start datetime for the query to get all audit messages since that date
+This parameter can be used to limit the query to get all audit messages since a specific UTC datetime.
+Provide a string in the following format: yyyy-MM-dd HH:mm:ss.fff"
+Without the parameter, the script will get all audit status messages in case the new table is empty.
+Otherwise, the script will only get audit status messages since the last entry in the custom table.
+Example: -MinAuditStartDatetimeString '2024-01-08 08:22:36.000'
+
+.PARAMETER MaxGridViewEntries
+The maximum number of entries to show in the gridview
+Default is 500
+
+.EXAMPLE
+Show the table definition for the custom audit table and exit the script
+Invoke-ConfigMgrStatusMessageExport.ps1 -ShowAuditTableDefinition
+
+.EXAMPLE
+Get data from ConfigMgr and store in same SQL server in new database. 
+Invoke-ConfigMgrStatusMessageExport.ps1 -CMSQLServer "CM02.contoso.local\INST02" -CMDatabase "CM_P02" -AuditSQLServer "CM02.contoso.local\INST02" -AuditDatabase "CM_AuditData"
+
+.EXAMPLE
+Get data from ConfigMgr starting with a specific date and store in same SQL server in new database. 
+Invoke-ConfigMgrStatusMessageExport.ps1 -CMSQLServer "CM02.contoso.local\INST02" -CMDatabase "CM_P02" -AuditSQLServer "CM02.contoso.local\INST02" -AuditDatabase "CM_AuditData" -MinAuditStartDatetimeString '2024-01-08 08:22:36.000'
 
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'DefaultSet')]
 param
 (
-    [Parameter(Mandatory=$False, HelpMessage="The SQL server name (and instance name where appropriate)")]
-    [string]$CMSQLServer = "CM02.contoso.local\INST02",
-    [Parameter(Mandatory=$False, HelpMessage="The name of the ConfigMgr database")]
-    [string]$CMDatabase = "CM_P02",
-    [Parameter(Mandatory=$False, HelpMessage="The SQL server name (and instance name where appropriate)")]
-    [string]$AuditSQLServer = "CM02.contoso.local\INST02",
-    [Parameter(Mandatory=$False, HelpMessage="The name of the ConfigMgr database")]
-    [string]$AuditDatabase = "CM_AuditData",
-    [Parameter(Mandatory=$False, HelpMessage="The language in which the message text should be returned")]
+    [Parameter(Mandatory=$True, HelpMessage="The SQL server name (and instance name where appropriate)", ParameterSetName='DefaultSet')]
+    [string]$CMSQLServer,
+
+    [Parameter(Mandatory=$True, HelpMessage="The name of the ConfigMgr database", ParameterSetName='DefaultSet')]
+    [string]$CMDatabase,
+
+    [Parameter(Mandatory=$True, HelpMessage="The SQL server name (and instance name where appropriate)", ParameterSetName='DefaultSet')]
+    [string]$AuditSQLServer,
+
+    [Parameter(Mandatory=$True, HelpMessage="The name of the ConfigMgr database", ParameterSetName='DefaultSet')]
+    [string]$AuditDatabase,
+
+    [Parameter(Mandatory=$False, HelpMessage="The language in which the message text should be returned", ParameterSetName='DefaultSet')]
     [ValidateSet("de-de", "en-us")]
     [string]$OutputLanguage = "en-us",
-    [Parameter(Mandatory=$False, HelpMessage="Should the script run silently?")]
+
+    [Parameter(Mandatory=$False, HelpMessage="Should the script run silently?", ParameterSetName='DefaultSet')]
     [Switch]$RunSilent,
-    [Parameter(Mandatory=$False, HelpMessage="The path to the folder to store the logfile in")]
+
+    [Parameter(Mandatory=$False, HelpMessage="The path to the folder to store the logfile in", ParameterSetName='DefaultSet')]
     [string]$LogFolder,
-    [Parameter(Mandatory=$False, HelpMessage="Show audit table definition")]
+
+    [Parameter(Mandatory=$False, HelpMessage="If the custom audit table has no data yet, run the script once with this parameter and provide the minimum audit datetime value as string in the following format: yyyy-MM-dd HH:mm:ss.fff", ParameterSetName='DefaultSet')]
+    [string]$MinAuditStartDatetimeString,
+
+    [Parameter(Mandatory=$False, HelpMessage="Show audit table definition", ParameterSetName='AuditTableDefinitionSet')]
     [switch]$ShowAuditTableDefinition,
-    [Parameter(Mandatory=$False, HelpMessage="If the custom audit table has no data yet, run the script once with this prameter and provide the minimum audit datetime value as string in the following format: yyyy-MM-dd HH:mm:ss.fff")]
-    [string]$MinAuditStartDatetimeString = '2024-01-08 08:22:36.137'
+
+    [Parameter(Mandatory=$False, HelpMessage="The maximum number of entries to show in the gridview", ParameterSetName='DefaultSet')]
+    [int]$MaxGridViewEntries = 500
 )
+
+#region set output mode
+if ($RunSilent)
+{
+    $Script:LogOutputMode = 'Log'
+}
+else
+{
+    $Script:LogOutputMode = 'ConsoleAndLog'
+}
+#endregion
 
 
 #region audit table definition
 $auditTableInfo = @'
+
 ------------------------------------------------------
 -- Table definition for AuditStatusMessages
 -- This table will store the exported audit messages
 -- Change the database name to your needs before running the script: "USE [CM_AuditData]"
--- Run the  SQL script in SQL Management Stuido to create the table
+-- Run the SQL script in SQL Management Studio to create the table
 -- Then run the PowerShell script with the correct parameters to export the audit messages into the new table
 ------------------------------------------------------
 USE [CM_AuditData]
@@ -138,6 +179,7 @@ ALTER TABLE [dbo].[AuditStatusMessages]  WITH NOCHECK ADD  CONSTRAINT [StatusMes
 GO
 ALTER TABLE [dbo].[AuditStatusMessages] CHECK CONSTRAINT [StatusMessages_RecordID_Partition_CK]
 GO
+
 '@
 #endregion
 
@@ -145,7 +187,10 @@ GO
 #region show audit definition
 if ($ShowAuditTableDefinition)
 {
-    Write-Host $auditTableInfo
+    Write-Host $auditTableInfo -ForegroundColor Gray
+    $auditTableInfo | Clip
+    Write-Host "Table definition for AuditStatusMessages has been copied to the clipboard" -ForegroundColor Green
+    Write-Host "Simply paste in SQL Management Studio" -ForegroundColor Green
     break
 }
 #endregion
@@ -159,15 +204,24 @@ if ([Environment]::Is64BitProcess)
 }
 #endregion
 
+if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
+{
+    if ($MinAuditStartDatetimeString -inotmatch '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}')
+    {
+        Write-Warning "Parameter -MinAuditStartDatetimeString is not in the correct format. Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
+        break   
+    }
+}
+
 
 #region Logfile
 if (-NOT($LogFolder))
 {
-    $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+    $Script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
 }
 else 
 {
-    $Global:LogFilePath = '{0}\{1}.log' -f $LogFolder, ($MyInvocation.MyCommand)
+    $Script:LogFilePath = '{0}\{1}.log' -f $LogFolder, ($MyInvocation.MyCommand)
 }
 #endregion
 
@@ -186,7 +240,7 @@ function Write-CMTraceLog
     (
         #Path to the log file
         [parameter(Mandatory=$false)]
-        [String]$LogFile=$Global:LogFilePath,
+        [String]$LogFile=$Script:LogFilePath,
 
         #The information to log
         [parameter(Mandatory=$true)]
@@ -204,7 +258,7 @@ function Write-CMTraceLog
         # write to console only
         [Parameter(Mandatory=$false)]
         [ValidateSet("Console","Log","ConsoleAndLog")]
-        [string]$OutputMode = 'Log'
+        [string]$OutputMode = $Script:LogOutputMode
     )
 
 
@@ -270,7 +324,7 @@ Function Invoke-LogfileRollover
 Param(
         #Path to test
         [parameter(Mandatory=$False)]
-        [string]$Logfile= $Global:LogFilePath,
+        [string]$Logfile= $Script:LogFilePath,
         
         #max Size in KB
         [parameter(Mandatory=$False)]
@@ -379,6 +433,8 @@ if (-NOT (Test-Path $dllPath))
 try 
 {
     $query = "SELECT convert(varchar, max(stat.TimeUTC), 121) as [LastTime], Count(1) as [EntryCounter] FROM [dbo].[AuditStatusMessages] stat"
+    Write-CMTraceLog -Message "Will get the last time of audit messages in custom table by running:"
+    Write-CMTraceLog -Message $query
     $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
     Write-CMTraceLog -Message "Connect to SQL to get last status messages time from custom audit table"
     write-cmtracelog -Message "SQL connection string: `"$connectionString`""
@@ -412,7 +468,7 @@ $queryOperator = '>'
 if ($Table.Rows.EntryCounter[0] -eq 0)
 {
     Write-CMTraceLog -Message "No SQL results found with query! Table might be new." -Severity Warning
-    if($MinAuditStartDatetimeString)
+    if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
     {
         Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is set to: `"$MinAuditStartDatetimeString`" will use that as start date"
         $StartDateTimeValue = $MinAuditStartDatetimeString
@@ -421,31 +477,16 @@ if ($Table.Rows.EntryCounter[0] -eq 0)
     }
     else
     {
-        Write-CMTraceLog -Message "No results from SQL query and parameter -MinAuditStartDatetimeString not set"
-        Write-CMTraceLog -Message "If the table was just created, get the minimum audit datetime with the following query from the ConfigMgr database:"
-        Write-CMTraceLog -Message "`"SELECT convert(varchar, min(smsgs.Time), 121) as [MinTime] FROM v_StatusMessage smsgs where smsgs.MessageType = 768`""
-        Write-CMTraceLog -Message "Then run the script again with the -MinAuditStartDatetimeString parameter to get all the audit messages since that date"
-        Write-CMTraceLog -Message "End script with error"
-        Exit
+        Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is not set"
+        Write-CMTraceLog -Message "While the query will now get all available audit messages from ConfigMgr DB, the GridView will only show the last $($MaxGridViewEntries) entries" -Severity Warning
+        Write-CMTraceLog -Message "(Grid-View will not show up when parameter -RunSilent is set. The GridView is meant for testing purposes only)" 
     }
-
 }
 else
 {
     $StartDateTimeValue = $table.LastTime
 }
-
-
-# regex to check if the value is indead in the format of a datetime like 2024-06-12 22:23:43.070
-if ($StartDateTimeValue -notmatch '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}$')
-{
-    Write-CMTraceLog -Message "No valid datetime found in SQL results for startdatetime" -Severity Error
-    Write-CMTraceLog -Message "Current value: `"$StartDateTimeValue`" Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
-    Write-CMTraceLog -Message "End script with error"
-    Exit
-}
 #endregion
-
 
 #region Get all new audit messages from ConfigMgr DB
 # Define the SQL query
@@ -499,8 +540,28 @@ and smsgs.Time {0} '{1}'
 Order by smsgs.Time DESC
 "@
 
-# addind operator and datetime value
+
+
+
+
+# addind operator and datetime value even if we don't have a datetime
 $query = $query -f $queryOperator, $StartDateTimeValue
+
+if ([string]::IsNullOrEmpty($StartDateTimeValue))
+{
+    $query = $query -replace 'and smsgs.Time', '--and smsgs.Time'
+}
+else {
+    # regex to check if the value is indead in the format of a datetime like 2024-06-12 22:23:43.070
+    if ($StartDateTimeValue -notmatch '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}$')
+    {
+        Write-CMTraceLog -Message "No valid datetime found in SQL results for startdatetime" -Severity Error
+        Write-CMTraceLog -Message "Current value: `"$StartDateTimeValue`" Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
+        Write-CMTraceLog -Message "End script with error"
+        Exit
+    }
+    #endregion
+}
 
 
 try 
@@ -513,7 +574,7 @@ try
     $connection.Open()
     # Run the query
     $command = $connection.CreateCommand()
-    $command.CommandText = ($query -f $queryOperator, $StartDateTimeValue)
+    $command.CommandText = $query
     $reader = $command.ExecuteReader()
     $table = new-object "System.Data.DataTable"
     # Load data
@@ -636,7 +697,8 @@ foreach ($Row in $Table.Rows)
 #region show gridview if not run silent
 if (-Not ($RunSilent))
 {
-    [array]$selectedStatusMessages = $statusMessageList | Out-GridView -OutputMode Multiple -Title 'Select the messages you want to import into the AuditStatusMessages table'
+    $gvTitle = "Select the messages you want to import into the new audit status message table. HOTE: Only $($MaxGridViewEntries) messages will be shown in the gridview"
+    [array]$selectedStatusMessages = $statusMessageList | Select-Object -Last $MaxGridViewEntries | Out-GridView -OutputMode Multiple -Title $gvTitle
     if ($selectedStatusMessages.count -gt 0)
     {
         $statusMessageList = $selectedStatusMessages
