@@ -182,7 +182,10 @@ if ($FolderPath)
     {
         if ($filesToDelete.count -gt 0)
         {
-            $filesToDelete | Remove-Item -Force
+            foreach($file in $filesToDelete)
+            {
+                Remove-Item -Path $file.FullName -Force
+            }
         }
     }
     else
