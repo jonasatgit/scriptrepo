@@ -62,7 +62,7 @@ param(
     [string]$PwdVariableName = "Variable2",
     [string]$RunbookName = 'New Runbook 01',
     [hashtable]$RunbookParams = @{'Parameter 1'='Some text';'Parameter 2'='Some other text'},
-    [switch]$TestMode = $true
+    [switch]$TestMode
 )
 
 #region Get Credentils
