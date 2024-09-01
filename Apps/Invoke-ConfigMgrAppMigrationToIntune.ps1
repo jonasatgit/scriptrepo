@@ -20,6 +20,22 @@ Script to analyze ConfigMgr applications, create Intune win32 app packages and u
 
 
 This script will analyze ConfigMgr applications, create Intune win32 app packages and upload them to Intune. 
+
+Foreword:
+The script is influenced by the fantastic blog from Ben Whitmore and uses a similar logic:
+https://byteben.com/bb/automatically-migrate-applications-from-configmgr-to-intune-with-the-win32app-migration-tool/
+Git repository: https://github.com/byteben/Win32App-Migration-Tool
+Why re-invent the wheel? I used this as a learning oppertunity to get a better understanding of the logic behind the whole migration process.
+I also needed a specific and automated way to analyze ConfigMgr apps to see if a migration could be possible.
+
+The script also contains a re-written function originally written by Paul Wetter and David O'Brian to document ConfigMgr.
+I needed a slightly different approach to get the data in a way I can use for Intune. 
+https://github.com/paulwetter/DocumentConfigMgrCB
+
+The Intune upload logic comes from the Intune PowerShell samples and is slightly modified to fit the script:
+https://github.com/microsoftgraph/powershell-intune-samples
+
+Main description:
 The script is devided into different actions, which can be run separately in groups or all together.
 While the script was thourougly tested, it is recommended to test the script in a test environment before running it in production.
 And even in production, it is recommended to run the script in a controlled manner to avoid any issues.
@@ -389,6 +405,10 @@ function Get-SanitizedString
     Function to get the enhanced detection data from the ConfigMgr application detection method XML
 
 .DESCRIPTION
+    This function is a re-written version of the function Get-FilterEDM from the script DocumentConfigMgrCB.ps1 by Paul Wetter.
+    Source: https://github.com/paulwetter/DocumentConfigMgrCB
+    I needed a slightly different approach to get the data in a way I can use for Intune.
+
     The function will get the enhanced detection data from the ConfigMgr application detection method XML. 
     The function will return a list of all settings and rules for each app.
     The outobject will contain a flat list and a list with all settings and rules with group information.
