@@ -61,7 +61,7 @@ param(
     [string]$UserVariableName = "Variable1",
     [string]$PwdVariableName = "Variable2",
     [string]$RunbookName = 'New Runbook 01',
-    [hashtable]$RunbookParams = @{'Parameter 1'='Some text';'Parameter 2'='Some other text'},
+    [hashtable]$RunbookParams, # Example @{'Parameter 1'='Some text';'Parameter 2'='Some other text'},
     [switch]$TestMode
 )
 
