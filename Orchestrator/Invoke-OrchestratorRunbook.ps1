@@ -130,9 +130,15 @@ else
 {
     Write-Host "Will test if we have just one runbook with the name: `"$($RunbookName)`""
     Write-Host "Found $($runbooksList.value.count) runbooks with the name: `"$($RunbookName)`""
-    if($runbooksList.value.count -ne 1)
+    if ($runbooksList.value.count -eq 0)
     {
-        Write-Host "The name must be unique. Will stop script." 
+        Write-Host "No runbook found with name: `"$($RunbookName)`"."
+        Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
+        Exit 1 # to let a task sequence step fail
+    }    
+    elseif($runbooksList.value.count -gt 1)
+    {
+        Write-Host "Found $($runbooksList.value.count) runbooks with same name. The name must be unique. Will stop script." 
         Exit 1 # to let a task sequence step fail
     }
     else 
