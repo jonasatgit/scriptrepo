@@ -1045,7 +1045,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         $hasDependency = $true
                     }
 
-                    # Check for executales that must be closed
+                    # Check for executables that must be closed
                     $appDeploymenTypesExeList = [System.Collections.Generic.List[pscustomobject]]::new()
                     If([string]::IsNullOrEmpty($deploymentType.Installer.CustomData.InstallProcessDetection))
                     {
