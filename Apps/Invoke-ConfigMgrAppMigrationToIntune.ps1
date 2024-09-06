@@ -1095,7 +1095,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
-                    elseif ($dtInstallCommandLine -match "\.exe" -and $dtInstallCommandLine -notmatch "msiexec" -and $dtInstallCommandLine -notmatch "cscript" -and $dtInstallCommandLine -notmatch "wscript") 
+                    elseif ($dtInstallCommandLine -match "\.exe" -and $dtInstallCommandLine -notmatch "msiexec\.exe" -and $dtInstallCommandLine -notmatch "cscript\.exe" -and $dtInstallCommandLine -notmatch "wscript\.exe")
                     {
                         $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(exe))'
                         $intuneWinAppUtilSetupFile = $Matches[1]
