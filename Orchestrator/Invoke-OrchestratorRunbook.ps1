@@ -65,15 +65,15 @@
 
 .EXAMPLE
     Run a runbook in testmode with runbook parameters
-    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
 
 .EXAMPLE
     Run a runbook in testmode with runbook parameters and a given username
-    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
 
 .EXAMPLE
     Run a runbook in ConfigMgr task sequence mode with runbook parameters
-    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -UserVariableName 'Variable1' -PwdVariableName 'Variable2' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -UserVariableName 'Variable1' -PwdVariableName 'Variable2' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
