@@ -1,6 +1,6 @@
 <#
 .Synopsis
-    Script to invoke an Orchestrator runbook from a ConfigMgr task sequence using a REST API call with credentials from task sequence variables
+    Script to invoke a System Center Orchestrator 2022 runbook from a ConfigMgr task sequence using a REST API call with credentials from task sequence variables
     
 .DESCRIPTION
     #************************************************************************************************************
@@ -17,13 +17,26 @@
     # if Microsoft has been advised of the possibility of such damages.
     #************************************************************************************************************
 
-    Script to invoke an Orchestrator runbook from a ConfigMgr task sequence using a REST API call with credentials.    
+    Script to invoke a System Center Orchestrator 2022 runbook from a ConfigMgr task sequence using a REST API call with credentials.    
     The script will try to get the credentials from task sequence variables. If the credentials could not be determined, the script will prompt for credentials.
     The script will then try to get the runbook ID from the Orchestrator web service. If the runbook ID could not be determined, the script will stop.
     The script will then create a runbook job and wait for the runbook to complete. If the runbook does not complete within the specified time, the script will stop.
 
-.PARAMETER OrchURI
-    The URI of the Orchestrator web service. Default is 'https://orch.contoso.local:8181'
+    The script will return an exit code of 1 if the runbook job failed or if the runbook ends with a warning.
+    Warning typically means that the runbook started but did not fully complete.
+
+    Permission requirements:
+    The user used in the script must have read adn publish permissions on the runbook.
+    Publish permission can be found in the permissions tab under advanced in the Runbook Designer.
+
+    NOTE:
+    Script output will always be written to the smsts.log file. (By default no sensitive information will be written to the smsts.log file)
+    If you need to have the PowerShell run command with all parameters in the smsts.log, set the task sequence variable OSDLogPowerShellParameters to true.
+    https://learn.microsoft.com/en-us/mem/configmgr/osd/understand/task-sequence-variables#OSDLogPowerShellParameters
+    
+
+.PARAMETER ScorchURI
+    System Center Orchestrator web API service URI e.g. 'https://scorch.contoso.local:8181'
 
 .PARAMETER MaxJobRuntimeSec
     The maximum time in seconds the script will wait for the runbook to complete. Default is 30 seconds
@@ -46,13 +59,21 @@
     In test mode the script will prompt for credentials.
     In production mode the script will try to get the credentials from task sequence variables.
 
+.PARAMETER TestModeUserName
+    The username to use in test mode. If not specified, the script will prompt for username.
+    Example: 'contoso\svc-scorch-user'
+
 .EXAMPLE
     Run a runbook in testmode with runbook parameters
-    Invoke-OrchestratorRunbook.ps1 -OrchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
+    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
+
+.EXAMPLE
+    Run a runbook in testmode with runbook parameters and a given username
+    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
 
 .EXAMPLE
     Run a runbook in ConfigMgr task sequence mode with runbook parameters
-    Invoke-OrchestratorRunbook.ps1 -OrchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -UserVariableName 'Variable1' -PwdVariableName 'Variable2' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+    Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -UserVariableName 'Variable1' -PwdVariableName 'Variable2' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -61,19 +82,27 @@
 
 [CmdletBinding()]
 param(
-    [string]$OrchURI = 'https://orch.contoso.local:8181',  
+    [string]$ScorchURI, # System Center Orchestrator web API service URI e.g. 'https://scorch.contoso.local:8181',
     [int]$MaxJobRuntimeSec = 30,
     [string]$UserVariableName = "Variable1",
     [string]$PwdVariableName = "Variable2",
-    [string]$RunbookName = 'New Runbook 01',
-    [hashtable]$RunbookParams, # Example @{'Parameter 1'='Some text';'Parameter 2'='Some other text'},
-    [switch]$TestMode
+    [string]$RunbookName,
+    [hashtable]$RunbookParams,
+    [switch]$TestMode,
+    [string]$TestModeUserName
 )
 
 #region Get Credentils
 if ($TestMode)
 {
-    $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
+    if ([string]::IsNullOrEmpty($TestModeUserName))
+    {
+        $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
+    }
+    else 
+    {
+        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
+    }
 }
 else 
 {
@@ -124,6 +153,7 @@ catch
 if ($null -eq $runbooksList.value)
 {
     Write-Host "No runbook found with name: `"$($RunbookName)`""
+    Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
     Exit 1 # to let a task sequence step fail
 }
 else 
@@ -192,8 +222,9 @@ catch
     Write-Host $_
     if ($_ -imatch '\(400\) Bad Request')
     {
-        Write-Host "Bad Request typically translates to a problem with runbook parameters."
+        Write-Host "Bad Request typically translates to a problem with runbook parameters"
         Write-Host "Please check the runbook parameter names passed to the script and the ones of the runbook"
+        Write-Host "It might also be a missing `"`Publish`" permission on the runbook for the user used in this script"
     }
     Exit 1 # to let a task sequence step fail
 }
