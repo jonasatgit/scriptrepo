@@ -222,9 +222,10 @@ catch
     Write-Host $_
     if ($_ -imatch '\(400\) Bad Request')
     {
-        Write-Host "Bad Request typically translates to a problem with runbook parameters"
-        Write-Host "Please check the runbook parameter names passed to the script and the ones of the runbook"
-        Write-Host "It might also be a missing `"`Publish`" permission on the runbook for the user used in this script"
+        Write-Host "Error 400 bad request typically has one of the following reasons:"
+        Write-Host "Runbook parameter names don't match the runbook parameter names in the runbook"
+        Write-Host "`"`Publish`" permission on the runbook for the user used in this script is missing"
+        Write-Host "Runbook is checked out in the Runbook Designer"
     }
     Exit 1 # to let a task sequence step fail
 }
@@ -263,6 +264,11 @@ try
     if ($runbookJobResult.RunbookInstances.Status -inotmatch 'Success')
     {
         Write-Host "Runbook completed with status: $($runbookJobResult.RunbookInstances.Status)"
+        If ($runbookJobResult.RunbookInstances.Status -imatch 'warning')
+        {
+            Write-Host 'The runbook started successfully but did not fully complete'
+            Write-Host 'Warning could also mean that a parameter was missing for the iniliazation of the runbook'
+        }
         Exit 1 # to let a task sequence step fail
     }
     else 
