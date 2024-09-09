@@ -137,7 +137,7 @@ Write-Host "Will try to get RunbookID for runbook: `"$($RunbookName)`""
 try 
 {
     $parmSplat = @{
-        Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $OrchURI, $RunbookName
+        Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $ScorchURI, $RunbookName
         Method = 'Get'
         Credential = $credential
         ErrorAction = 'Stop'
@@ -207,7 +207,7 @@ try
 
     Write-Host "Will create runbook job and post json definition"
     $invokeRunbookParamSplat = @{
-        Uri = '{0}/api/Jobs' -f $OrchURI
+        Uri = '{0}/api/Jobs' -f $ScorchURI
         Body = ($body | ConvertTo-Json -Depth 10)
         Method = 'Post'
         ContentType = 'application/json'
@@ -240,7 +240,7 @@ try
     {
         Start-Sleep -Seconds 2
         $runbookJobParamSplat = @{
-            Uri = '{0}/api/Jobs/{1}?&$expand=RunbookInstances' -f $OrchURI, $runbookJob.Id
+            Uri = '{0}/api/Jobs/{1}?&$expand=RunbookInstances' -f $ScorchURI, $runbookJob.Id
             Method = 'Get' 
             ContentType = 'application/json'
             Credential = $credential
