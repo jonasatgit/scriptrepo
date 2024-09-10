@@ -194,7 +194,8 @@
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",
-                            "HTTPS"
+                            "HTTPS",
+                            "ExpressUpdates"
                         ]
         },        
         {
@@ -1134,6 +1135,13 @@
             "Port": "443",
             "Program": "",
             "Description": "HTTPS"    
+        },
+        {
+            "Name": "ExpressUpdates",
+            "Protocol": "TCP",
+            "Port": "8005",
+            "Program": "",
+            "Description": "ExpressUpdates"    
         },
         {
             "Name": "FastChannel",
