@@ -188,7 +188,7 @@ param
     [string]$OutputMode = 'ConsoleAndLog'
 )
 
-$scriptVersion = '20240930'
+$scriptVersion = '20240912'
 $script:LogOutputMode = $OutputMode
 #$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
 $script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
