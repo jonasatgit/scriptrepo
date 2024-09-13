@@ -188,7 +188,7 @@ param
     [string]$OutputMode = 'ConsoleAndLog'
 )
 
-
+$scriptVersion = '20240930'
 $script:LogOutputMode = $OutputMode
 #$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
 $script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
@@ -870,6 +870,7 @@ Invoke-LogfileRollover -Logfile $script:LogFilePath -MaxFileSizeKB 2048
 
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of main script'
+Write-CMTraceLog -Message "Scriptversion: $($scriptVersion)"
 Write-CMTraceLog -Message "Export will be made to folder: $($ExportFolder)"
 #endregion
 
@@ -1091,37 +1092,37 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                     $Matches = $null
                     if ($dtInstallCommandLine -match "powershell" -and $dtInstallCommandLine -match "\.ps1") 
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(ps1))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.ps1)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.exe" -and $dtInstallCommandLine -notmatch "msiexec\.exe" -and $dtInstallCommandLine -notmatch "cscript\.exe" -and $dtInstallCommandLine -notmatch "wscript\.exe")
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(exe))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.exe)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.msi") 
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(msi))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.msi)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.vbs") 
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(vbs))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.vbs)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.cmd") 
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(cmd))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.cmd)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.bat") 
                     {
-                        $null = $dtInstallCommandLine -match '[\s"\\]([^"\\]*\.(bat))'
+                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.bat)"
                         $intuneWinAppUtilSetupFile = $Matches[1]
                         $Matches = $null
                     }
