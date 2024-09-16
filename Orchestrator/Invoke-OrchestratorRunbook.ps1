@@ -18,7 +18,10 @@
     #************************************************************************************************************
 
     Script to invoke a System Center Orchestrator 2022 runbook from a ConfigMgr task sequence using a REST API call with credentials.    
-    The script will try to get the credentials from task sequence variables. If the credentials could not be determined, the script will prompt for credentials.
+    The script will try to get the credentials from task sequence variables.
+    The task sequence variables must be set before the script is run and the names can be defined via the parameters UserVariableName and PwdVariableName of this script.
+    The main reason to read task sequence variables is to avoid storing sensitive information in the script and to avoid accidental exposure of sensitive information in any log file.
+    The script can also be run in test mode where the script will prompt for credentials.
     The script will then try to get the runbook ID from the Orchestrator web service. If the runbook ID could not be determined, the script will stop.
     The script will then create a runbook job and wait for the runbook to complete. If the runbook does not complete within the specified time, the script will stop.
 
@@ -26,7 +29,7 @@
     Warning typically means that the runbook started but did not fully complete.
 
     Permission requirements:
-    The user used in the script must have read adn publish permissions on the runbook.
+    The user used in the script must have read and publish permissions on the runbook.
     Publish permission can be found in the permissions tab under advanced in the Runbook Designer.
 
     NOTE:
@@ -43,9 +46,11 @@
 
 .PARAMETER UserVariableName
     The name of the task sequence variable that contains the username.
+    Default is 'Variable1'. Adjust this parameter if you want to use a different task sequence variable name.
 
 .PARAMETER PwdVariableName
     The name of the task sequence variable that contains the password.
+    Default is 'Variable2'. Adjust this parameter if you want to use a different task sequence variable name.
 
 .PARAMETER RunbookName
     The name of the runbook to start.
@@ -64,16 +69,26 @@
     Example: 'contoso\svc-scorch-user'
 
 .EXAMPLE
+    Run a runbook in testmode without runbook parameters
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -TestMode
+
+.EXAMPLE
     Run a runbook in testmode with runbook parameters
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
 
 .EXAMPLE
     Run a runbook in testmode with runbook parameters and a given username
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
 
 .EXAMPLE
-    Run a runbook in ConfigMgr task sequence mode with runbook parameters
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -MaxJobRuntimeSec 10 -UserVariableName 'Variable1' -PwdVariableName 'Variable2' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+    Run a runbook in ConfigMgr task sequence mode with runbook parameters via the "Run PowerShell Script" step.
+    Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
+    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+
+.EXAMPLE
+    Run a runbook in ConfigMgr task sequence mode with runbook parameters passed via task sequence variables via the "Run PowerShell Script" step.
+    Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
+    -ScorchURI '%TS-ScorchURI%' -RunbookName '%TS-RunbookName%' -RunbookParams @{'Parameter 1'='%TS-RunbookParam1%';'Parameter 2'='%TS-RunbookParam1%'}
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
