@@ -1,29 +1,27 @@
-﻿#************************************************************************************************************
-# Disclaimer
-#
-# This sample script is not supported under any Microsoft standard support program or service. This sample
-# script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
-# including, without limitation, any implied warranties of merchantability or of fitness for a particular
-# purpose. The entire risk arising out of the use or performance of this sample script and documentation
-# remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
-# production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
-# damages for loss of business profits, business interruption, loss of business information, or other
-# pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
-# if Microsoft has been advised of the possibility of such damages.
-#************************************************************************************************************
-
-<#
+﻿<#
 .Synopsis
     Script to monitor ConfigMgr/MECM performance counter
     
 .DESCRIPTION
+    #************************************************************************************************************
+    # Disclaimer
+    #
+    # This sample script is not supported under any Microsoft standard support program or service. This sample
+    # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+    # including, without limitation, any implied warranties of merchantability or of fitness for a particular
+    # purpose. The entire risk arising out of the use or performance of this sample script and documentation
+    # remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+    # production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+    # damages for loss of business profits, business interruption, loss of business information, or other
+    # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+    # if Microsoft has been advised of the possibility of such damages.
+    #************************************************************************************************************
+
     The script reads from an in script JSON file called $referenceDataJSON to validate a list of specific performance counter
     The inbox perf counter refresh intervall is 15 minutes. It therefore makes no sense to validate a counter more often. 
     Get the full list of available inbox perf counter via the following command:
     
     Get-WmiObject Win32_PerfRawData_SMSINBOXMONITOR_SMSInbox | select Name, FileCurrentCount
-    
-    Source: https://github.com/jonasatgit/scriptrepo
 
 .PARAMETER OutputMode
     Parameter to be able to output the results in a GridView, special JSON format, special JSONCompressed format,

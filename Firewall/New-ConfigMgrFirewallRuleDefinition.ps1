@@ -125,41 +125,49 @@ param
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowConfig',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [string]$DefinitionFilePath,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [string]$DestinationSystemFQDN,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [string]$GroupSuffix,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$UseAnyAsLocalAddress,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$ValidRulesOnly,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$MergeSimilarRules,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$CreateOutboundRuleForeachInboundRule,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
 
@@ -188,15 +196,12 @@ param
 
     [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
     [switch]$ExportConfigMgrSystemRoleInformation,
-    #[switch]$ExportConfigMgrSystemRoleInformation=$true,
 
     [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
     [string]$ProviderMachineName,
-    #[string]$ProviderMachineName=$env:COMPUTERNAME,
 
     [parameter(ParameterSetName = 'ExportConfigMgrSystemRoleInformation',Mandatory=$true)]
     [string]$SiteCode
-    #[string]$SiteCode='P02'
 )
 
 

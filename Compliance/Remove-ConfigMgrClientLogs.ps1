@@ -23,8 +23,14 @@
     The script will get the log folder path from the registry and delete log files older than a specified number of days.
     It is designed to be run as a ConfigMgr configuration item within a baseline to keep the ConfigMgr client log folder clean.
 
+.PARAMETER DetectionReturnValue
+    A dummy parameter to catch any return value coming from the ConfigMgr detection script.
+    Could be used to pass a value from the detection script to the remediation script, but is not used in this script to keep the script consistent.
+
 .PARAMETER FolderPath
-    The path to the ConfigMgr client log folder. If not specified, the script will get the log folder path from the registry.
+    The path to the ConfigMgr client log folder. If not specified, the script will get the log folder path from the registry automatically.
+    The auto-detected path is coming from: HKLM:\SOFTWARE\Microsoft\CCM\Logging\@Global\LogDirectory
+    Typically the log folder path should be detected automatically, since it can vary. Specifically on Management Points.
 
 .PARAMETER DaysToKeep
     The number of days to keep log files. Log files older than this number of days will be deleted.
@@ -35,11 +41,11 @@
     If set to $false, the script will only output the number of log files that would be deleted.
 
 .PARAMETER FileNamesToExclude
-    An array of file names to exclude from the deletion process. "*"" as wildcard is supported.
+    An array of file names to exclude from the deletion process. "*" as wildcard is supported.
     Cannot be used with FileNamesToInclude together.
 
 .PARAMETER FileNamesToInclude
-    An array of file names to include in the deletion process. "*"" as wildcard is supported.
+    An array of file names to include in the deletion process. "*" as wildcard is supported.
     Cannot be used with FileNamesToExclude together.
 
 .EXAMPLE
@@ -53,17 +59,30 @@
     This example will delete log files older than 7 days from the specified folder.
 
 .EXAMPLE
-    Remove-ConfigMgrClientLogs.ps1 -FolderPath "C:\Windows\CCM\Logs" -DaysToKeep 7 -FileNamesToInclude "*WmiExport*.log"
+    Remove-ConfigMgrClientLogs.ps1 -FolderPath "C:\Windows\CCM\Logs" -DaysToKeep 7 -FileNamesToInclude "*SCNotify*.log"
 
-    This example will delete log files older than 7 days from the specified folder that match the file name "*WmiExport*.log".
+    This example will delete log files older than 7 days from the specified folder that match the file name "*SCNotify*.log".
 #>
 [CmdletBinding()]
 param
 (
+    # The first parameter is to just catch any return value from the detection script in ConfigMgr and does not have any real use.
+    [Parameter(Mandatory=$false,Position=0)]
+    [string]$DetectionReturnValue,
+    
+    [Parameter(Mandatory=$false,Position=1)]
     [string]$FolderPath,
+    
+    [Parameter(Mandatory=$false,Position=2)]
     [int]$DaysToKeep = 30,
+    
+    [Parameter(Mandatory=$false,Position=3)]
     [bool]$Remediate = $false,
+    
+    [Parameter(Mandatory=$false,Position=4)]
     [string[]]$FileNamesToExclude = @(),
+    
+    [Parameter(Mandatory=$false,Position=5)]
     [string[]]$FileNamesToInclude = @("*WmiExport*.log","*SCNotify*.log","*SCToastNotification*.log")
 )
 
@@ -80,9 +99,11 @@ function Get-ConfigMgrClientLogPath
 
         # Get the ConfigMgr client log path from the registry
         $logPath = Get-ItemPropertyValue -Path $registryPath -Name "LogDirectory"
+
     }catch
     {
         Write-Output "ConfigMgr client log path not found $($_)"
+        break
     }
 
     return $logPath
@@ -103,6 +124,15 @@ if(-not $FolderPath)
     $FolderPath = Get-ConfigMgrClientLogPath
 }
 
+
+# Making sure we use the ConfiMgr path
+if ($FolderPath -inotmatch 'ccm\\logs')
+{
+    Write-Output "CCM logpath variable does not match with *ccm\logs -> $($FolderPath)" 
+    break
+}
+
+# Main detection and remediation logic
 $today = Get-Date
 if ($FolderPath)
 {
@@ -152,7 +182,10 @@ if ($FolderPath)
     {
         if ($filesToDelete.count -gt 0)
         {
-            $filesToDelete | Remove-Item -Force
+            foreach($file in $filesToDelete)
+            {
+                Remove-Item -Path $file.FullName -Force
+            }
         }
     }
     else
