@@ -66,6 +66,11 @@ To store the individual items the script will create the following folder under 
 
 The script will create a log file in the same directory as the export and not next to the script.
 
+Changelog:
+20240923 - Fixed an issue with UNC path detection in the install or uninstall command.
+20240912 - Fixed an issue with the installcommand detection of ConfigMgr applications. Commands without quotes would not be detected correctly.
+
+
 .PARAMETER Step1GetConfigMgrAppInfo
 Get information about ConfigMgr applications.  All selected apps will be exported to a folder without content.
 
@@ -188,7 +193,7 @@ param
     [string]$OutputMode = 'ConsoleAndLog'
 )
 
-$scriptVersion = '20240912'
+$scriptVersion = '20240923'
 $script:LogOutputMode = $OutputMode
 #$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
 $script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
@@ -985,6 +990,10 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                 ReleaseDate = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.ReleaseDate
                 InfoUrl = $appXmlContent.AppMgmtDigest.Application.DisplayInfo.Info.InfoUrl
                 IconId = $appXmlContent.AppMgmtDigest.Resources.Icon.Id
+                InstallContent = $null
+                InstallCommandLine = $null
+                IntuneWinAppUtilSetupFile = $null
+                UninstallCommandLine = $null
                 IconPath = $IconPath
                 IntunewinFilePath = $null
                 DeploymentTypes = $null
@@ -1134,12 +1143,12 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                     }  
                     
                     
-                $rebootBehaviorConversionHash = @{
-                    "BasedOnExitCode" = "basedOnReturnCode" # IntuneName: Determine behavior based on return codes
-                    "NoAction" = 'suppress' # IntuneName: No specific action
-                    "ProgramReboot" = "allow" # IntuneName:App install may force a device restart
-                    "ForceReboot" = 'force' # IntuneName: Intune will force a mandatory device restart
-                }
+                    $rebootBehaviorConversionHash = @{
+                        "BasedOnExitCode" = "basedOnReturnCode" # IntuneName: Determine behavior based on return codes
+                        "NoAction" = 'suppress' # IntuneName: No specific action
+                        "ProgramReboot" = "allow" # IntuneName:App install may force a device restart
+                        "ForceReboot" = 'force' # IntuneName: Intune will force a mandatory device restart
+                    }
 
                     $tmpAppDeploymentType = [PSCustomObject]@{
                         LogicalName = $deploymentType.LogicalName
@@ -1174,18 +1183,33 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                     }
 
                     # In case we do not have a content path and instead the install or uninstall points to a share, correct that
-                    if($tmpAppDeploymentType.InstallCommandLine -match '(\\\\[^ ]*)')
+                    $Matches = $null
+                    $deploymentType.Title.InnerText
+                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
+                    if($tmpAppDeploymentType.InstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
                     {
                         $noContentButShare = $true
-                        $tmpAppDeploymentType.InstallContent = ($tmpAppDeploymentType.InstallCommandLine -split ' ', 2)[0] | Split-Path -Parent   
-                        $tmpAppDeploymentType.InstallCommandLine = $tmpAppDeploymentType.InstallCommandLine -replace ([regex]::Escape($tmpAppDeploymentType.InstallContent)) -replace '^\\'
+                        try
+                        { 
+                            $Matches
+                            $tmpAppDeploymentType.InstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
+                            $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.InstallContent))
+                            $tmpAppDeploymentType.InstallCommandLine = $tmpAppDeploymentType.InstallCommandLine -replace $stringToRemove
+                        }catch{} 
                     }
 
-                    if($tmpAppDeploymentType.UninstallCommandLine -match '(\\\\[^ ]*)')
+                    $Matches = $null
+                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
+                    if($tmpAppDeploymentType.UninstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
                     {
                         $noContentButShare = $true
-                        $tmpAppDeploymentType.UninstallContent = ($tmpAppDeploymentType.UninstallCommandLine -split ' ', 2)[0] | Split-Path -Parent
-                        $tmpAppDeploymentType.UninstallCommandLine = $tmpAppDeploymentType.UninstallCommandLine -replace ([regex]::Escape($tmpAppDeploymentType.UninstallContent)) -replace '^\\'
+                        try
+                        { 
+                            $Matches
+                            $tmpAppDeploymentType.UninstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
+                            $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.UninstallContent))
+                            $tmpAppDeploymentType.UninstallCommandLine = $tmpAppDeploymentType.UninstallCommandLine -replace $stringToRemove
+                        }catch{} 
                     }
 
                     # getting requirements
@@ -1330,6 +1354,11 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
             }
 
             $tmpApp.DeploymentTypes = $appDeploymenTypesList
+            # The next duplicate fields are just to make them easier visible in the GridView and not used for anything else
+            $tmpApp.InstallContent = $appDeploymenTypesList[0].InstallContent
+            $tmpApp.InstallCommandLine = $appDeploymenTypesList[0].InstallCommandLine
+            $tmpApp.IntuneWinAppUtilSetupFile = $appDeploymenTypesList[0].IntuneWinAppUtilSetupFile
+            $tmpApp.UninstallCommandLine = $appDeploymenTypesList[0].UninstallCommandLine
 
             # Lets now check Intune compatability
             # DeploymentTypesTotal
