@@ -464,13 +464,14 @@ if ($RunDeclinedUpdatesCleanup)
             }
             Catch
             {
-                Write-CMTraceLog -Message ($_.Exception) -Severity Error
                 if ($_.Exception -imatch 'still referenced by other')
                 {
+                    Write-CMTraceLog -Message ($_.Exception) -Severity Warning
                     Write-CMTraceLog -Message "Update still referenced. Will continue script" -Severity Warning
                 }
                 else
                 {
+                    Write-CMTraceLog -Message ($_.Exception) -Severity Error
                     Write-CMTraceLog -Message "Script failed!" -Severity Error
                     Exit   
                 }            
