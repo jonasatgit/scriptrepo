@@ -67,7 +67,7 @@ To store the individual items the script will create the following folder under 
 The script will create a log file in the same directory as the export and not next to the script.
 
 Changelog:
-20240923 - Fixed an issue with UNC path detection in the install or uninstall command.
+20240923 - Fixed an issue with UNC path detection in the install or uninstall command. Added path and commands to Grid-View in step2.
 20240912 - Fixed an issue with the installcommand detection of ConfigMgr applications. Commands without quotes would not be detected correctly.
 
 
@@ -1191,7 +1191,6 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         $noContentButShare = $true
                         try
                         { 
-                            $Matches
                             $tmpAppDeploymentType.InstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
                             $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.InstallContent))
                             $tmpAppDeploymentType.InstallCommandLine = $tmpAppDeploymentType.InstallCommandLine -replace $stringToRemove
@@ -1205,7 +1204,6 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         $noContentButShare = $true
                         try
                         { 
-                            $Matches
                             $tmpAppDeploymentType.UninstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
                             $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.UninstallContent))
                             $tmpAppDeploymentType.UninstallCommandLine = $tmpAppDeploymentType.UninstallCommandLine -replace $stringToRemove
