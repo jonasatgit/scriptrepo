@@ -390,6 +390,7 @@ else
     $stateObject.State = 'Failed'
     $stateObject.RelatedInfo = 'WSUS URL could not be determined'   
 }
+
 if ($WSUSURL)
 {
     $pattern = '(http|https)://([^:/]+):(\d+)'
@@ -397,6 +398,7 @@ if ($WSUSURL)
     $null = $WSUSURL -imatch $pattern
     $WSUSFqdn = $Matches[2]
     $WSUSPort = $Matches[3]
+
     # we also need to test the WSUS server on different ports depending on the WSUS server configuration
     $portMapping = @{
         '8531' = @(8531, 8530)
@@ -404,6 +406,7 @@ if ($WSUSURL)
         '443'  = @(443, 80)
         '80'   = @(80)
     }
+
     $stateObject.State = 'OK'
     # Loop through the ports to check
     $portString = $null
@@ -424,6 +427,7 @@ if ($WSUSURL)
     }
     else
     {
+        # If the port is not in the mapping, we will just test the given port
         if (Test-NetConnection -ComputerName $WSUSFqdn -Port $WSUSPort -InformationLevel Quiet -ErrorAction SilentlyContinue -WarningAction SilentlyContinue)
         {
             $portString += '{0}-OK;' -f $WSUSPort  
@@ -436,6 +440,7 @@ if ($WSUSURL)
     }
     $stateObject.RelatedInfo = 'WSUS server: {0} port {1}' -f $WSUSFqdn, $portString
 }
+
 if ($SendLog){ } # Nothing yet
 [void]$outObj.Add($stateObject)
 $stepCounter++

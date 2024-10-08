@@ -32,6 +32,9 @@
 .PARAMETER GroupsForApproval
     The WSUS computer group to approve updates for. Default is "All Computers".
     Other groups have to be created in WSUS before running the script if that is needed.
+    
+    NOTE: If the WSUS server runs in a different language than English, the group name has to be in the same language.
+    The group name is visible in the WSUS console under "Computers".
  
 .PARAMETER RunSilent
     Run the script in silent mode. No grid view will be opened for selection of updates to approve or delete.
@@ -326,6 +329,7 @@ if ($RunApproveUpdates)
     catch
     {
         Write-CMTraceLog -Message "$($_)" -Severity Error
+        Write-CMTraceLog -Message "If connection to wsus server: `"$WSUSserver`" via SSL failed, use parameter `"-WSUSserver`" and specify the full fqdn. Example: `"-WSUSserver wsus.contoso.com`"" -Severity Warning
         Write-CMTraceLog -Message "Script failed!" -Severity Warning
         Exit
     }
@@ -358,15 +362,24 @@ if ($RunApproveUpdates)
                 {
                     foreach ($group in $groupsForApproval)
                     {
-                        $computerTargetGroup = $wsus.GetComputerTargetGroups() | where {$_.Name -eq $group}
-                        foreach ($update in $updatesForApproval)
-                        {
-                            # Only approve selected updates
-                            if ($update.id.updateid.guid -iin $selectedUpdates.id.updateid.guid)
+                        $computerTargetGroup = $wsus.GetComputerTargetGroups() | Where-Object {$_.Name -ieq $group}
+                        if ($computerTargetGroup)
+                        {                        
+                            foreach ($update in $updatesForApproval)
                             {
-                                Write-CMTraceLog -Message "Will try to approve update: `"$($update.Title)`" for group: `"$($group)`""
-                                $update.Approve("Install",$computerTargetGroup)
-                            }          
+                                # Only approve selected updates
+                                if ($update.id.updateid.guid -iin $selectedUpdates.id.updateid.guid)
+                                {
+                                    Write-CMTraceLog -Message "Will try to approve update: `"$($update.Title)`" for group: `"$($group)`""
+                                    $update.Approve("Install",$computerTargetGroup)
+                                }          
+                            }
+                        }
+                        else
+                        {
+                            Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS" -Severity Error
+                            Write-CMTraceLog -Message "Script failed!" -Severity Warning
+                            Exit                    
                         }
                     }
                 }
@@ -390,11 +403,20 @@ if ($RunApproveUpdates)
             {
                 foreach ($group in $groupsForApproval)
                 {
-                    $computerTargetGroup = $wsus.GetComputerTargetGroups() | where {$_.Name -eq $group}
-                    foreach ($update in $updatesForApproval)
+                    $computerTargetGroup = $wsus.GetComputerTargetGroups() | Where-Object {$_.Name -ieq $group}
+                    if ($computerTargetGroup)
                     {
-                        Write-CMTraceLog -Message "Will try to approve update: `"$($update.Title)`" for group: `"$($group)`""
-                        $update.Approve("Install",$computerTargetGroup)
+                        foreach ($update in $updatesForApproval)
+                        {
+                            Write-CMTraceLog -Message "Will try to approve update: `"$($update.Title)`" for group: `"$($group)`""
+                            $null = $update.Approve("Install",$computerTargetGroup)
+                        }
+                    }
+                    else
+                    {
+                        Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS" -Severity Error
+                        Write-CMTraceLog -Message "Script failed!" -Severity Warning
+                        Exit                    
                     }
                 }
             }
