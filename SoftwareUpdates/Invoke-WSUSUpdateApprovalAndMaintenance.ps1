@@ -377,7 +377,7 @@ if ($RunApproveUpdates)
                         }
                         else
                         {
-                            Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS" -Severity Error
+                            Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS. The group name is visible in the WSUS console under `"Computers`"" -Severity Error
                             Write-CMTraceLog -Message "Script failed!" -Severity Warning
                             Exit                    
                         }
@@ -414,7 +414,7 @@ if ($RunApproveUpdates)
                     }
                     else
                     {
-                        Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS" -Severity Error
+                        Write-CMTraceLog -Message "Group `"$($group)`" not found in WSUS. The group name is visible in the WSUS console under `"Computers`"" -Severity Error
                         Write-CMTraceLog -Message "Script failed!" -Severity Warning
                         Exit                    
                     }
@@ -482,7 +482,7 @@ if ($RunDeclinedUpdatesCleanup)
             Write-CMTraceLog -Message ('Delete declined update created: {0} Title: {1}' -f (Get-date($update.CreationDate) -format u), $update.title)
             try
             {
-                $wsus.DeleteUpdate($update.id.UpdateId.guid)
+                $null = $wsus.DeleteUpdate($update.id.UpdateId.guid)
             }
             Catch
             {
