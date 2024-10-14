@@ -25,14 +25,8 @@
     The HTMLMail mode requires the script "Send-CustomMonitoringMail.ps1" to be in the same folder.
 
 .PARAMETER TemplateSearchString
-    String to search for a certificate based on a specific template name
-    Valid template names are:
-        '*Custom-ConfigMgrDPCertificate*'
-        '*Custom-ConfigMgrIISCertificate*'
-        '*Custom-QS-ConfigMgrDPCertificate*'
-        '*Custom-QS-ConfigMgrIISCertificate*'
-        OR
-        '*ConfigMgr*Certificate*' to include all possible values
+    Regex string to search for a certificate based on a specific template name
+    Example regex string with OR operator to allow multiple template names: 'ConfigMgr_Certificate|ConfigMgrDPCertificate|ConfigMgrIISCertificate'
 
 .PARAMETER MinValidDays
     Value in days before certificate expiration
@@ -104,7 +98,7 @@ param
     [ValidateSet("JSON","GridView", "MonAgentJSON", "MonAgentJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
     [String]$OutputMode = "PSObject",
     [Parameter(Mandatory=$false)]
-    [string]$TemplateSearchString = '*ConfigMgr*Certificate*',
+    [string]$TemplateSearchString = 'ConfigMgr_Certificate|ConfigMgrDPCertificate|ConfigMgrIISCertificate',
     [Parameter(Mandatory=$false)]
     [int]$MinValidDays = 30,
     [Parameter(Mandatory=$false)]
@@ -423,6 +417,7 @@ if($WriteLog){Write-CMTraceLog -Message "Script startet" -Component ($MyInvocati
 #endregion
 
 #region prepare template string for "-ilike" and add * if neccesary
+<#
 if (-NOT($templateSearchString -match '^\*'))
 {
     $templateSearchString = '*{0}' -f $templateSearchString
@@ -431,6 +426,7 @@ if (-NOT($templateSearchString -match '\*$'))
 {
     $templateSearchString = '{0}*' -f $templateSearchString  
 }
+#>
 #endregion
 
 #region systemname
@@ -609,7 +605,7 @@ else
                             if ($sslCert.Issuer -inotlike '*sms issuing*')
                             {
                                 # Let's also check if the cert is coming from the correct template
-                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -ilike $templateSearchString)}))
+                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -imatch $templateSearchString)}))
                                 {
                                     $tmpObj.CheckType = 'Certificate'
                                     $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
