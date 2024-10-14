@@ -39,8 +39,17 @@ GroupName,AppName,AssignmentIntent
 .PARAMETER InputCSV
 Path to the CSV file with the group assignments
 
+.PARAMETER EntraIDAppID
+Optional parameter to use your own Entra ID app registration
+
+.PARAMETER EntraIDTenantID
+Optional parameter to use your own Entra ID app registration
+
 .EXAMPLE
 Invoke-IntuneAppToGroupAssignments.ps1 -InputCSV "C:\GroupList.csv"
+
+.EXAMPLE
+Invoke-IntuneAppToGroupAssignments.ps1 -InputCSV "C:\GroupList.csv" -EntraIDAppID "12345678-1234-1234-1234-123456789012" -EntraIDTenantID "12345678-1234-1234-1234-123456789012"
 
 #>
 
