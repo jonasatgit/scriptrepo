@@ -18,7 +18,10 @@ Script to assign Intune apps to groups
 # 
 #************************************************************************************************************
 
-Script to assign Intune apps to groups from a CSV file. The CSV file should have the following columns:
+Script to assign Intune apps to groups from a CSV file. 
+The script will only require the Microsoft.Graph.Authentication module to minimize dependencies.
+
+The CSV file should have the following columns:
 - GroupName
 - AppName
 - AssignmentIntent
@@ -44,8 +47,25 @@ Invoke-IntuneAppToGroupAssignments.ps1 -InputCSV "C:\GroupList.csv"
 param
 (
     [Parameter(Mandatory = $true)]
-    [string]$InputCSV
+    [string]$InputCSV,
+
+    [Parameter(Mandatory=$false)]
+    [string]$EntraIDAppID,
+
+    [Parameter(Mandatory=$false)]
+    [string]$EntraIDTenantID
 )
+
+#region quick check for Entra ID
+if ($EntraIDAppID)
+{
+    # we also need the tenant id in that case
+    if ([string]::IsNullOrEmpty($EntraIDTenantID))
+    {
+        Write-Host "Please also set parameter -EntraIDTenantID to be able to use your own Entra ID app registration" -ForegroundColor Yellow
+        Break
+    }
+}
 
 #region import csv
 if (-NOT (Test-Path -Path $InputCSV))
@@ -155,8 +175,16 @@ catch
 }
 #endregion
 
-# Connect to Graph
-Connect-MgGraph -Scopes "DeviceManagementApps.ReadWrite.All", "Group.Read.All"
+#region Connect to Graph
+if ([string]::IsNullOrEmpty($EntraIDAppID))
+{
+    Connect-MgGraph -Scopes "DeviceManagementApps.ReadWrite.All", "Group.Read.All"
+}
+else
+{
+    Connect-MgGraph -Scopes "DeviceManagementApps.ReadWrite.All", "Group.Read.All" -ClientId $EntraIDAppID -TenantId $EntraIDTenantID
+}
+#endregion
 
 #region MAIN logic
 foreach($item in $groupList)
@@ -302,4 +330,5 @@ foreach($item in $groupList)
 
     }
 }
+ Write-Host "End of script" -ForegroundColor Green
 #endregion
