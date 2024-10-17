@@ -24,7 +24,11 @@ param
     [Parameter(Mandatory=$false)]
     [int]$DaysSinceRegistration = 2,
     [Parameter(Mandatory=$false)]
-    [string]$DeviceNamePrefix = "DESKTOP"
+    [string]$DeviceNamePrefix = "DESKTOP",
+    [Parameter(Mandatory=$false)]
+    [string]$ClientID,
+    [Parameter(Mandatory=$false)]
+    [string]$TenantID
 )
 
 #region check for required modules
@@ -127,8 +131,8 @@ Write-Output $iso8601DateTimeSinceRegistration
 Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement') #'Microsoft.Graph.Authentication',
 
 # Connect to Graph
-Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
-#break
+Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All" -ClientId $ClientID -TenantId $TenantID
+
 #$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
 
 $graphFilter = "(registrationDateTime ge {0} or registrationDateTime eq null) and operatingsystem eq 'windows' and startswith(displayName, '{1}')" -f $iso8601DateTimeSinceRegistration, $DeviceNamePrefix
