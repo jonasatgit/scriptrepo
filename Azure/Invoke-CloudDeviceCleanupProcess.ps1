@@ -28,7 +28,11 @@ param
     [Parameter(Mandatory=$false)]
     [string]$EntraIDAppID,
     [Parameter(Mandatory=$false)]
-    [string]$EntraIDTenantID
+    [string]$EntraIDTenantID,
+    [Parameter(Mandatory=$false)]
+    [switch]$RequestScopes,
+    [Parameter(Mandatory=$false)]
+    [string[]]$RequiredScopes = @("Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All")
 )
 
 #region check for required modules
@@ -134,14 +138,45 @@ Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.Directory
 #region Connect to Graph
 if ([string]::IsNullOrEmpty($EntraIDAppID))
 {
-    Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
+    # No parameters needed in this case
+    $paramSplatting = @{}
 }
 else
 {
-    Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All" -ClientId $EntraIDAppID -TenantId $EntraIDTenantID
+    # We need to connect to graph with a specific app registration
+    $paramSplatting = @{
+        ClientId = $EntraIDAppID
+        TenantId = $EntraIDTenantID
+    }
+}
+
+if($RequestScopes)
+{
+    # Add the required scopes to the parameters. This will prompt the user to consent to the scopes
+    $paramSplatting.Scopes = $RequiredScopes
+}
+
+Connect-MgGraph @paramSplatting
+
+# Lets check if the required scopes are missing
+$scopeNotFound = $true
+foreach($scope in $RequiredScopes)
+{
+    if(-not (Get-MgContext).Scopes.Contains($scope))
+    {
+        Write-Output "We need scope: `"$scope`" to be able to run the script"
+        $scopeNotFound = $true
+    }
+}
+
+if($scopeNotFound)
+{
+    Write-Output "Exiting script as required scopes are missing. Please add the required scopes to the app registration."
+    Write-Output "Or run the script with the -RequestScopes parameter to be able to request the scopes"
+    Write-Output "Exit script"
+    break
 }
 #endregion
-# Connect to Graph
 
 
 #$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
@@ -194,16 +229,25 @@ foreach($device in $enrolledDevices)
         Write-Output "Found $($intuneDevices.Count) devices in Intune with the same name: `"$($device.displayName)`""
 
         # Sort the devices by registrationDateTime
-        $sortedDevices = $deviceRetval | Sort-Object -Property registrationDateTime -Descending
-
+        [array]$sortedDevices = $deviceRetval | Sort-Object -Property registrationDateTime -Descending
+        $latestDevice = $sortedDevices[0]
         # Remove the first device from the list as it is the newest device
         $sortedDevices = $sortedDevices | Select-Object -Skip 1
 
         foreach($deviceToRemove in $sortedDevices)
         {
-            Write-Output "Removing device: $($deviceToRemove.Id) with name: $($deviceToRemove.displayName)"
+            Write-Output "Removing device: $($deviceToRemove.Id) with name: $($deviceToRemove.displayName) from EntraID"
             # Remove the device
             #Remove-MgDevice -DeviceId $deviceToRemove.deviceId
+
+            Write-Output "Removing device: $($deviceToRemove.Id) with name: $($deviceToRemove.displayName) from EntraID"
+        }
+
+        foreach($intuneDevice in $intuneDevices)
+        {
+            # Logic missing to only remove older devices
+            Write-Output "Removing device: $($intuneDevice.Id) with name: $($intuneDevice.deviceName) from Intune"
+            #Remove-MgBetaDeviceManagementManagedDevice -DeviceId $intuneDevice.Id
         }
     }
     elseif ($global:SingleDeviceCountVariable -eq 1) 
