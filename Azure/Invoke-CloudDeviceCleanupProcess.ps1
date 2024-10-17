@@ -124,10 +124,10 @@ Write-Output $iso8601DateTimeSinceRegistration
 
 
 # Call the function to ensure required modules are installed
-#Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement') #'Microsoft.Graph.Authentication',
+Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement') #'Microsoft.Graph.Authentication',
 
 # Connect to Graph
-#Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
+Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
 #break
 #$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
 
