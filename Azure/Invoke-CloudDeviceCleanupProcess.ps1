@@ -26,9 +26,9 @@ param
     [Parameter(Mandatory=$false)]
     [string]$DeviceNamePrefix = "DESKTOP",
     [Parameter(Mandatory=$false)]
-    [string]$ClientID,
+    [string]$EntraIDAppID,
     [Parameter(Mandatory=$false)]
-    [string]$TenantID
+    [string]$EntraIDTenantID
 )
 
 #region check for required modules
@@ -130,8 +130,19 @@ Write-Output $iso8601DateTimeSinceRegistration
 # Call the function to ensure required modules are installed
 Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement') #'Microsoft.Graph.Authentication',
 
+
+#region Connect to Graph
+if ([string]::IsNullOrEmpty($EntraIDAppID))
+{
+    Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
+}
+else
+{
+    Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All" -ClientId $EntraIDAppID -TenantId $EntraIDTenantID
+}
+#endregion
 # Connect to Graph
-Connect-MgGraph -Scopes "Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All" -ClientId $ClientID -TenantId $TenantID
+
 
 #$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
 
