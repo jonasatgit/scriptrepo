@@ -146,7 +146,7 @@ else
 
 #$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
 
-$graphFilter = "(registrationDateTime ge {0} or registrationDateTime eq null) and operatingsystem eq 'windows' and startswith(displayName, '{1}')" -f $iso8601DateTimeSinceRegistration, $DeviceNamePrefix
+$graphFilter = "registrationDateTime ge {0} and operatingsystem eq 'windows' and startswith(displayName, '{1}')" -f $iso8601DateTimeSinceRegistration, $DeviceNamePrefix
 $graphProperties = "id,deviceId,displayName,deviceOwnership,managementType,trustType"
 
 <#
