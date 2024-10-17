@@ -32,7 +32,8 @@ param
     [Parameter(Mandatory=$false)]
     [switch]$RequestScopes,
     [Parameter(Mandatory=$false)]
-    [string[]]$RequiredScopes = @("Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All")
+    [string[]]$RequiredScopes = @("Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"),
+    [string[]]$RequiredModules = @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement')
 )
 
 #region check for required modules
@@ -132,18 +133,25 @@ Write-Output $iso8601DateTimeSinceRegistration
 
 
 # Call the function to ensure required modules are installed
-Get-RequiredScriptModules -RequiredModules @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement') #'Microsoft.Graph.Authentication',
+Get-RequiredScriptModules -RequiredModules $RequiredModules
 
 
 #region Connect to Graph
 if ([string]::IsNullOrEmpty($EntraIDAppID))
 {
-    # No parameters needed in this case
+    # No extra parameters needed in this case
     $paramSplatting = @{}
 }
 else
 {
     # We need to connect to graph with a specific app registration
+    if ([string]::IsNullOrEmpty($EntraIDTenantID))
+    {
+        Write-Output "Missing paramter `"-EntraIDTenantID`" for EntraID app registration"
+        Write-Output "Exiting script"
+        break
+    }
+
     $paramSplatting = @{
         ClientId = $EntraIDAppID
         TenantId = $EntraIDTenantID
