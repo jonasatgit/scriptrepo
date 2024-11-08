@@ -1182,7 +1182,7 @@ function Get-MsiMetadata
         if ($null -ne $record) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($record) | Out-Null }
         if ($null -ne $view) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($view) | Out-Null }
         if ($null -ne $database) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($database) | Out-Null }
-        if ($null-ne $installer) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($installer) | Out-Null }
+        if ($null -ne $installer) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($installer) | Out-Null }
     }
 
     return $properties
