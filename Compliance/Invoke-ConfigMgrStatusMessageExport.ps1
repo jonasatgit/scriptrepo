@@ -43,6 +43,14 @@ Or SQL server fqdn and instance name like this: CM02.contoso.local\INST02
 .PARAMETER CMDatabase
 The name of the ConfigMgr database
 
+.PARAMETER AuditSQLServer
+The SQL server name (and instance name where appropriate) of the new database to store the exported audit messages in
+Either SQL Server fqdn like this: CM02.contoso.local
+Or SQL server fqdn and instance name like this: CM02.contoso.local\INST02
+
+.PARAMETER AuditDatabase
+The name of the ConfigMgr database
+
 .PARAMETER OutputLanguage
 The language in which the message text should be returned
 Default is en-us
@@ -70,26 +78,6 @@ Example: -MinAuditStartDatetimeString '2024-01-08 08:22:36.000'
 The maximum number of entries to show in the gridview
 Default is 500
 
-.PARAMETER ExportToSQL
-Export to SQL instead of export to file
-
-.PARAMETER AuditSQLServer
-The SQL server name (and instance name where appropriate) of the new database to store the exported audit messages in
-Either SQL Server fqdn like this: CM02.contoso.local
-Or SQL server fqdn and instance name like this: CM02.contoso.local\INST02
-
-.PARAMETER AuditDatabase
-The name of the ConfigMgr database
-
-.PARAMETER ExportToFile
-Export to file instead of export to SQL database
-
-.PARAMETER ExportPath
-The path to the folder to store the exported file in
-
-.PARAMETER ExportFileType
-The file type to export the data to. Possible values are "csv" or "json"
-
 .EXAMPLE
 Show the table definition for the custom audit table and exit the script
 Invoke-ConfigMgrStatusMessageExport.ps1 -ShowAuditTableDefinition
@@ -112,6 +100,12 @@ param
     [Parameter(Mandatory=$True, HelpMessage="The name of the ConfigMgr database", ParameterSetName='DefaultSet')]
     [string]$CMDatabase,
 
+    [Parameter(Mandatory=$True, HelpMessage="The SQL server name (and instance name where appropriate)", ParameterSetName='DefaultSet')]
+    [string]$AuditSQLServer,
+
+    [Parameter(Mandatory=$True, HelpMessage="The name of the ConfigMgr database", ParameterSetName='DefaultSet')]
+    [string]$AuditDatabase,
+
     [Parameter(Mandatory=$False, HelpMessage="The language in which the message text should be returned", ParameterSetName='DefaultSet')]
     [ValidateSet("de-de", "en-us")]
     [string]$OutputLanguage = "en-us",
@@ -129,28 +123,7 @@ param
     [switch]$ShowAuditTableDefinition,
 
     [Parameter(Mandatory=$False, HelpMessage="The maximum number of entries to show in the gridview", ParameterSetName='DefaultSet')]
-    [int]$MaxGridViewEntries = 500,
-
-    [Parameter(Mandatory=$False, HelpMessage="Export to SQL instead of export to file", ParameterSetName='SQLExport')]
-    [Switch]$ExportToSQL,
-
-    [Parameter(Mandatory=$true, HelpMessage="The SQL server name (and instance name where appropriate)", ParameterSetName='SQLExport')]
-    [string]$AuditSQLServer,
-
-    [Parameter(Mandatory=$True, HelpMessage="The name of the ConfigMgr database", ParameterSetName='SQLExport')]
-    [string]$AuditDatabase,
-
-    [Parameter(Mandatory=$False, HelpMessage="Export to file instead of export to SQL database", ParameterSetName='FileExport')]
-    [Switch]$ExportToFile,
-
-    [Parameter(Mandatory=$False, HelpMessage="The maximum number of entries to show in the gridview", ParameterSetName='FileExport')]
-    [string]$ExportPath,
-
-    [Parameter(Mandatory=$False, HelpMessage="The maximum number of entries to show in the gridview", ParameterSetName='FileExport')]
-    [ValidateSet("csv", "json")]
-    [string]$ExportFileType
-
-
+    [int]$MaxGridViewEntries = 500
 )
 
 #region set output mode
@@ -163,6 +136,7 @@ else
     $Script:LogOutputMode = 'ConsoleAndLog'
 }
 #endregion
+
 
 #region audit table definition
 $auditTableInfo = @'
@@ -221,6 +195,23 @@ if ($ShowAuditTableDefinition)
 }
 #endregion
 
+
+#region check for 32bit powershell
+if ([Environment]::Is64BitProcess)
+{
+    Write-Warning "The script needs to run in the 32bit version of PowerShell in order to use the 32bit ConfigMgr dlls"
+    break
+}
+#endregion
+
+if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
+{
+    if ($MinAuditStartDatetimeString -inotmatch '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}')
+    {
+        Write-Warning "Parameter -MinAuditStartDatetimeString is not in the correct format. Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
+        break   
+    }
+}
 
 
 #region Logfile
@@ -367,154 +358,10 @@ Param(
 }
 #endregion
 
-#region Getting last status messages time from custom audit table
-# before doing anything, we need the last adit log entry datetime from our custom DB
-<#
-.SYNOPSIS
-    Get-StartDateTimeValueFromSQL will get the last time of audit messages in custom table
-
-.DESCRIPTION
-    Get-StartDateTimeValueFromSQL will get the last time of audit messages in custom table
-    If no messages are found, it will return the minimum datetime value which was passed via parameter
-
-.PARAMETER AuditSQLServer
-    The SQL server name (and instance name where appropriate) of the new database to store the exported audit messages in
-    Either SQL Server fqdn like this: CM02.contoso.local
-    Or SQL server fqdn and instance name like this: CM02.contoso.local\INST02
-
-.PARAMETER AuditDatabase
-    The name of the custom audit database
-#>
-function Get-StartDateTimeValueFromSQL
-{
-    param
-    (
-        [string]$AuditSQLServer,
-        [string]$AuditDatabase,
-        [string]$MinAuditStartDatetimeString
-    )
-
-    $outObject = [pscustomobject]@{
-        QueryOperator = '>' # Used for the SQL query to get the status messages either with a date greater than or greater or equal
-        StartDateTimeValue = $null
-    }
-
-    try 
-    {
-        $query = "SELECT convert(varchar, max(stat.TimeUTC), 121) as [LastTime], Count(1) as [EntryCounter] FROM [dbo].[AuditStatusMessages] stat"
-        Write-CMTraceLog -Message "Will get the last time of audit messages in custom table by running:"
-        Write-CMTraceLog -Message $query
-        $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
-        Write-CMTraceLog -Message "Connect to SQL to get last status messages time from custom audit table"
-        write-cmtracelog -Message "SQL connection string: `"$connectionString`""
-        Write-CMTraceLog -Message "SQL query: `"$query`""
-        $connection = New-Object System.Data.SqlClient.SqlConnection
-        $connection.ConnectionString = $connectionString
-        $connection.Open()
-        # Run the query
-        $command = $connection.CreateCommand()
-        $command.CommandText = $query
-        $reader = $command.ExecuteReader()
-        $table = new-object "System.Data.DataTable"
-        # Load data
-        $table.Load($reader) 
-        # Close the connection
-        $connection.Close()
-    }
-    catch 
-    {
-        Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
-        if ($connection.State -ieq 'open')
-        {
-            $connection.Close()
-        }
-        Write-CMTraceLog -Message "End script with error"
-        Exit
-    }
-
-    if ($Table.Rows.EntryCounter[0] -eq 0)
-    {
-        Write-CMTraceLog -Message "No SQL results found with query! Table might be new." -Severity Warning
-        if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
-        {
-            Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is set to: `"$MinAuditStartDatetimeString`" will use that as start date"
-            $outObject.StartDateTimeValue = $MinAuditStartDatetimeString
-            # We need to set the query operator to include the datetime which was passed via parameter
-            $outObject.QueryOperator = '>='
-        }
-        else
-        {
-            Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is not set"
-            Write-CMTraceLog -Message "While the query will now get all available audit messages from ConfigMgr DB, the GridView will only show the last $($MaxGridViewEntries) entries" -Severity Warning
-            Write-CMTraceLog -Message "(Grid-View will not show up when parameter -RunSilent is set. The GridView is meant for testing purposes only)" 
-        }
-    }
-    else
-    {
-        $outObject.StartDateTimeValue = $table.LastTime
-    }
-
-    return $outObject
-}
-#endregion
-
-
 Invoke-LogfileRollover
 Write-CMTraceLog -Message "  "
 Write-CMTraceLog -Message "  "
 Write-CMTraceLog -Message "Starting script"
-
-#region check for required parameters
-if (-NOT ($ExportToSQL -or $ExportToFile))
-{
-    Write-CMTraceLog "Either parameter -ExportToSQL or -ExportToFile is required" -Severity Warning
-    Write-CMTraceLog "End script"
-    break
-}
-#endregion
-
-#region check for 32bit powershell
-if ([Environment]::Is64BitProcess)
-{
-    Write-CMTraceLog "The script needs to run in the 32bit version of PowerShell in order to use the 32bit ConfigMgr dlls" -Severity Warning
-    Write-CMTraceLog "End script"
-    break
-}
-#endregion
-
-#region check datetime format
-if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
-{
-    if ($MinAuditStartDatetimeString -inotmatch '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}')
-    {
-        Write-CMTraceLog "Parameter -MinAuditStartDatetimeString is not in the correct format. Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff" -Severity Warning
-        Write-CMTraceLog "End script"
-        break   
-    }
-}
-#endregion
-
-#region check for export path
-if ($ExportToFile)
-{
-    if (-NOT ($ExportPath))
-    {
-        Write-CMTraceLog "Parameter -ExportPath is required when exporting to file" -Severity Warning
-        Write-CMTraceLog "End script"
-        break
-    }
-    else 
-    {
-        if (-not (Test-Path $ExportPath))
-        {
-            Write-CMTraceLog "Path `"$ExportPath`" not found" -Severity Warning
-            Write-CMTraceLog "End script"
-            break
-        }
-    }
-}
-#endregion
-
 
 #region type definition
 Write-CMTraceLog -Message "Adding type definition for Win32Api"
@@ -579,15 +426,65 @@ if (-NOT (Test-Path $dllPath))
 }
 #endregion
 
-#region Either get the last datetime from the custom audit table or a file or use the minimum datetime value passed via parameter
-if ($ExportToSQL)
+
+
+#region Getting last status messages time from custom audit table
+# before doing anything, we need the last adit log entry datetime from our custom DB
+try 
 {
-    $auditResultObject = Get-StartDateTimeValueFromSQL -AuditSQLServer $AuditSQLServer -AuditDatabase $AuditDatabase -MinAuditStartDatetimeString $MinAuditStartDatetimeString
+    $query = "SELECT convert(varchar, max(stat.TimeUTC), 121) as [LastTime], Count(1) as [EntryCounter] FROM [dbo].[AuditStatusMessages] stat"
+    Write-CMTraceLog -Message "Will get the last time of audit messages in custom table by running:"
+    Write-CMTraceLog -Message $query
+    $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
+    Write-CMTraceLog -Message "Connect to SQL to get last status messages time from custom audit table"
+    write-cmtracelog -Message "SQL connection string: `"$connectionString`""
+    Write-CMTraceLog -Message "SQL query: `"$query`""
+    $connection = New-Object System.Data.SqlClient.SqlConnection
+    $connection.ConnectionString = $connectionString
+    $connection.Open()
+    # Run the query
+    $command = $connection.CreateCommand()
+    $command.CommandText = $query
+    $reader = $command.ExecuteReader()
+    $table = new-object "System.Data.DataTable"
+    # Load data
+    $table.Load($reader) 
+    # Close the connection
+    $connection.Close()
+}
+catch 
+{
+    Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
+    if ($connection.State -ieq 'open')
+    {
+        $connection.Close()
+    }
+    Write-CMTraceLog -Message "End script with error"
+    Exit
 }
 
-if ($ExportToFile)
+# Used for the SQL query to get the status messages either with a date greater than or greater or equal
+$queryOperator = '>'
+if ($Table.Rows.EntryCounter[0] -eq 0)
 {
-    $auditResultObject = Get-StartDateTimeValueFromSQL -AuditSQLServer $AuditSQLServer -AuditDatabase $AuditDatabase -MinAuditStartDatetimeString $MinAuditStartDatetimeString
+    Write-CMTraceLog -Message "No SQL results found with query! Table might be new." -Severity Warning
+    if (-NOT ([string]::IsNullOrEmpty($MinAuditStartDatetimeString)))
+    {
+        Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is set to: `"$MinAuditStartDatetimeString`" will use that as start date"
+        $StartDateTimeValue = $MinAuditStartDatetimeString
+        # We need to set the query operator to include the datetime which was passed via parameter
+        $queryOperator = '>='
+    }
+    else
+    {
+        Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is not set"
+        Write-CMTraceLog -Message "While the query will now get all available audit messages from ConfigMgr DB, the GridView will only show the last $($MaxGridViewEntries) entries" -Severity Warning
+        Write-CMTraceLog -Message "(Grid-View will not show up when parameter -RunSilent is set. The GridView is meant for testing purposes only)" 
+    }
+}
+else
+{
+    $StartDateTimeValue = $table.LastTime
 }
 #endregion
 
@@ -648,18 +545,18 @@ Order by smsgs.Time DESC
 
 
 # addind operator and datetime value even if we don't have a datetime
-$query = $query -f $auditResultObject.QueryOperator, $auditResultObject.StartDateTimeValue
+$query = $query -f $queryOperator, $StartDateTimeValue
 
-if ([string]::IsNullOrEmpty($auditResultObject.StartDateTimeValue))
+if ([string]::IsNullOrEmpty($StartDateTimeValue))
 {
     $query = $query -replace 'and smsgs.Time', '--and smsgs.Time'
 }
 else {
     # regex to check if the value is indead in the format of a datetime like 2024-06-12 22:23:43.070
-    if ($auditResultObject.StartDateTimeValue -notmatch '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}$')
+    if ($StartDateTimeValue -notmatch '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}$')
     {
         Write-CMTraceLog -Message "No valid datetime found in SQL results for startdatetime" -Severity Error
-        Write-CMTraceLog -Message "Current value: `"$($auditResultObject.StartDateTimeValue)`" Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
+        Write-CMTraceLog -Message "Current value: `"$StartDateTimeValue`" Expected format like: 2024-06-12 22:23:43.070 => yyyy-MM-dd HH:mm:ss.fff"
         Write-CMTraceLog -Message "End script with error"
         Exit
     }
@@ -670,7 +567,7 @@ else {
 try 
 {    
     $connectionString = "Server=$CMSQLServer;Database=$CMDatabase;Integrated Security=SSPI;"
-    Write-CMTraceLog -Message "Connect to SQL to get all new audit messages from ConfigMgr DB since UTC time: `"$($auditResultObject.StartDateTimeValue)`""
+    Write-CMTraceLog -Message "Connect to SQL to get all new audit messages from ConfigMgr DB since UTC time: `"$($StartDateTimeValue)`""
     write-cmtracelog -Message "SQL connection string: `"$connectionString`""
     $connection = New-Object System.Data.SqlClient.SqlConnection
     $connection.ConnectionString = $connectionString
@@ -700,13 +597,13 @@ catch
 
 if ($Table.Rows.count -eq 0)
 {
-    Write-CMTraceLog -Message "No new audit messages found in ConfigMgr DB since UTC time: $($auditResultObject.StartDateTimeValue)" -Severity Warning
+    Write-CMTraceLog -Message "No new audit messages found in ConfigMgr DB since UTC time: $($StartDateTimeValue)" -Severity Warning
     Write-CMTraceLog -Message "End script"
     break
 }
 else
 {
-    Write-CMTraceLog -Message "Found: $($Table.Rows.Count) audit status messages with time >= `"$($auditResultObject.StartDateTimeValue)`""
+    Write-CMTraceLog -Message "Found: $($Table.Rows.Count) audit status messages with time >= `"$($StartDateTimeValue)`""
 }
 #endregion
 
@@ -815,15 +712,6 @@ if (-Not ($RunSilent))
 }
 #endregion
 
-function Add-AuditStatusMessagesToSQL 
-{
-    param 
-    (
-        [System.Collections.Generic.List[PSCustomObject]]$statusMessageList,
-        [string]$AuditSQLServer,
-        [string]$AuditDatabase
-    )
-    
 
 #region Import the messages into the AuditStatusMessages table
 $insertStatement = @"
@@ -832,66 +720,63 @@ $insertStatement = @"
 "@
 
 
-    if ($statusMessageList)
+if ($statusMessageList)
+{
+    Write-CMTraceLog -Message "Will try to import $($statusMessageList.count) audit status messages into custom table"
+
+    Try 
     {
-        Write-CMTraceLog -Message "Will try to import $($statusMessageList.count) audit status messages into custom table"
-
-        Try 
-        {
-            #Define connction string of target database
-            $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
-            Write-CMTraceLog -Message "Connect to SQL to import the messages into the AuditStatusMessages table"
-            write-cmtracelog -Message "SQL connection string: `"$connectionString`""
-            $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
-            $connection.Open()
-            $cmd = $connection.CreateCommand()
-        }
-        Catch 
-        {
-            Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
-            if ($connection.State -ieq 'open')
-            {
-                $connection.Close()
-            }
-            Write-CMTraceLog -Message "End script with error"
-            Exit
-        }
-
-        foreach ($entry in $statusMessageList)
-        {
-            Try
-            {    
-                $cmd.CommandText = $insertStatement -f $entry.RecordID,$entry.SeverityName,$entry.Severity,$entry.SiteCode,$entry.TopLevelSiteCode,$entry.MessageID,$entry.MessageType,$entry.ModuleName,$entry.Component,$entry.Win32Error,$entry.MachineName,$entry.TimeUTC,$entry.DeleteTimeUTC,$entry.MessageText
-                $null = $cmd.ExecuteNonQuery()
-            }
-            Catch
-            {
-                if ($_ -imatch 'Cannot insert duplicate key')
-                {
-                    Write-CMTraceLog -Message "RecordID $($entry.RecordID) already exists in the AuditStatusMessages table. Will be ignored" -Severity Warning
-                    continue
-                }    
-                else
-                {
-                    Write-CMTraceLog -Message "Error: $($_)" -Severity Error
-                    Write-CMTraceLog -Message "End script with error"
-                    if ($connection.State -ieq 'open')
-                    {
-                        $connection.Close()
-                    }
-                    Exit
-                }
-            }
-        }
-        #Close the connection
+        #Define connction string of target database
+        $connectionString = "Server=$AuditSQLServer;Database=$AuditDatabase;Integrated Security=SSPI;"
+        Write-CMTraceLog -Message "Connect to SQL to import the messages into the AuditStatusMessages table"
+        write-cmtracelog -Message "SQL connection string: `"$connectionString`""
+        $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
+        $connection.Open()
+        $cmd = $connection.CreateCommand()
+    }
+    Catch 
+    {
+        Write-CMTraceLog -Message "SQL connect failed: $($_)" -Severity Error
         if ($connection.State -ieq 'open')
         {
             $connection.Close()
         }
-        Write-CMTraceLog -Message "Entries imported!"
+        Write-CMTraceLog -Message "End script with error"
+        Exit
     }
+
+    foreach ($entry in $statusMessageList)
+    {
+        Try
+        {    
+            $cmd.CommandText = $insertStatement -f $entry.RecordID,$entry.SeverityName,$entry.Severity,$entry.SiteCode,$entry.TopLevelSiteCode,$entry.MessageID,$entry.MessageType,$entry.ModuleName,$entry.Component,$entry.Win32Error,$entry.MachineName,$entry.TimeUTC,$entry.DeleteTimeUTC,$entry.MessageText
+            $null = $cmd.ExecuteNonQuery()
+        }
+        Catch
+        {
+            if ($_ -imatch 'Cannot insert duplicate key')
+            {
+                Write-CMTraceLog -Message "RecordID $($entry.RecordID) already exists in the AuditStatusMessages table. Will be ignored" -Severity Warning
+                continue
+            }    
+            else
+            {
+                Write-CMTraceLog -Message "Error: $($_)" -Severity Error
+                Write-CMTraceLog -Message "End script with error"
+                if ($connection.State -ieq 'open')
+                {
+                    $connection.Close()
+                }
+                Exit
+            }
+        }
+    }
+    #Close the connection
+    if ($connection.State -ieq 'open')
+    {
+        $connection.Close()
+    }
+    Write-CMTraceLog -Message "Entries imported!"
 }
-
-
 Write-CMTraceLog -Message "End script"
 #endregion
