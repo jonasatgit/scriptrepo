@@ -300,7 +300,7 @@ foreach($item in $groupList)
         $assignmentSettings = @{
             source = "direct"
             settings = @{
-                "@odata.type" = "#microsoft.graph.win32CatalogAppAssignmentSettings"
+                "@odata.type" = "#microsoft.graph.win32LobAppAssignmentSettings"
                 installTimeSettings = $null
 
                 <#

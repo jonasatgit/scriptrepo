@@ -167,7 +167,7 @@ if($RequestScopes)
 Connect-MgGraph @paramSplatting
 
 # Lets check if the required scopes are missing
-$scopeNotFound = $true
+$scopeNotFound = $false
 foreach($scope in $RequiredScopes)
 {
     if(-not (Get-MgContext).Scopes.Contains($scope))
@@ -179,8 +179,8 @@ foreach($scope in $RequiredScopes)
 
 if($scopeNotFound)
 {
-    Write-Output "Exiting script as required scopes are missing. Please add the required scopes to the app registration."
-    Write-Output "Or run the script with the -RequestScopes parameter to be able to request the scopes"
+    Write-Output "Exiting script as required scopes/permissions are missing. Please add the required scopes/permissions to the app registration."
+    Write-Output "Or run the script with the -RequestScopes parameter to be able to request the scopes/permissions for the app registration"
     Write-Output "Exit script"
     break
 }
