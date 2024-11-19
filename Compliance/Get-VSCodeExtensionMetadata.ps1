@@ -198,7 +198,7 @@ function Get-VSCodeExtensionInfo
                         ExtensionSource = $definition.metadata.source
                         ExtensionPublisher = $definition.metadata.publisherDisplayName
                         ExtensionPublisherID = $definition.metadata.publisherId
-                        ExtensionPath = $definition.location.path
+                        ExtensionPath = $cleanedPath
                     })
                 }    
             }        
