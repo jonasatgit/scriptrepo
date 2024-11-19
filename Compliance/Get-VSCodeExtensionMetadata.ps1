@@ -204,6 +204,8 @@ function Get-VSCodeExtensionInfo
 
 #region MAIN SCRIPT
 
+
+
 #region remove class if "Delete" is set
 if($Delete)
 {
@@ -212,7 +214,16 @@ if($Delete)
     $customWMIClass = Get-WmiObject -Namespace $WMIRootPath -Class $WMIClassName -List -ErrorAction SilentlyContinue
     if($customWMIClass)
     {
-        $customWMIClass | Remove-WmiObject -ErrorAction SilentlyContinue
+        try 
+        {
+            $customWMIClass | Remove-WmiObject -ErrorAction Stop   
+        }
+        catch 
+        {
+            Write-Output 'Failed to delete wmi class'
+            Exit -1
+        }
+        
     }
     #Write-CMTraceLog -Message "End script" -LogFile $Logpath
     Exit 0        
@@ -220,65 +231,72 @@ if($Delete)
 #endregion
 
 #region clear class to make room for new entries or create new if not exists
-#Write-CMTraceLog -Message "Will check custom WMI class... $($WMIRootPath):$($WMIClassName)" -LogFile $Logpath
-$customWMIClass = Get-WmiObject -Namespace $WMIRootPath -Class $WMIClassName -List -ErrorAction SilentlyContinue
-if($customWMIClass)
+try 
 {
-    #Write-CMTraceLog -Message "Custom class exists and will be cleared: $($WMIRootPath):$($WMIClassName)" -LogFile $Logpath
-    # clear class to make room for new entries
-    Get-WmiObject -Namespace $WMIRootPath -Class $WMIClassName | Remove-WmiObject
-}
-else
-{
-    # create class because it's missind
-    #Write-CMTraceLog -Message "Custom class did not exist and will be created: $($WMIRootPath):$($WMIClassName)" -LogFile $Logpath
-    if(New-CustomWmiClass -RootPath $WMIRootPath -ClassName $WMIClassName -ErrorAction SilentlyContinue)
+    $customWMIClass = Get-WmiObject -Namespace $WMIRootPath -Class $WMIClassName -List -ErrorAction SilentlyContinue
+    if($customWMIClass)
     {
-        #Write-CMTraceLog -Message "Class created" -LogFile $Logpath
+        # clear class to make room for new entries
+        Get-WmiObject -Namespace $WMIRootPath -Class $WMIClassName | Remove-WmiObject
     }
     else
     {
-        #Write-CMTraceLog -Message "Custom class could not be created: $($WMIRootPath):$($WMIClassName)" -Severity Error -LogFile $Logpath
-        #Write-CMTraceLog -Message "End script" -LogFile $Logpath
-        exit -1
+        # create class because it's missind
+        if(New-CustomWmiClass -RootPath $WMIRootPath -ClassName $WMIClassName -ErrorAction SilentlyContinue)
+        {
+            # class created   
+        }
+        else
+        {
+            Write-Output 'Failed to create wmi class'
+            exit -1
+        }
     }
-}
-#endregion
+    #endregion
 
-#region Write data to WMI
-$vsCodeExtensionInfo = Get-VSCodeExtensionInfo
+    #region Write data to WMI
+    $vsCodeExtensionInfo = Get-VSCodeExtensionInfo
 
-if (-NOT ($vsCodeExtensionInfo))
-{
-    $classEntry = @{
-        ExtensionPath = "No VSCode extensions found"
-        ExtensionID = ""
-        ExtensionUUID = ""
-        ExtensionName = ""
-        ExtensionVersion = ""
-        ExtensionSource = ""
-        ExtensionPublisher = ""
-        ExtensionPublisherID = ""
-    }
-    Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMIClassName)" -Arguments $classEntry | Out-Null
-}
-else 
-{
-    foreach ($item in $vsCodeExtensionInfo)
+    if (-NOT ($vsCodeExtensionInfo))
     {
         $classEntry = @{
-            ExtensionPath = $item.ExtensionPath
-            ExtensionID = $item.ExtensionID
-            ExtensionUUID = $item.ExtensionUUID
-            ExtensionName = $item.ExtensionName
-            ExtensionVersion = $item.ExtensionVersion
-            ExtensionSource = $item.ExtensionSource
-            ExtensionPublisher = $item.ExtensionPublisher
-            ExtensionPublisherID = $item.ExtensionPublisherID
+            ExtensionPath = "No VSCode extensions found"
+            UserName = ""
+            ExtensionID = ""
+            ExtensionUUID = ""
+            ExtensionName = ""
+            ExtensionVersion = ""
+            ExtensionSource = ""
+            ExtensionPublisher = ""
+            ExtensionPublisherID = ""
         }
         Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMIClassName)" -Arguments $classEntry | Out-Null
     }
+    else 
+    {
+        foreach ($item in $vsCodeExtensionInfo)
+        {
+            $classEntry = @{
+                ExtensionPath = $item.ExtensionPath
+                UserName = $item.UserName
+                ExtensionID = $item.ExtensionID
+                ExtensionUUID = $item.ExtensionUUID
+                ExtensionName = $item.ExtensionName
+                ExtensionVersion = $item.ExtensionVersion
+                ExtensionSource = $item.ExtensionSource
+                ExtensionPublisher = $item.ExtensionPublisher
+                ExtensionPublisherID = $item.ExtensionPublisherID
+            }
+            Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMIClassName)" -Arguments $classEntry | Out-Null
+        }
+    }
+}
+catch 
+{
+    Write-Output "Failed to get VSCode extension metadata: $($_)"
+    Exit -1
 }
 #endregion
 
-#endregion
+Write-Output 'OK'
+
