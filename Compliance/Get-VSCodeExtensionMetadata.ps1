@@ -182,6 +182,13 @@ function Get-VSCodeExtensionInfo
                     $extensionFolderPath = '{0}\{1}\{2}\package.json' -f $item.FullName, $vsCodeExtensionDefinitionPath ,($definition.location.path | Split-Path -Leaf)
                     $extensionPackageObject = Get-Content -Path $extensionFolderPath | ConvertFrom-Json
 
+                    # Remove leading / if it exists and replace all other / with \
+                    if ($definition.location.path -match '^/')
+                    {
+                        $cleanedPath = $definition.location.path -replace '^/', ''
+                    }
+                    $cleanedPath = $cleanedPath -replace '/', '\'
+
                     $outObject.Add([pscustomobject][ordered]@{
                         UserName = $username
                         ExtensionID = $definition.identifier.id
