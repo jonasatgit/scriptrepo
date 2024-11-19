@@ -252,6 +252,7 @@ if (-NOT ($vsCodeExtensionInfo))
 {
     $classEntry = @{
         ExtensionPath = "No VSCode extensions found"
+        UserName = ""
         ExtensionID = ""
         ExtensionUUID = ""
         ExtensionName = ""
@@ -268,6 +269,7 @@ else
     {
         $classEntry = @{
             ExtensionPath = $item.ExtensionPath
+            UserName = $item.UserName
             ExtensionID = $item.ExtensionID
             ExtensionUUID = $item.ExtensionUUID
             ExtensionName = $item.ExtensionName

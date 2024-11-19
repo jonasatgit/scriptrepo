@@ -191,7 +191,7 @@ GO
 CREATE TABLE [dbo].[AuditStatusMessages](
 	[RecordID] [bigint] NOT NULL,
 	[SeverityName] [nvarchar](128) NULL,
-	[Severity] [int] NULL,
+	---[Severity] [int] NULL,
 	[SiteCode] [nvarchar](3) NOT NULL,
 	[TopLevelSiteCode] [nvarchar](3) NULL,
 	[MessageID] [int] NOT NULL,
@@ -944,11 +944,11 @@ foreach ($Row in $Table.Rows)
         $statusMessage = [PSCustomObject][ordered]@{
                 RecordID = $row.RecordID
                 SeverityName = $Row.SeverityName
-                Severity = $Row.Severity
+                #Severity = $Row.Severity
                 Type = $Row.Type
                 MessageType = $row.MessageType
                 SiteCode = $Row.SiteCode
-                TopLevelSiteCode = $Row.TopLevelSiteCode
+                #TopLevelSiteCode = $Row.TopLevelSiteCode
                 TimeUTC = $Row.TimeUTC
                 DeleteTimeUTC = $Row.DeleteTimeUTC
                 MachineName = $Row.MachineName
