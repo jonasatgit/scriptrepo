@@ -99,6 +99,9 @@
 .PARAMETER OutputTestData
     NOT USED at the momment. Number of dummy test data objects. Helpful to test a monitoring solution without any actual ConfigMgr errors.
 
+.PARAMETER SendAllMails
+    If set, the script will send an email even if there are no errors.
+
 .EXAMPLE
     .\Get-ConfigMgrLogState
 
