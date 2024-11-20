@@ -23,20 +23,36 @@
     Export-ConfigMgrItems.ps1
 #>
 
+param
+(
+    [Switch]$ExportAllItemTypes,
+    [Switch]$ExportCollections,
+    [Switch]$ExportConfigurationItems,
+    [Switch]$ExportConfigurationBaselines,
+    [Switch]$ExportTaskSequences,
+    [Switch]$ExportAntimalwarePolicies,
+    [Switch]$ExportScripts,
+    [Switch]$ExportClientSettings,
+    [Switch]$ExportConfigurationPolicies,
+    [switch]$ExportCDLatest
+)
+
+
+
 # Site configuration
-[string]$global:SiteCode = "P02" # Site code 
-[string]$global:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
-[string]$global:ExportRootFolder = 'E:\EXPORT' 
+[string]$script:SiteCode = "P02" # Site code 
+[string]$script:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
+[string]$script:ExportRootFolder = 'E:\EXPORT' 
 [int]$MaxExportFolderAgeInDays = 10
 [int]$MinExportFoldersToKeep = 2
 # In case we only have older folders and would therefore delete them
 # $MinExportFoldersToKeep will make sure we will keep at least some of them and not end up with nothing
 
 # Do not change
-$global:Spacer = '-'
-$Global:LogFilePath = $Global:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
-$global:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
-$global:ExitWithError = $false
+$script:Spacer = '-'
+$script:LogFilePath = $script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
+$script:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
+$script:ExitWithError = $false
 
 #region Write-CMTraceLog
 <#
@@ -52,7 +68,7 @@ function Write-CMTraceLog
     (
         #Path to the log file
         [parameter(Mandatory=$false)]
-        [String]$LogFile=$Global:LogFilePath,
+        [String]$LogFile=$script:LogFilePath,
 
         #The information to log
         [parameter(Mandatory=$true)]
@@ -112,10 +128,11 @@ function Write-CMTraceLog
 }
 #endregion
 
-#region Rollover-Logfile
+
+#region Invoke-LogfileRollover
 <# 
 .Synopsis
-    Function Rollover-Logfile
+    Function Invoke-LogfileRollover
 
 .DESCRIPTION
     Will rename a logfile from ".log" to ".lo_". 
@@ -126,9 +143,9 @@ function Write-CMTraceLog
     Default value is 1024 KB.
 
 .EXAMPLE
-    Rollover-Logfile -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
+    Invoke-LogfileRollover -Logfile "C:\Windows\Temp\logfile.log" -MaxFileSizeKB 2048
 #>
-Function Rollover-Logfile
+Function Invoke-LogfileRollover
 {
 #Validate path and write log or eventlog
 [CmdletBinding()]
@@ -168,6 +185,7 @@ Param(
     }
 }
 #endregion
+
 
 #region function Remove-OldExportFolders
 <#
@@ -215,7 +233,7 @@ function Remove-OldExportFolders
             {
                 Write-CMTraceLog -Message "Not able to delete: $($item.FullName)" -Severity Error
                 Write-CMTraceLog -Message "$($_)" -Severity Error
-                $global:ExitWithError = $true   
+                $script:ExitWithError = $true   
             }
         }
     }
@@ -223,12 +241,12 @@ function Remove-OldExportFolders
 #endregion
 
 
-#region function Sanitize-Path
+#region function Get-SanitizedPath
 <#
 .SYNOPSIS
     Function to replace invalid characters with underscore to be able to export data in folders
 #>
-function Sanitize-Path
+function Get-SanitizedPath
 {
     param 
     (
@@ -247,12 +265,13 @@ function Sanitize-Path
 }
 #endregion
 
-#region function Sanitize-FileName
+
+#region function Get-SanitizedFileName
 <#
 .SYNOPSIS
     Function to replace invalid characters with underscore to be able to export data in folders
 #>
-function Sanitize-FileName
+function Get-SanitizedFileName
 {
     param 
     (
@@ -264,6 +283,7 @@ function Sanitize-FileName
     return ($FileName -replace '[\[\\/:*?"<>|\]]', '_' -replace ',')
 }
 #endregion
+
 
 #region Function Get-ConfigMgrObjectLocation
 <#
@@ -294,8 +314,8 @@ Function Get-ConfigMgrObjectLocation
 {
     param
     (
-        $SiteServer = $global:ProviderMachineName, 
-        $SiteCode = $global:SiteCode, 
+        $SiteServer = $script:ProviderMachineName, 
+        $SiteCode = $script:SiteCode, 
         $ObjectUniqueID, 
         $ObjectTypeName 
     )
@@ -325,49 +345,6 @@ Function Get-ConfigMgrObjectLocation
         return $fullFolderPath
     }
     return '\'
-}
-#endregion
-
-#region convert to xml
-function ConvertTo-XmlCustom {
-    param (
-        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
-        [object]$Object
-    )
-
-    $settings = New-Object System.Xml.XmlWriterSettings
-    $settings.Indent = $true
-
-    $sb = New-Object System.Text.StringBuilder
-    $writer = [System.Xml.XmlWriter]::Create($sb, $settings)
-
-    $writer.WriteStartDocument()
-    $writer.WriteStartElement("Object")
-
-    foreach ($property in $Object.PSObject.Properties) {
-        $writer.WriteStartElement($property.Name)
-
-        if ($property.Value -is [System.Collections.IEnumerable] -and $property.Value -isnot [string]) {
-            foreach ($item in $property.Value) {
-                $writer.WriteStartElement("Item")
-                foreach ($subProperty in $item.PSObject.Properties) {
-                    $writer.WriteElementString($subProperty.Name, $subProperty.Value)
-                }
-                $writer.WriteEndElement()
-            }
-        } else {
-            $writer.WriteValue($property.Value)
-        }
-
-        $writer.WriteEndElement()
-    }
-
-    $writer.WriteEndElement()
-    $writer.WriteEndDocument()
-    $writer.Flush()
-    $writer.Close()
-
-    return $sb.ToString()
 }
 #endregion
 
@@ -482,20 +459,36 @@ function New-CMCollectionListCustom
         
         $resolvedItemPath = Get-ConfigMgrObjectLocation @paramSplatting
 
+        $refreshManual = if ($item.RefreshType -eq 1) {$true}else{$false}
+        $refreshIncremental = if ($item.RefreshType -band 4) {$true}else{$false}
+        $refreshFull = if ($item.RefreshType -band 2) {$true}else{$false}
+
+
+        $refreshType = switch ($item.RefreshType) {
+            1 { 'None' }
+            { $_ -band 4 -and $_ -band 2 } { 'Both' }
+            { $_ -band 4 } { 'Continuous' }
+            { $_ -band 2 } { 'Periodic' }
+            default { 'Unknown' }
+        }
+
+
         $collItem = [pscustomobject]@{
             SmsProviderObjectPath = 'SMS_Collection'
             CollectionType = $collectionTypeHash[[int]($item.CollectionType)]
             CollectionID = $item.CollectionID
-            Name = $item.Name
+            CollectionName = $item.Name
             LimitToCollectionID = $item.LimitToCollectionID
             LimitToCollectionName = $item.LimitToCollectionName
             IsBuiltIn = $item.IsBuiltIn
             ObjectPath = $resolvedItemPath
             CollectionRules = $null
-            RefreshManual = if ($item.RefreshType -eq 1) {$true}else{$false}
-            RefreshIncremental = if ($item.RefreshType -band 4) {$true}else{$false}
-            RefreshFull = if ($item.RefreshType -band 2) {$true}else{$false}
+            RefreshManual = $refreshManual
+            RefreshIncremental = $refreshIncremental
+            RefreshFull = $refreshFull
+            RefreshType = $refreshType
             RefreshSchedule = $null
+            RefreshScheduleString = $item.RefreshSchedule | Convert-CMSchedule
             CollectionVariables = $null
             MaintenanceWindows = $null
             Deployments = $null
@@ -584,7 +577,7 @@ function New-CMCollectionListCustom
         {
             Write-CMTraceLog -Message "Collection has variables or maintenance windows, need to load lazy properties"
             $wmiQuery = "Select * from SMS_CollectionSettings where CollectionID = '$($item.CollectionID)'"
-            $collectionSettings = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName
+            $collectionSettings = Get-WMIObject -NameSpace "root\sms\site_$($script:SiteCode)" -Query $wmiQuery -ComputerName $script:ProviderMachineName
             if ($collectionSettings)
             {
                 $collectionSettings.Get()
@@ -636,13 +629,13 @@ function New-CMCollectionListCustom
         try 
         {
             Write-CMTraceLog -Message "Loading collection deployments"
-            [array]$deployments = Get-WMIObject -NameSpace "root\sms\site_$($Global:SiteCode)" -Query $wmiQuery -ComputerName $global:ProviderMachineName -ErrorAction Stop
+            [array]$deployments = Get-WMIObject -NameSpace "root\sms\site_$($script:SiteCode)" -Query $wmiQuery -ComputerName $script:ProviderMachineName -ErrorAction Stop
         }
         catch 
         {
             Write-CMTraceLog -Message "Error exporting getting collection deployments" -Severity Error
             Write-CMTraceLog -Message "$($_)" -Severity Error
-            $global:ExitWithError = $true
+            $script:ExitWithError = $true
         }
 
         # Lets add the deployments
@@ -690,8 +683,9 @@ function New-CMCollectionListCustom
     {
         $out
     }
-
 }
+#endregion
+
 
 #region function Export-CMItemCustomFunction
 <#
@@ -727,66 +721,66 @@ function Export-CMItemCustomFunction
                 else 
                 {              
                     # We need a folder to store CIs in
-                    $itemExportRootFolder = '{0}\CI' -f $global:FullExportFolderName
+                    $itemExportRootFolder = '{0}\CI' -f $script:FullExportFolderName
                     $itemModelName = $item.ModelName
                     $itemFileExtension = '.cab'
-                    $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+                    $itemFileName = (Get-SanitizedFileName -FileName ($item.LocalizedDisplayName))
                 }
             }
             'SMS_ConfigurationBaselineInfo'
             {
                 # We need a folder to store baselines in
-                $itemExportRootFolder = '{0}\Baseline' -f $global:FullExportFolderName
+                $itemExportRootFolder = '{0}\Baseline' -f $script:FullExportFolderName
                 $itemModelName = $item.ModelName
                 $itemFileExtension = '.cab'
-                $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.LocalizedDisplayName))
             }
             'SMS_TaskSequencePackage'
             {
                 # We need a folder to store TaskSequences in
-                $itemExportRootFolder = '{0}\TS' -f $global:FullExportFolderName
+                $itemExportRootFolder = '{0}\TS' -f $script:FullExportFolderName
                 $itemModelName = $item.PackageID
                 $itemFileExtension = '.zip'
-                $itemFileName = (Sanitize-FileName -FileName ($item.Name))
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.Name))
             }
             'SMS_AntimalwareSettings'
             {
                 # We need a folder to store AntimalwarePolicies in
-                $itemExportRootFolder = '{0}\AntimalwarePolicy' -f $global:FullExportFolderName
+                $itemExportRootFolder = '{0}\AntimalwarePolicy' -f $script:FullExportFolderName
                 $itemModelName = $item.SettingsID
                 $itemFileExtension = '.xml'
-                $itemFileName = (Sanitize-FileName -FileName ($item.Name))       
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.Name))       
                 $skipConfigMgrFolderSearch = $true     
             }
             'SMS_Scripts'
             {
                 # We need a folder to store AntimalwarePolicies in
-                $itemExportRootFolder = '{0}\Scripts' -f $global:FullExportFolderName
+                $itemExportRootFolder = '{0}\Scripts' -f $script:FullExportFolderName
                 $itemModelName = $item.ScriptGuid
                 $itemFileExtension = '.ps1'
                 # we will also export the whole script definition as json, just in case
-                $itemFileName = (Sanitize-FileName -FileName ($item.ScriptName))        
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.ScriptName))        
                 $skipConfigMgrFolderSearch = $true        
             
             }
             'SMS_ClientSettings'
             {
                 # We need a folder to store AntimalwarePolicies in
-                $itemExportRootFolder = '{0}\ClientSettings' -f $global:FullExportFolderName
+                $itemExportRootFolder = '{0}\ClientSettings' -f $script:FullExportFolderName
                 $itemModelName = $item.Name
                 $itemFileExtension = '.txt'
                 # we will also export the whole script definition as json, just in case
-                $itemFileName = (Sanitize-FileName -FileName ($item.Name))       
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.Name))       
                 $skipConfigMgrFolderSearch = $true                 
             }
             'SMS_ConfigurationPolicy'
             {
                 if ($item.CategoryInstance_UniqueIDs -imatch 'SMS_BitlockerManagementSettings')
                 {
-                    $itemExportRootFolder = '{0}\BitlockerPolicies' -f $global:FullExportFolderName
+                    $itemExportRootFolder = '{0}\BitlockerPolicies' -f $script:FullExportFolderName
                     $itemModelName = $item.LocalizedDisplayName
                     $itemFileExtension = '.xml'
-                    $itemFileName = (Sanitize-FileName -FileName ($item.LocalizedDisplayName))
+                    $itemFileName = (Get-SanitizedFileName -FileName ($item.LocalizedDisplayName))
                     $skipConfigMgrFolderSearch = $true 
                 }
                 else
@@ -837,7 +831,7 @@ function Export-CMItemCustomFunction
         }
 
         # Removing illegal characters from folder path
-        $itemExportFolder = Sanitize-Path -Path $itemExportFolder
+        $itemExportFolder = Get-SanitizedPath -Path $itemExportFolder
 
         # Lets make sure the folder is there
         if (-not (Test-Path $itemExportFolder)) 
@@ -877,7 +871,7 @@ function Export-CMItemCustomFunction
             "Name:   $($itemFullName | Split-Path -Leaf)" | Out-File -FilePath $inventoryFile -Append
             "Path:   $($itemFullName)" | Out-File -FilePath $inventoryFile -Append
             "ItemID:   $($itemModelName)" | Out-File -FilePath $inventoryFile -Append
-            ($global:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
+            ($script:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
 
             try
             {
@@ -925,7 +919,7 @@ function Export-CMItemCustomFunction
 
                         # Lets export the TS refenrence data as well
                         $wmiQuery = "Select * from SMS_TaskSequencePackageReference_Flat where PackageID = '$($item.PackageID)'"
-                        $tsRefData = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                        $tsRefData = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
                         if ($tsRefData)
                         {
                             $tsRefData | Export-Clixml -Path $tsReferenceFileName
@@ -978,7 +972,7 @@ function Export-CMItemCustomFunction
                         if ($hinvDataItem)
                         {
                             $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($hinvDataItem.InventoryReportID)'"
-                            $inventoryReport = Get-CimInstance -ComputerName $global:ProviderMachineName -Namespace "root\sms\site_$global:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                            $inventoryReport = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
                             if ($inventoryReport)
                             {
                                 # load lazy properties
@@ -1010,7 +1004,7 @@ function Export-CMItemCustomFunction
             {
                  Write-CMTraceLog -Message "Error exporting: $($itemFullName)" -Severity Error
                  Write-CMTraceLog -Message "$($_)" -Severity Error
-                 $global:ExitWithError = $true
+                 $script:ExitWithError = $true
             }
         }
     }
@@ -1019,16 +1013,24 @@ function Export-CMItemCustomFunction
 #endregion 
 
 #region load ConfigMgr modules
+# Check if none of the switch parameters are set
+if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportCDLatest)) 
+{
+    Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportCDLatest" -Severity Warning
+    Exit 1 
+}
+
+
 $stoptWatch = New-Object System.Diagnostics.Stopwatch
 $stoptWatch.Start()
 
-Rollover-Logfile -Logfile $Global:LogFilePath -MaxFileSizeKB 2048
+Invoke-LogfileRollover -Logfile $script:LogFilePath -MaxFileSizeKB 2048
 
 Write-CMTraceLog -Message '   '
 Write-CMTraceLog -Message 'Start of script'
 
 # Lets cleanup first
-Remove-OldExportFolders -RootPath $global:ExportRootFolder -MaxExportFolderAgeInDays $MaxExportFolderAgeInDays -MinExportFoldersToKeep $MinExportFoldersToKeep
+Remove-OldExportFolders -RootPath $script:ExportRootFolder -MaxExportFolderAgeInDays $MaxExportFolderAgeInDays -MinExportFoldersToKeep $MinExportFoldersToKeep
 
 Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
 # Lets make sure we have the ConfigMgr modules
@@ -1040,12 +1042,12 @@ if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
 
 
 # Validate path and create if not there yet
-if (-not (Test-Path $global:FullExportFolderName)) 
+if (-not (Test-Path $script:FullExportFolderName)) 
 {
     New-Item -ItemType Directory -Path $FullExportFolderName -Force | Out-Null
 }
 
-Write-CMTraceLog -Message "Export will be made to folder: $($global:FullExportFolderName)"
+Write-CMTraceLog -Message "Export will be made to folder: $($script:FullExportFolderName)"
 
 # Customizations
 $initParams = @{}
@@ -1083,43 +1085,72 @@ Set-Location "$($SiteCode):\" @initParams
 #region Main script
 try
 {
-    
-    Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
-
-    Get-CMBaseline -Fast | Export-CMItemCustomFunction
-
-    Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
-
-    Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
-
-    Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
-
-    Get-CMClientSetting | Export-CMItemCustomFunction
-
-    Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
-    
-
-    # Lets export collections into one file
-    $itemExportRootFolder = '{0}\Collections' -f $global:FullExportFolderName
-    $itemFullName  = '{0}\CollectionList.xml' -f $itemExportRootFolder
-
-    # We might need to create the folder first
-    if (-not (Test-Path $itemExportRootFolder)) 
+    if ($ExportConfigurationItems -or $ExportAllItems)
     {
-        New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+        Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
     }
 
-
-    # Collections can be used in a script with Import-Clixml to get the same object as generated by this script
-    Get-CMCollection | New-CMCollectionListCustom | Export-Clixml -Depth 20 -Path $itemFullName -Force
+    if ($ExportBaselines -or $ExportAllItems)
+    {
+        Get-CMBaseline -Fast | Export-CMItemCustomFunction
+    }
     
-    Write-CMTraceLog -Message "Collections exported to: $($itemFullName)"
+    if ($ExportTaskSequences -or $ExportAllItems)
+    {
+        Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
+    }
+
+    if ($ExportAntimalwarePolicies -or $ExportAllItems)
+    {
+        Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
+    }
+
+    if ($ExportScripts -or $ExportAllItems)
+    {
+        Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
+    }
+
+    if ($ExportClientSettings -or $ExportAllItems)
+    {
+        Get-CMClientSetting | Export-CMItemCustomFunction
+    }
+
+    if ($ExportConfigurationPolicies -or $ExportAllItems)
+    {
+        Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
+    }
+    
+    if ($ExportCollections -or $ExportAllItems)
+    {
+        # Lets export collections into one file
+        $itemExportRootFolder = '{0}\Collections' -f $script:FullExportFolderName
+        $itemFullName  = '{0}\CollectionList.xml' -f $itemExportRootFolder
+
+        # We might need to create the folder first
+        if (-not (Test-Path $itemExportRootFolder)) 
+        {
+            New-Item -ItemType Directory -Path $itemExportRootFolder -Force | Out-Null
+        }
+
+        # Collections can be used in a script with Import-Clixml to get the same object as generated by this script
+        [array]$CollectionList = Get-CMCollection | New-CMCollectionListCustom 
+        $CollectionList | Export-Clixml -Depth 20 -Path $itemFullName -Force
+        Write-CMTraceLog -Message "Collections exported to: $($itemFullName)"
+        $CollectionList | ConvertTo-Json -Depth 20 | Out-File -FilePath ($itemFullName -replace 'xml', 'json') -Force
+        Write-CMTraceLog -Message "Collections exported to: $(($itemFullName -replace 'xml', 'json'))"  
+    }
+
+    if ($ExportCDLatest -or $ExportAllItems)
+    {
+        #Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"   
+    }
+
 }
 catch
 {
     Write-CMTraceLog -Message "Error during export" -Severity Error
     Write-CMTraceLog -Message "$($_)" -Severity Error
-    $global:ExitWithError = $true
+    $script:ExitWithError = $true
 }
 
 
@@ -1127,7 +1158,7 @@ $stoptWatch.Stop()
 $scriptDurationString = "Script runtime: {0}h:{1}m:{2}s" -f $stoptWatch.Elapsed.Hours, $stoptWatch.Elapsed.Minutes, $stoptWatch.Elapsed.Seconds
 Write-CMTraceLog -Message $scriptDurationString
 
-if ($global:ExitWithError)
+if ($script:ExitWithError)
 {
 
     Write-CMTraceLog -Message 'Script ended with errors' -Severity Warning

@@ -154,7 +154,9 @@ param
     [switch]$TestMode,
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,60)]
-    [int]$OutputTestData=0
+    [int]$OutputTestData=0,
+    [Parameter(Mandatory=$false)]
+    [switch]$SendAllMails
 )
 
 #region admin check
@@ -1231,7 +1233,7 @@ switch ($OutputMode)
         }  
         
         # If there are bad results, lets change the subject of the mail
-        if($resultObject.Where({$_.Status -ine 'OK'}))
+        if($resultObject | Where-Object {$_.Status -ine 'OK'})
         {
             $MailSubject = 'FAILED: {0} state from: {1}' -f $subjectTypeName, $systemName
             $paramsplatting.add("MailSubject", $MailSubject)
@@ -1240,10 +1242,13 @@ switch ($OutputMode)
         }
         else 
         {
-            $MailSubject = 'OK: {0} state from: {1}' -f $subjectTypeName, $systemName
-            $paramsplatting.add("MailSubject", $MailSubject)
+            if ($SendAllMails)
+            {
+                $MailSubject = 'OK: {0} state from: {1}' -f $subjectTypeName, $systemName
+                $paramsplatting.add("MailSubject", $MailSubject)
 
-            Send-CustomMonitoringMail @paramsplatting
+                Send-CustomMonitoringMail @paramsplatting
+            }
         }
     }
     "PSObject"
@@ -1252,7 +1257,7 @@ switch ($OutputMode)
     }
     "PRTGString"
     {
-        $badResults = $resultObject.Where({$_.Status -ine 'OK'})
+        $badResults = $resultObject | Where-Object {$_.Status -ine 'OK'}
         if ($badResults)
         {
             $resultString = '{0}:ConfigMgr log monitor failures' -f $badResults.count
