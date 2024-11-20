@@ -459,17 +459,30 @@ function New-CMCollectionListCustom
         
         $resolvedItemPath = Get-ConfigMgrObjectLocation @paramSplatting
 
-        $refreshManual = if ($item.RefreshType -eq 1) {$true}else{$false}
-        $refreshIncremental = if ($item.RefreshType -band 4) {$true}else{$false}
-        $refreshFull = if ($item.RefreshType -band 2) {$true}else{$false}
-
-
-        $refreshType = switch ($item.RefreshType) {
-            1 { 'None' }
-            { $_ -band 4 -and $_ -band 2 } { 'Both' }
-            { $_ -band 4 } { 'Continuous' }
-            { $_ -band 2 } { 'Periodic' }
-            default { 'Unknown' }
+        # Lets get the refresh type
+        if ($item.RefreshType -eq 0) 
+        {
+            $refreshType = 'None'
+        } 
+        elseif ($item.RefreshType -eq 1) 
+        {
+            $refreshType = 'None' # = manual, which basically means none
+        } 
+        elseif ($item.RefreshType -band 4 -and $item.RefreshType -band 2) 
+        {
+            $refreshType = 'Both'
+        }        
+        elseif ($item.RefreshType -band 4) 
+        {
+            $refreshType = 'Continuous'
+        } 
+        elseif ($item.RefreshType -band 2) 
+        {
+            $refreshType = 'Periodic'
+        }  
+        else 
+        {
+            $refreshType = 'Unknown'
         }
 
 
@@ -483,12 +496,9 @@ function New-CMCollectionListCustom
             IsBuiltIn = $item.IsBuiltIn
             ObjectPath = $resolvedItemPath
             CollectionRules = $null
-            RefreshManual = $refreshManual
-            RefreshIncremental = $refreshIncremental
-            RefreshFull = $refreshFull
             RefreshType = $refreshType
             RefreshSchedule = $null
-            RefreshScheduleString = $item.RefreshSchedule | Convert-CMSchedule
+            RefreshScheduleString = $item.RefreshSchedule | Convert-CMSchedule # Will result in schedule string which can be used to create the shedule easily
             CollectionVariables = $null
             MaintenanceWindows = $null
             Deployments = $null
