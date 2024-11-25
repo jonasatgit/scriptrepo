@@ -43,7 +43,7 @@ try
 
     $regPath = 'Registry::HKU\{0}\Software\Microsoft\Avalon.Graphics' -f $serviceAccountSID
 
-    if (Test-Path $regString)
+    if (Test-Path $regPath)
     {
         $regAcl = Get-Acl -Path $regPath
         $regPermissions = $regAcl.Access | Where-Object -Property IdentityReference -EQ 'Everyone'
