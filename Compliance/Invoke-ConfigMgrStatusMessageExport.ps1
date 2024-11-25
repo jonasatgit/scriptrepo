@@ -66,6 +66,12 @@ Without the parameter, the script will get all audit status messages in case the
 Otherwise, the script will only get audit status messages since the last entry in the custom table.
 Example: -MinAuditStartDatetimeString '2024-01-08 08:22:36.000'
 
+.PARAMETER MaxAuditStartDays
+Variable datetime to get Audit messages a specific number of days from the past.
+Will always adjust to script runtime unless an export file or audit database with a timestamp was found
+Default is 5 days. 
+MinAuditStartDatetimeString will always take precedence over this parameter
+
 .PARAMETER MaxGridViewEntries
 The maximum number of entries to show in the gridview
 Default is 500
@@ -93,6 +99,15 @@ The file type to export the data to. Possible values are "csv" or "json"
 .PARAMETER CSVDelimiter
 CSV delimiter in case the export should happen to a CSV file
 Default is ";"
+
+.PARAMETER RunFileCleanupAfterwards
+Will delete old files if set
+
+.PARAMETER MaxFileAgeInDays
+Max days export files should be kept. Only valid with parameter -RunFileCleanupAfterwards
+
+.PARAMETER MinFilesToKeep
+Minimum number of files to keep even if they are older than MaxFileAgeInDays. Only valid with parameter -RunFileCleanupAfterwards
 
 .EXAMPLE
 Show the table definition for the custom audit table and exit the script
@@ -128,6 +143,9 @@ param
 
     [Parameter(Mandatory=$False, HelpMessage="If the custom audit table has no data yet, run the script once with this parameter and provide the minimum audit datetime value as string in the following format: yyyy-MM-dd HH:mm:ss.fff", ParameterSetName='DefaultSet')]
     [string]$MinAuditStartDatetimeString,
+
+    [Parameter(Mandatory=$False, HelpMessage="Variable datetime to get Audit messages a specific number of days from the past. Will always adjust to script runtime unless an export file or audit database with a timestamp was found", ParameterSetName='DefaultSet')]
+    [int]$MaxAuditStartDays = 5,
 
     [Parameter(Mandatory=$False, HelpMessage="Show audit table definition", ParameterSetName='AuditTableDefinitionSet')]
     [switch]$ShowAuditTableDefinition,
@@ -409,7 +427,8 @@ function Get-StartDateTimeValueFromSQL
     (
         [string]$AuditSQLServer,
         [string]$AuditDatabase,
-        [string]$MinAuditStartDatetimeString
+        [string]$MinAuditStartDatetimeString,
+        [int]$MaxAuditStartDays
     )
 
     $outObject = [pscustomobject]@{
@@ -463,8 +482,10 @@ function Get-StartDateTimeValueFromSQL
         else
         {
             Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is not set"
-            Write-CMTraceLog -Message "While the query will now get all available audit messages from ConfigMgr DB, the GridView will only show the last $($Script:MaxGridViewEntries) entries" -Severity Warning
+            Write-CMTraceLog -Message "The query will now gather audit messages from $MaxAuditStartDays days, the GridView will only show the last $($Script:MaxGridViewEntries) entries" -Severity Warning
             Write-CMTraceLog -Message "(Grid-View will not show up when parameter -RunSilent is set. The GridView is meant for testing purposes only)" 
+            $outObject.StartDateTimeValue = (Get-Date).AddDays(-$MaxAuditStartDays).ToString("yyyy-MM-dd HH:mm:ss.fff")
+
         }
     }
     else
@@ -606,7 +627,9 @@ Function Get-StartDateTimeValueFromFile
     param
     (
         [string]$ExportPath,
-        [string]$ExportFileType
+        [string]$ExportFileType,
+        [string]$MinAuditStartDatetimeString,
+        [int]$MaxAuditStartDays
     )
 
     $outObject = [pscustomobject]@{
@@ -655,8 +678,9 @@ Function Get-StartDateTimeValueFromFile
         else
         {
             Write-CMTraceLog -Message "Parameter -MinAuditStartDatetimeString is not set"
-            Write-CMTraceLog -Message "While the query will now get all available audit messages from ConfigMgr DB, the GridView will only show the last $($Script:MaxGridViewEntries) entries" -Severity Warning
+            Write-CMTraceLog -Message "The query will now gather audit messages from $MaxAuditStartDays days, the GridView will only show the last $($Script:MaxGridViewEntries) entries" -Severity Warning
             Write-CMTraceLog -Message "(Grid-View will not show up when parameter -RunSilent is set. The GridView is meant for testing purposes only)" 
+            $outObject.StartDateTimeValue = (Get-Date).AddDays(-$MaxAuditStartDays).ToString("yyyy-MM-dd HH:mm:ss.fff")
         }
     }
 
@@ -854,12 +878,12 @@ if (-NOT (Test-Path $dllPath))
 #region Either get the last datetime from the custom audit table or a file or use the minimum datetime value passed via parameter
 if ($ExportToSQL)
 {
-    $auditResultObject = Get-StartDateTimeValueFromSQL -AuditSQLServer $AuditSQLServer -AuditDatabase $AuditDatabase -MinAuditStartDatetimeString $MinAuditStartDatetimeString
+    $auditResultObject = Get-StartDateTimeValueFromSQL -AuditSQLServer $AuditSQLServer -AuditDatabase $AuditDatabase -MinAuditStartDatetimeString $MinAuditStartDatetimeString -MaxAuditStartDays $MaxAuditStartDays
 }
 
 if ($ExportToFile)
 {
-    $auditResultObject = Get-StartDateTimeValueFromFile -ExportPath $ExportPath -ExportFileType $ExportFileType
+    $auditResultObject = Get-StartDateTimeValueFromFile -ExportPath $ExportPath -ExportFileType $ExportFileType -MaxAuditStartDays $MaxAuditStartDays -MinAuditStartDatetimeString $MinAuditStartDatetimeString
 }
 #endregion
 
