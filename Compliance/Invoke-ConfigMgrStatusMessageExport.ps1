@@ -156,7 +156,17 @@ param
 
     [Parameter(Mandatory=$False, HelpMessage="CSV delimiter in case the export should happen to a CSV file", ParameterSetName='DefaultSet')]
     [ValidateSet(",", ";", "|")]
-    [string]$CSVDelimiter = ';'
+    [string]$CSVDelimiter = ';',
+    
+    [Parameter(Mandatory=$False, HelpMessage="Will delete old files if set", ParameterSetName='DefaultSet')]
+    [Switch]$RunFileCleanupAfterwards,
+
+    [Parameter(Mandatory=$False, HelpMessage="Max days export files should be kept", ParameterSetName='DefaultSet')]
+    [int]$MaxFileAgeInDays = 30,
+    
+    [Parameter(Mandatory=$False, HelpMessage="Minimum number of files to keep even if they are older than MaxFileAgeInDays", ParameterSetName='DefaultSet')]
+    [int]$MinFilesToKeep = 10
+
 )
 
 [int]$Script:MaxGridViewEntries = $MaxGridViewEntries
@@ -650,11 +660,60 @@ Function Get-StartDateTimeValueFromFile
         }
     }
 
-    
-
-
     return $outObject
+}
+#endregion
 
+
+#region Remove-OldExportFiles
+function Remove-OldExportFiles 
+{
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$FolderPath,
+
+        [Parameter(Mandatory=$true)]
+        [int]$MaxFileAgeInDays,
+
+        [Parameter(Mandatory=$true)]
+        [int]$MinFilesToKeep,
+
+        [Parameter(Mandatory=$false)]
+        [string]$FileType
+    )
+
+    if ([string]::IsNullOrEmpty($FileType))
+    {
+        $FileType = "*"
+    }
+
+    # Get all files in the folder
+    $files = Get-ChildItem -Path $FolderPath -File -Filter "*.$FileType"
+
+    # Sort files by LastWriteTime in descending order
+    $sortedFiles = $files | Sort-Object -Property LastWriteTime -Descending
+
+    # Skip the newest files based on MinFilesToKeep
+    $filesToCheck = $sortedFiles | Select-Object -Skip $MinFilesToKeep
+
+    foreach ($file in $filesToCheck) 
+    {
+        $fileAge = (Get-Date) - $file.LastWriteTime
+        if ($fileAge.Days -gt $MaxFileAgeInDays) 
+        {
+            Write-CMTraceLog "Removing file: $($file.FullName) which is $($fileAge.Days) days old"
+            try 
+            {
+                Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+            } 
+            catch 
+            {
+                Write-CMTraceLog "Error deleting file: $($file.FullName)" -Severity Error
+                Write-CMTraceLog "$($_)" -Severity Error
+            }
+        }
+    }
 }
 #endregion
 
@@ -1046,6 +1105,12 @@ If ($ExportToSQL)
 If ($ExportToFile)
 {
     Add-AuditStatusMessagesToFile -statusMessageList $statusMessageList -ExportPath $ExportPath -ExportFileType $ExportFileType -CSVDelimiter $CSVDelimiter
+
+    if ($RunFileCleanupAfterwards)
+    {
+        # Lets also remove old files
+        Remove-OldExportFiles -FolderPath $ExportPath -MaxFileAgeInDays $MaxFileAgeInDays -MinFilesToKeep $MinFilesToKeep -FileType $ExportFileType
+    }
 }
 
 
