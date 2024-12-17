@@ -69,6 +69,7 @@ The script will create a log file in the same directory as the export and not ne
 Changelog:
 29241217 - Fixed an issue were the detection script was always started in a 32bit process
            Added two new parameters to replace the install and uninstall command for all selected apps
+           The IntunePackage.intunewin and Detection.xml file will now be deleted after the upload to save some space
 20241107 - Fixed detection script encoding
            Added detection script path check
            Changed logic to determine if an app exists in Intune
@@ -2402,6 +2403,8 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             # Close the file   
             $IntuneWin32AppFile.Dispose()
             [xml]$detectionXML = Get-content -Path $intuneWinDetectionXMLFullName
+            # remove the file as we do not need it anymore
+            $intuneWinDetectionXMLFullName | Remove-Item -Force -ErrorAction SilentlyContinue
         }
         catch 
         {
@@ -3049,6 +3052,8 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             continue
         }
         $configMgrApp.Uploaded = 'Yes'
+        # remove $IntunePackageFullName because we do not need it anymore
+        $IntunePackageFullName | Remove-Item -Force -ErrorAction SilentlyContinue
     }   
     Write-Progress -Id 0 -Completed -Activity "Upload apps to Intune"    
 
