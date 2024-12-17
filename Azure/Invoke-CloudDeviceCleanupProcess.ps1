@@ -23,18 +23,116 @@ param
 (
     [Parameter(Mandatory=$false)]
     [int]$DaysSinceRegistration = 2,
+
     [Parameter(Mandatory=$false)]
     [string]$DeviceNamePrefix = "DESKTOP",
+
     [Parameter(Mandatory=$false)]
     [string]$EntraIDAppID,
+
     [Parameter(Mandatory=$false)]
     [string]$EntraIDTenantID,
+
     [Parameter(Mandatory=$false)]
     [switch]$RequestScopes,
+
     [Parameter(Mandatory=$false)]
     [string[]]$RequiredScopes = @("Device.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"),
-    [string[]]$RequiredModules = @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement')
+
+    [Parameter(Mandatory=$false)]
+    [string[]]$RequiredModules = @('Microsoft.Graph.Identity.DirectoryManagement','Microsoft.Graph.Beta.DeviceManagement'),
+    
+    [Parameter(Mandatory=$false)]
+    [string]$LogFolder
 )
+
+
+#region Logfile
+if (-NOT($LogFolder))
+{
+    $Script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand)
+}
+else 
+{
+    $Script:LogFilePath = '{0}\{1}.log' -f $LogFolder, ($MyInvocation.MyCommand)
+}
+#endregion
+
+
+#region Write-CMTraceLog
+<#
+.Synopsis
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe .DESCRIPTION
+    Write-CMTraceLog will writea logfile readable via cmtrace.exe (https://www.bing.com/search?q=cmtrace.exe)
+.EXAMPLE
+    Write-CMTraceLog -Message "file deleted" => will log to the current directory and will use the scripts name as logfile name #> 
+function Write-CMTraceLog 
+{
+    [CmdletBinding()]
+    Param
+    (
+        #Path to the log file
+        [parameter(Mandatory=$false)]
+        [String]$LogFile=$Script:LogFilePath,
+
+        #The information to log
+        [parameter(Mandatory=$false)]
+        [String]$Message,
+
+        #The source of the error
+        [parameter(Mandatory=$false)]
+        [String]$Component=(Split-Path $PSCommandPath -Leaf),
+
+        #severity (1 - Information, 2- Warning, 3 - Error) for better reading purposes this variable as string
+        [parameter(Mandatory=$false)]
+        [ValidateSet("Information","Warning","Error")]
+        [String]$Severity="Information",
+
+        # write to console only
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Console","Log","ConsoleAndLog")]
+        [string]$OutputMode = $Script:LogOutputMode
+    )
+
+
+    # save severity in single for cmtrace severity
+    [single]$cmSeverity=1
+    switch ($Severity)
+        {
+            "Information" {$cmSeverity=1; $color = [System.ConsoleColor]::Green; break}
+            "Warning" {$cmSeverity=2; $color = [System.ConsoleColor]::Yellow; break}
+            "Error" {$cmSeverity=3; $color = [System.ConsoleColor]::Red; break}
+        }
+
+    If (($OutputMode -ieq "Console") -or ($OutputMode -ieq "ConsoleAndLog"))
+    {
+        Write-Host $Message -ForegroundColor $color
+    }
+    
+    If (($OutputMode -ieq "Log") -or ($OutputMode -ieq "ConsoleAndLog"))
+    {
+        #Obtain UTC offset
+        $DateTime = New-Object -ComObject WbemScripting.SWbemDateTime
+        $DateTime.SetVarDate($(Get-Date))
+        $UtcValue = $DateTime.Value
+        $UtcOffset = $UtcValue.Substring(21, $UtcValue.Length - 21)
+
+        #Create the line to be logged
+        $LogLine =  "<![LOG[$Message]LOG]!>" +`
+                    "<time=`"$(Get-Date -Format HH:mm:ss.mmmm)$($UtcOffset)`" " +`
+                    "date=`"$(Get-Date -Format M-d-yyyy)`" " +`
+                    "component=`"$Component`" " +`
+                    "context=`"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`" " +`
+                    "type=`"$cmSeverity`" " +`
+                    "thread=`"$PID`" " +`
+                    "file=`"`">"
+
+        #Write the line to the passed log file
+        $LogLine | Out-File -Append -Encoding UTF8 -FilePath $LogFile
+    }
+}
+#endregion
+
 
 #region check for required modules
 function Get-RequiredScriptModules 
@@ -186,19 +284,8 @@ if($scopeNotFound)
 }
 #endregion
 
-
-#$uri = "https://graph.microsoft.com/v1.0/devices?`$filter=registrationDateTime ge 2024-10-15T00:00:00Z and operatingsystem eq 'windows' and startswith(displayName, 'DESKTOP')&`$select=id,deviceId,displayName,deviceOwnership,managementType,trustType&`$count=true"
-
 $graphFilter = "registrationDateTime ge {0} and operatingsystem eq 'windows' and startswith(displayName, '{1}')" -f $iso8601DateTimeSinceRegistration, $DeviceNamePrefix
 $graphProperties = "id,deviceId,displayName,deviceOwnership,managementType,trustType"
-
-<#
-# Direct graph call method without extra module other than Microsoft.Graph.Authentication
-$graphBaseUri = "https://graph.microsoft.com/v1.0/devices"
-$graphUri = '{0}?$filter={1}&$select={2}&$count=true' -f $graphBaseUri, $graphFilter, $graphProperties
-$retVal = Invoke-MgGraphRequest -Method Get -Uri $graphUri -Headers @{ ConsistencyLevel = "eventual"}
-$graphDevices = $retVal.value
-#>
 
 $params = @{
     Filter = $graphFilter
@@ -211,7 +298,7 @@ $params = @{
 $enrolledDevices = Get-MgDevice @params
 Write-Output "Total devices found with filter: $($global:DeviceCountVariable)"
 
-# We now need another graph call forach each enrolled device to test if we have multiple devices with the same name
+# We now need another graph call for each enrolled device to test if we have multiple devices with the same name
 
 foreach($device in $enrolledDevices)
 {
@@ -240,15 +327,14 @@ foreach($device in $enrolledDevices)
         [array]$sortedDevices = $deviceRetval | Sort-Object -Property registrationDateTime -Descending
         $latestDevice = $sortedDevices[0]
         # Remove the first device from the list as it is the newest device
-        $sortedDevices = $sortedDevices | Select-Object -Skip 1
+        $sortedDevicesToRemove = $sortedDevices | Select-Object -Skip 1
 
-        foreach($deviceToRemove in $sortedDevices)
+        foreach($deviceToRemove in $sortedDevicesToRemove)
         {
             Write-Output "Removing device: $($deviceToRemove.Id) with name: $($deviceToRemove.displayName) from EntraID"
             # Remove the device
             #Remove-MgDevice -DeviceId $deviceToRemove.deviceId
 
-            Write-Output "Removing device: $($deviceToRemove.Id) with name: $($deviceToRemove.displayName) from EntraID"
         }
 
         foreach($intuneDevice in $intuneDevices)

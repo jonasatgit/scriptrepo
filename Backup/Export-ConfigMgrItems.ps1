@@ -18,6 +18,53 @@
  
 .DESCRIPTION
     Script to export certain ConfigMgr items
+
+.PARAMETER SiteCode
+    The site code of the ConfigMgr site
+
+.PARAMETER ProviderMachineName
+    The machine name of the SMS Provider
+
+.PARAMETER ExportRootFolder
+    The root folder where the items will be exported to
+
+.PARAMETER MaxExportFolderAgeInDays
+    The maximum age of the export folders in days. Default is 10 days
+    Brefore the script will delete the folders older than this value
+
+.PARAMETER MinExportFoldersToKeep
+    The minimum amount of export folders to keep. Default is 2
+    The script will keep at least this amount of folders to avoid being left with nothing
+
+.PARAMETER ExportAllItemTypes
+    Export all item types
+
+.PARAMETER ExportCollections
+    Export collections
+
+.PARAMETER ExportConfigurationItems
+    Export configuration items
+
+.PARAMETER ExportConfigurationBaselines
+    Export configuration baselines
+
+.PARAMETER ExportTaskSequences
+    Export task sequences
+
+.PARAMETER ExportAntimalwarePolicies
+    Export antimalware policies
+
+.PARAMETER ExportScripts
+    Export scripts
+
+.PARAMETER ExportClientSettings
+    Export client settings
+
+.PARAMETER ExportConfigurationPolicies
+    Export configuration policies
+
+.PARAMETER ExportCDLatest
+    Export the latest version of the content of the CD.Latest folder to be able to restore ConfigMgr
     
 .EXAMPLE
     Export-ConfigMgrItems.ps1
@@ -25,6 +72,11 @@
 
 param
 (
+    [String]$SiteCode,
+    [String]$ProviderMachineName,
+    [String]$ExportRootFolder,
+    [int]$MaxExportFolderAgeInDays = 10,
+    [int]$MinExportFoldersToKeep = 2,
     [Switch]$ExportAllItemTypes,
     [Switch]$ExportCollections,
     [Switch]$ExportConfigurationItems,
@@ -40,17 +92,16 @@ param
 
 
 # Site configuration
-[string]$script:SiteCode = "P02" # Site code 
-[string]$script:ProviderMachineName = "CM02.contoso.local" # SMS Provider machine name
-[string]$script:ExportRootFolder = 'E:\EXPORT' 
-[int]$MaxExportFolderAgeInDays = 10
-[int]$MinExportFoldersToKeep = 2
+[string]$script:SiteCode = $SiteCode # Site code 
+[string]$script:ProviderMachineName = $ProviderMachineName # SMS Provider machine name
+[string]$script:ExportRootFolder = $ExportRootFolder
+
 # In case we only have older folders and would therefore delete them
 # $MinExportFoldersToKeep will make sure we will keep at least some of them and not end up with nothing
 
 # Do not change
 $script:Spacer = '-'
-$script:LogFilePath = $script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
+$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
 $script:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
 $script:ExitWithError = $false
 
@@ -1022,14 +1073,1047 @@ function Export-CMItemCustomFunction
 }
 #endregion 
 
-#region load ConfigMgr modules
+
+#region Compress-FolderOnRemoteMachine
+Function Compress-FolderOnRemoteMachine
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$RemoteComputerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FolderToZip,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ZipFileName,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ZipFolder # will be a temp folder on the same drive of the folder to compress
+    )
+
+    # Script block to run on the remote machine
+    $scriptBlock = {
+        param (
+            [string]$FolderToZip,
+            [string]$ZipFileName,
+            [string]$ZipFolder
+        )
+
+        if ([string]::IsNullOrEmpty($ZipFolder))
+        {
+            $Matches = $null
+            if ($FolderToZip -imatch '^[A-Za-z]:\\')
+            {
+                $ZipFolder = '{0}Temp' -f $Matches[0]       
+            }          
+        }
+
+        if (-Not ($ZipFolder -imatch '^[A-Za-z]:\\(?:[^\\\/:*?"<>|\r\n]+\\)*[^\\\/:*?"<>|\r\n]*$'))
+        {
+            Write-Error 'Failed to get valid local path to store zip file'
+        }
+
+        # Ensure the destination directory exists
+        if (-not (Test-Path -Path $ZipFolder))
+        {
+            $null = New-Item -ItemType Directory -Path $ZipFolder -Force
+        }
+
+        # Making sure we have the correct path
+        if ($ZipFolder -imatch '\\$')
+        {
+            $ZipFolder = $ZipFolder -replace '\\$'
+        }
+
+        # File full name to store the zip file
+        $zipFileFullName = '{0}\{1}' -f $ZipFolder, $ZipFileName
+
+        # Create the zip file
+        $null = Compress-Archive -Path $FolderToZip -DestinationPath $zipFileFullName -Force -ErrorAction Stop
+
+        if (-NOT (Test-Path $zipFileFullName))
+        {
+            Write-Error "Compressed file not found: $($zipFileFullName)"
+        }
+
+        return $zipFileFullName
+    }
+
+    # Invoke the script block on the remote machine
+    $result = Invoke-Command -ComputerName $remoteComputerName -ScriptBlock $scriptBlock -ArgumentList $FolderToZip, $ZipFileName, $ZipFolder -ErrorAction Stop -ErrorVariable errorvar
+
+    # Check for errors
+    if ($errorvar)
+    {
+        return $errorvar
+    }
+
+    return $result
+}
+#endregion
+
+
+#region Start-RoboCopy
+Function Start-RoboCopy
+{
+    [CmdletBinding()]
+    Param
+    (
+        [parameter(Mandatory=$True,ValueFromPipeline=$false)]
+        [string]$Source,
+        [parameter(Mandatory=$True,ValueFromPipeline=$false)]
+        [string]$Destination,
+        [parameter(Mandatory=$False,ValueFromPipeline=$false)]
+        [string]$FileNames, # File(s) to copy  (names/wildcards: default is "*.*").
+        [parameter(Mandatory=$False,ValueFromPipeline=$false)]
+        [string]$CommonRobocopyParams='/NP /R:10 /W:10 /Z /E',
+        [parameter(Mandatory=$True,ValueFromPipeline=$false)]
+        [string] $RobocopyLogPath,
+        [parameter(Mandatory=$False,ValueFromPipeline=$false)]
+        [string]$IPG = 0
+        # IPG will effect the overall runtime of the script
+    )
+
+    # /MIR :: MIRror a directory tree (equivalent to /E plus /PURGE)
+    # /NP :: No Progress - don't display percentage copied.
+    # /NDL :: No Directory List - don't log directory names.
+    # /NC :: No Class - don't log file classes.
+    # /BYTES :: Print sizes as bytes.
+    # /NJH :: No Job Header.
+    # /NJS :: No Job Summary.
+    # /R:10 :: 10 retries
+    # /W:10 :: 10 seconds waittime between retries
+    # example CommonRobocopyParams = '/MIR /NP /NDL /NC /BYTES /NJH /NJS'
+
+    if ([string]::IsNullOrEmpty($FileNames))
+    {
+        $ArgumentList = '"{0}" "{1}" /LOG:"{2}" /ipg:{3} {4}' -f $Source, $Destination, $RobocopyLogPath, $IPG, $CommonRobocopyParams
+    }
+    else
+    {
+        $ArgumentList = '"{0}" "{1}" "{2}" /LOG:"{3}" /ipg:{4} {5}' -f $Source, $Destination, $FileNames, $RobocopyLogPath, $IPG, $CommonRobocopyParams
+    }
+
+    #Check if robocopy is accessible      
+    Write-CMTraceLog -Message "Start RoboCopy with the following parameters: `"$ArgumentList`""
+    $roboCopyPath = "C:\windows\system32\robocopy.exe"
+    if(-NOT(Test-Path $roboCopyPath))
+    {
+        Write-CMTraceLog -Message "Robocopy not found: `"$roboCopyPath`"" -Severity Error
+        Exit 1
+    }
+
+    try
+    {
+        $Robocopy = Start-Process -FilePath $roboCopyPath -ArgumentList $ArgumentList -Verbose -PassThru -Wait -WindowStyle Hidden -ErrorAction Stop
+    }
+    Catch
+    {
+        Write-CMTraceLog -Message "RoboCopy failed" -Severity Error
+        Write-CMTraceLog -Message "$($_)" -Severity Error
+        Exit 1  
+    }
+
+    try
+    {
+        $roboCopyResult = Get-Content $RobocopyLogPath -last 13 -ErrorAction Stop
+        # german and english output parser
+        $regexResultDirectories = [regex]::Matches($roboCopyResult,'(Dirs|Verzeich\.*)(\s*:\s*)(?<DirsTotal>\d+)\s*(?<DirsCopied>\d+)\s*(?<DirsSkipped>\d+)\s*(?<DirsMismatch>\d+)\s*(?<DirsFailed>\d+)\s*(?<DirsExtras>\d+)\s*' )
+        $regexResultFiles = [regex]::Matches($roboCopyResult,'(Files|Dateien)(\s*:\s*)(?<FilesTotal>\d+)\s*(?<FilesCopied>\d+)\s*(?<FilesSkipped>\d+)\s*(?<FilesMismatch>\d+)\s*(?<FilesFailed>\d+)\s*(?<FilesExtras>\d+)\s*' )
+        $bolFound = $false
+
+        if ((-NOT([string]::IsNullOrEmpty($regexResultDirectories.value))) -and (-NOT([string]::IsNullOrEmpty($regexResultFiles.value))))
+        {
+            $bolFound = $true
+        }
+
+        $roboCopyResultObject = [pscustomobject]@{
+                ResultFoundInLog = $bolFound
+                dirsTotal = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsTotal'}).Value
+                dirsCopied = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsCopied'}).Value
+                dirsSkipped = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsSkipped'}).Value
+                dirsMismatch = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsMismatch'}).Value
+                dirsFAILED = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsFailed'}).Value
+                dirsExtras = $regexResultDirectories.Groups.Where({$_.Name -eq 'DirsExtras'}).Value
+                filesTotal = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesTotal'}).Value
+                filesCopied = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesCopied'}).Value
+                filesSkipped = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesSkipped'}).Value
+                filesMismatch = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesMismatch'}).Value
+                filesFAILED = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesFailed'}).Value
+                filesExtras = $regexResultFiles.Groups.Where({$_.Name -eq 'FilesExtras'}).Value
+        }
+    }
+    Catch
+    {
+        Write-CMTraceLog -Message "Not able to check robocopy log $($_)" -Severity Error	
+        Write-CMTraceLog -Message "Stopping script!" -Severity Warning
+        Exit 1
+    }
+
+    Write-CMTraceLog -Message "RoboCopy result..."
+    Write-CMTraceLog -Message "$roboCopyResultObject"
+    if($roboCopyResultObject.ResultFoundInLog -eq $true -and $roboCopyResultObject.FilesFAILED -eq 0 -and $roboCopyResultObject.DirsFAILED -eq 0)
+    {   
+        Write-CMTraceLog -Message "Copy process successful. Logfile: `"$RobocopyLogPath`""
+    }
+    else
+    {
+        Write-CMTraceLog -Message "Copy process failed. Logfile: `"$RobocopyLogPath`"" -Severity Error	
+        Write-CMTraceLog -Message "Stopping script!" -Severity Warning
+        Exit 1
+    }
+}
+#endregion
+
+
+#region Get-ConfigMgrSiteInfo
+function Get-ConfigMgrSiteInfo
+{
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string[]]$ListOfProviderServers
+    )
+
+    $outObject = [pscustomobject][ordered]@{
+        SiteCode = $null
+        ParentSiteCode = $null
+        InstallDirectory = $null
+        SiteName = $null
+        SiteServerDomain = $null
+        SiteServerName = $null
+        SiteServerHAList = $null
+        SiteServerPlatform = $null
+        SiteType = $null
+        SQLDatabaseName = $null
+        SQLServerName = $null
+        SQLDatabase = $null
+        SQLInstance = $null
+        SQLDatabaseFile = $null
+        SQLDatabaseLogFile = $null
+        SQLServerSSBCertificateThumbprint = $null
+        SQLSSBPort = $null # was 'SSBPort'
+        SQLServicePort = $null
+        LocaleID = $null
+        FullVersion = $null
+        FullVersionUpdated = $null
+        FullVersionUpdatedName = $null
+        CloudConnector = $null
+        CloudConnectorServer = $null
+        CloudConnectorOfflineMode = $null
+        SMSProvider = $null
+        BackupPath = $null
+        BackupEnabled = $null
+        ConsoleInstalled = $null
+        InConsoleUpdates = $null
+        SUPList = $null
+        SSRSList = $null
+    }
+
+    # We will try the first server in the list and if that fails we will try the next one
+    foreach ($smsProviderServer in $ListOfProviderServers)
+    {
+        try 
+        {
+            $providerLocation = Get-CimInstance -ComputerName $smsProviderServer -Namespace "root\sms" -Query "Select * From SMS_ProviderLocation Where ProviderForLocalSite=1 and Machine like '%$($smsProviderServer)%'" -ErrorAction Stop
+            if ($providerLocation)
+            {
+                Write-CMTraceLog -Message "Connected to sms provider: `"$smsProviderServer`""
+                $SiteCode = $providerLocation.SiteCode
+                break
+            }        
+        }
+        catch 
+        {
+            Write-CMTraceLog -Message "Failed to connect to `"$smsProviderServer`" Will try the next one in the list" -Severity Warning
+        }
+
+    }
+
+    # stop the script in case connection was not successful
+    if (-NOT ($SiteCode))
+    {
+        Write-CMTraceLog -Message "Failed to connect to any site server" -Severity Error
+        Exit 1
+    }
+
+    # Setting the output object with as much data as possible
+    $outObject.SiteCode = $SiteCode
+    $outObject.SMSProvider = $providerLocation.Machine
+    $outObject.CloudConnector = 0 # setting service connection point to not installed. Will change later if detected as installed
+    $outObject.ConsoleInstalled = 0 # same as with cloud connector  
+        
+    try 
+    {
+        $siteDefinition = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -ErrorAction Stop    
+    }
+    catch 
+    {
+        Write-CMTraceLog -Message "Failed to get site definition" -Severity Error
+        Write-CMTraceLog -Message "$($_)" -Severity Error
+        Exit 1
+    }
+    
+    if ($siteDefinition)
+    {
+        $outObject.ParentSiteCode = $siteDefinition.ParentSiteCode
+        $outObject.InstallDirectory = $siteDefinition.InstallDirectory
+        $outObject.SiteName = $siteDefinition.SiteName
+        $outObject.SiteServerDomain = $siteDefinition.SiteServerDomain
+        $outObject.SiteServerName = $siteDefinition.SiteServerName
+        $outObject.SiteServerPlatform = $siteDefinition.SiteServerPlatform
+        $outObject.SiteType = $siteDefinition.SiteType
+        $outObject.SQLDatabaseName = $siteDefinition.SQLDatabaseName
+        $outObject.SQLServerName = $siteDefinition.SQLServerName
+
+        # Extract DB Info
+        $sqlDBInfo = $outObject.SQLDatabaseName -split '\\'
+        if ($sqlDBInfo.Count -eq 2)
+        {
+            $outObject.SQLDatabase = $sqlDBInfo[1]
+            $outObject.SQLInstance = $sqlDBInfo[0]
+        }
+        else
+        {
+            $outObject.SQLDatabase = $sqlDBInfo
+            $outObject.SQLInstance = "Default"
+        }
+
+        # Adding filenames
+        $outObject.SQLDatabaseFile = "{0}.mdf" -f $outObject.SQLDataBase
+        $outObject.SQLDatabaseLogFile = "{0}_log.ldf" -f $outObject.SQLDataBase
+        # Adding SQL Port info
+        $outObject.SQlServicePort = ($siteDefinition.props | Where-Object {$_.PropertyName -eq 'SQlServicePort'} | Select-Object -ExpandProperty Value)
+        $outObject.SQLSSBPort = ($siteDefinition.props | Where-Object {$_.PropertyName -eq 'SSBPort'} | Select-Object -ExpandProperty Value)
+        # Adding language and version
+        $outObject.LocaleID = ($siteDefinition.props | Where-Object {$_.PropertyName -eq 'LocaleID'} | Select-Object -ExpandProperty Value)
+        $outObject.FullVersion = ($siteDefinition.props | Where-Object {$_.PropertyName -eq 'Full Version'} | Select-Object -ExpandProperty Value1)
+
+        # get list of role servers
+        try 
+        {
+            $SysResUse = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'" -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props   
+        }
+        catch 
+        {
+            Write-CMTraceLog -Message "Failed to get role servers" -Severity Error
+            Write-CMTraceLog -Message "$($_)" -Severity Error
+            Exit 1
+        }
+        
+        if ($SysResUse)
+        {
+            $outSupListObj = New-Object System.Collections.ArrayList
+            # Iterate through each SUP
+            $supList = ($SysResUse | Where-Object {$_.RoleName -eq 'SMS Software Update Point'}) 
+            foreach ($sup in $supList)
+            {
+                $tmpSupObj = [pscustomobject]@{
+                    SUPName = $sup.NetworkOsPath -replace '\\\\',''
+                    UseProxy = $sup.props | Where-Object {$_.PropertyName -eq 'UseProxy'} | Select-Object -ExpandProperty Value
+                    ProxyName = $sup.props | Where-Object {$_.PropertyName -eq 'ProxyName'} | Select-Object -ExpandProperty Value
+                    ProxyServerPort = $sup.props | Where-Object {$_.PropertyName -eq 'ProxyServerPort'} | Select-Object -ExpandProperty Value
+                    AnonymousProxyAccess = $sup.props | Where-Object {$_.PropertyName -eq 'AnonymousProxyAccess'} | Select-Object -ExpandProperty Value
+                    UserName = $sup.props | Where-Object {$_.PropertyName -eq 'UserName'} | Select-Object -ExpandProperty Value
+                    UseProxyForADR = $sup.props | Where-Object {$_.PropertyName -eq 'UseProxyForADR'} | Select-Object -ExpandProperty Value
+                    IsIntranet = $sup.props | Where-Object {$_.PropertyName -eq 'IsIntranet'} | Select-Object -ExpandProperty Value
+                    Enabled = $sup.props | Where-Object {$_.PropertyName -eq 'Enabled'} | Select-Object -ExpandProperty Value
+                    DBServerName = $sup.props | Where-Object {$_.PropertyName -eq 'DBServerName'} | Select-Object -ExpandProperty Value2
+                    WSUSIISPort = $sup.props | Where-Object {$_.PropertyName -eq 'WSUSIISPort'} | Select-Object -ExpandProperty Value
+                    WSUSIISSSLPort = $sup.props | Where-Object {$_.PropertyName -eq 'WSUSIISSSLPort'} | Select-Object -ExpandProperty Value
+                    SSLWSUS = $sup.props | Where-Object {$_.PropertyName -eq 'SSLWSUS'} | Select-Object -ExpandProperty Value
+                    UseParentWSUS = $sup.props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'} | Select-Object -ExpandProperty Value
+                    WSUSAccessAccount = $sup.props | Where-Object {$_.PropertyName -eq 'WSUSAccessAccount'} | Select-Object -ExpandProperty Value
+                    AllowProxyTraffic = $sup.props | Where-Object {$_.PropertyName -eq 'AllowProxyTraffic'} | Select-Object -ExpandProperty Value
+                }
+                [void]$outSupListObj.add($tmpSupObj)
+
+            }
+            $outObject.SUPList = $outSupListObj
+
+            $outSSRSListObj = New-Object System.Collections.ArrayList
+            # Iterate through each SSRS
+            $ssrsList = ($SysResUse | Where-Object {$_.RoleName -eq 'SMS SRS Reporting Point'})
+            foreach ($ssrs in $ssrsList)
+            {
+                $tmpSSRSObj = [pscustomobject]@{
+                    SSRSName = $ssrs.NetworkOsPath -replace '\\\\',''
+                    DatabaseServerName = $ssrs.props | Where-Object {$_.PropertyName -eq 'DatabaseServerName'} | Select-Object -ExpandProperty Value2
+                    ReportServerInstance = $ssrs.props | Where-Object {$_.PropertyName -eq 'ReportServerInstance'} | Select-Object -ExpandProperty Value2
+                    ReportManagerUri = $ssrs.props | Where-Object {$_.PropertyName -eq 'ReportManagerUri'} | Select-Object -ExpandProperty Value2
+                    ReportServerUri = $ssrs.props | Where-Object {$_.PropertyName -eq 'ReportServerUri'} | Select-Object -ExpandProperty Value2
+                    RootFolder = $ssrs.props | Where-Object {$_.PropertyName -eq 'RootFolder'} | Select-Object -ExpandProperty Value2
+                    Username = $ssrs.props | Where-Object {$_.PropertyName -eq 'Username'} | Select-Object -ExpandProperty Value2
+                    Version = $ssrs.props | Where-Object {$_.PropertyName -eq 'Version'} | Select-Object -ExpandProperty Value2
+                }
+                [void]$outSSRSListObj.add($tmpSSRSObj)                    
+            }
+            $outObject.SSRSList = $outSSRSListObj
+
+
+            $CloudConnectorServer = ($SysResUse | Where-Object {$_.RoleName -eq 'SMS Dmp Connector'})
+            if ($CloudConnectorServer)
+            {
+                $outObject.CloudConnector = 1
+                $outObject.CloudConnectorServer = ($CloudConnectorServer.NetworkOsPath -replace '\\\\','') 
+                $outObject.CloudConnectorOfflineMode = (($CloudConnectorServer.Props | Where-Object {$_.PropertyName -eq 'OfflineMode'}).value)
+            }               
+        }
+
+        try 
+        {
+            $query = "SELECT Enabled, DeviceName FROM SMS_SCI_SQLTask WHERE FileType=2 AND ItemName='Backup SMS Site Server' AND ItemType='SQL Task' AND SiteCode='$($SiteCode)'"
+            $backupInfo = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$($SiteCode)" -query $query -ErrorAction Stop    
+        }
+        catch 
+        {
+            write-CMTraceLog -Message "Failed to get backup info" -Severity Error
+            write-CMTraceLog -Message "$($_)" -Severity Error
+            Exit 1
+        }
+        
+        if ($backupInfo)
+        {
+            $outObject.BackupEnabled = $backupInfo.Enabled
+            $outObject.BackupPath = $backupInfo.DeviceName
+        }
+        else
+        {
+            $outObject.BackupEnabled = 'Unknown'
+        }
+
+        # Is console installed on site server?
+        # will use WMI/CIM method to avoid any issues with remote registry access
+        # Is console installed on site server?
+        # will use WMI/CIM method to avoid any issues with remote registry access
+        $regKeyPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\AdminUI"
+        $regKeyValue = "AdminUILog"
+        
+        if (Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath $regKeyPath -RegKeyValue $regKeyValue -Method GetStringValue) 
+        {
+            $outObject.ConsoleInstalled = 1
+        }
+    }
+
+    # Getting site update information
+    try 
+    {
+        $query = 'SELECT Name, PackageGuid, DateReleased, DateCreated, Description, FullVersion, ClientVersion, State FROM SMS_CM_UpdatePackages WHERE UpdateType != 3'
+        [array]$configMgrUpdates = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -Query $query -ErrorAction stop        
+    }
+    catch 
+    {
+        Write-CMTraceLog "Failed to get ConfigMgr updates" -Severity Error
+        Write-CMTraceLog "$($_)" -Severity Error
+        Exit 1
+    }
+
+    if($configMgrUpdates)
+    {       
+        #https://learn.microsoft.com/en-us/troubleshoot/mem/configmgr/setup-migrate-backup-recovery/understand-troubleshoot-updates-servicing#complete-list-of-state-codes
+        $stateNames = @{
+            0x0 = "UNKNOWN"
+            0x2 = "ENABLED"
+            262145 = "DOWNLOAD_IN_PROGRESS"
+            262146 = "DOWNLOAD_SUCCESS"
+            327679 = "DOWNLOAD_FAILED"
+            327681 = "APPLICABILITY_CHECKING"
+            327682 = "APPLICABILITY_SUCCESS"
+            393213 = "APPLICABILITY_HIDE"
+            393214 = "APPLICABILITY_NA"
+            393215 = "APPLICABILITY_FAILED"
+            65537 = "CONTENT_REPLICATING"
+            65538 = "CONTENT_REPLICATION_SUCCESS"
+            131071 = "CONTENT_REPLICATION_FAILED"
+            131073 = "PREREQ_IN_PROGRESS"
+            131074 = "PREREQ_SUCCESS"
+            131075 = "PREREQ_WARNING"
+            196607 = "PREREQ_ERROR"
+            196609 = "INSTALL_IN_PROGRESS"
+            196610 = "INSTALL_WAITING_SERVICE_WINDOW"
+            196611 = "INSTALL_WAITING_PARENT"
+            196612 = "INSTALL_SUCCESS"
+            196613 = "INSTALL_PENDING_REBOOT"
+            262143 = "INSTALL_FAILED"
+            196614 = "INSTALL_CMU_VALIDATING"
+            196615 = "INSTALL_CMU_STOPPED"
+            196616 = "INSTALL_CMU_INSTALLFILES"
+            196617 = "INSTALL_CMU_STARTED"
+            196618 = "INSTALL_CMU_SUCCESS"
+            196619 = "INSTALL_WAITING_CMU"
+            262142 = "INSTALL_CMU_FAILED"
+            196620 = "INSTALL_INSTALLFILES"
+            196621 = "INSTALL_UPGRADESITECTRLIMAGE"
+            196622 = "INSTALL_CONFIGURESERVICEBROKER"
+            196623 = "INSTALL_INSTALLSYSTEM"
+            196624 = "INSTALL_CONSOLE"
+            196625 = "INSTALL_INSTALLBASESERVICES"
+            196626 = "INSTALL_UPDATE_SITES"
+            196627 = "INSTALL_SSB_ACTIVATION_ON"
+            196628 = "INSTALL_UPGRADEDATABASE"
+            196629 = "INSTALL_UPDATEADMINCONSOLE"
+        }
+
+        # Convert WMI datetime to normal date format
+
+        $inConsoleUpdates = $configMgrUpdates | ForEach-Object {
+            [PSCustomObject]@{
+                Name = $_.Name
+                PackageGuid = $_.PackageGuid
+                DateReleased = (get-date($_.DateReleased) -Format "yyyy-MM-dd HH:mm:ss")
+                DateCreated = (get-date($_.DateCreated) -Format "yyyy-MM-dd HH:mm:ss")
+                Description = $_.Description
+                FullVersion = $_.FullVersion
+                ClientVersion = $_.ClientVersion
+                State = if ($stateNames.ContainsKey($_.State)) { $stateNames[$_.State] } else { "UNKNOWN STATE: $($_.State)" }
+                }
+        }
+
+        $outObject.InConsoleUpdates = $inConsoleUpdates | Sort-Object -Property FullVersion -Descending
+
+        # get the latest update fullversion for updates in state 196612
+        $outObject.FullVersionUpdated = ($outObject.InConsoleUpdates | Where-Object { $_.State -eq "INSTALL_SUCCESS" } | Select-Object -First 1).FullVersion
+        $outObject.FullVersionUpdatedName = ($outObject.InConsoleUpdates | Where-Object { $_.State -eq "INSTALL_SUCCESS" } | Select-Object -First 1).Name
+
+        # Getting list of all HA site servers in case HA is used
+        $outObject.SiteServerHAList = Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -RegKeyValue 'Site Servers' -Method GetStringValue
+
+    }
+    else
+    {
+        return $false
+    }
+
+    return $outObject
+}
+#endregion
+
+
+#region Get-RegistryValueFromRemoteMachine
+function Get-RegistryValueFromRemoteMachine 
+{
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ComputerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RegKeyPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RegKeyValue,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("GetStringValue", "GetDWORDValue", "GetQWORDValue")]
+        [string]$Method
+    )
+
+    try {
+        # Determine the registry hive
+        if ($RegKeyPath -ilike "HKLM*") {
+            $hDefKey = [UInt32]::Parse("2147483650") # HKEY_LOCAL_MACHINE
+            $RegKeyPath = $RegKeyPath -replace "^HKLM\\", ""
+        } elseif ($RegKeyPath -ilike "HKCU*") {
+            $hDefKey = [UInt32]::Parse("2147483649") # HKEY_CURRENT_USER
+            $RegKeyPath = $RegKeyPath -replace "^HKCU\\", ""
+        } else {
+            throw "Unsupported registry hive. Only HKLM and HKCU are supported."
+        }
+
+        $methodParams = @{
+            hDefKey = $hDefKey
+            sSubKeyName = $RegKeyPath
+            sValueName = $RegKeyValue
+        }
+
+        # Invoke the specified method
+        $result = Invoke-CimMethod -ComputerName $ComputerName -Namespace "root\default" -ClassName StdRegProv -MethodName $Method -Arguments $methodParams -ErrorAction SilentlyContinue
+
+        # Return the appropriate value based on the method
+        switch ($Method) {
+            "GetStringValue" { return $result.sValue }
+            "GetDWORDValue" { return $result.uValue }
+            "GetQWORDValue" { return $result.uValue }
+        }
+
+        return $null
+    }
+    catch {
+        Write-CMTraceLog -Message "Failed to read `"$($RegKeyPath)`" - `"$($RegKeyValue)`" on remote machine: `"$($ComputerName)`"" -Type Warning
+        Write-CMTraceLog -Message "$($_)" -Type Warning
+        return $null
+    }
+}
+#endregion
+
+
+#region Export-SystemRoleInformation
+<#
+.SYNOPSIS
+    Function to export MECM site server information into a JSON file
+#>
+Function Export-SystemRoleInformation
+{
+    param
+    (
+        [parameter(Mandatory=$true)]
+        [string]$ProviderMachineName,
+        [parameter(Mandatory=$true)]
+        [string]$SiteCode,
+        [parameter(Mandatory=$true)]
+        [string]$OutputFilePath,
+        [parameter(Mandatory=$false)]
+        [ValidateSet("IPv4","IPv6","All")]
+        [string]$IPType = "IPv4"
+    )
+  
+    try
+    {
+        $siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -ErrorAction Stop
+        # getting sitecode and parent to have hierarchy information
+        $siteCodeHash = @{}
+        $siteCodeInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -ClassName SMS_SCI_SiteDefinition -ErrorAction Stop
+    }
+    Catch
+    {
+        Write-CMTraceLog -Type Error -Message "Could not get site info" -Component ($commandName) -LogType LogAndEventlog
+        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog
+        Invoke-StopScriptIfError
+    }
+
+    $siteCodeInfo | ForEach-Object {   
+        if ([string]::IsNullOrEmpty($_.ParentSiteCode))
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.SiteCode)
+        }
+        else
+        {
+            $siteCodeHash.Add($_.SiteCode,$_.ParentSiteCode)
+        }
+    }
+
+    Function Get-IPAddressFromName
+    {
+        param
+        (
+            [string]$SystemName,
+            [ValidateSet("IPv4","IPv6","All")]
+            [string]$Type = "IPv4"
+        )
+        
+        $LocalSystemIPAddressList = @()
+        $dnsObject = Resolve-DnsName -Name $systemName -ErrorAction SilentlyContinue
+        if ($dnsObject)
+        {
+            switch ($Type) 
+            {
+                "All" {$LocalSystemIPAddressList += ($dnsObject).IPAddress}
+                "IPv4" {$LocalSystemIPAddressList += ($dnsObject | Where-Object {$_.Type -eq 'A'}).IPAddress}
+                "IPv6" {$LocalSystemIPAddressList += ($dnsObject | Where-Object {$_.Type -eq 'AAAA'}).IPAddress}
+            }
+            return $LocalSystemIPAddressList
+        }
+    }
+
+    # Get a list of all site servers and their sitecodes 
+    $siteCodeHashTable = @{}
+    $sqlRoleHashTable = @{}
+    $siteServerTypes = $siteSystems | Where-Object {$_.Type -in (1,2,4) -and $_.RoleName -eq 'SMS Site Server'}
+    $siteServerTypes | ForEach-Object {
+    
+        switch ($_.Type)
+        {
+            1 
+            {
+                $siteHashValue = 'SecondarySite'
+                $sqlHashValue = 'SECSQLServerRole'
+            }
+            
+            2 
+            {
+                $siteHashValue = 'PrimarySite'
+                $sqlHashValue = 'PRISQLServerRole'
+            }
+            
+            4 
+            {
+                $siteHashValue = 'CentralAdministrationSite'
+                $sqlHashValue = 'CASSQLServerRole'
+            }
+            #8 {'NotCoLocatedWithSiteServer'}
+        }
+
+        $siteCodeHashTable.Add($_.SiteCode, $siteHashValue)
+        $sqlRoleHashTable.Add($_.SiteCode, $sqlHashValue)
+    }
+    
+    
+    $outObject = New-Object System.Collections.ArrayList
+    foreach ($system in $siteSystems)
+    {
+        switch ($system.RoleName)
+        {
+            'SMS SQL Server' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = $sqlRoleHashTable[$system.SiteCode] # specific role like PRI, CAS, SEC or WSUS SQL 
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SQLServerRole'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Site Server' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = $siteCodeHashTable[$system.SiteCode] # specific role like PRI, CAS or SEC
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SiteServer'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+            }
+            'SMS Provider' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SMSProvider'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Software Update Point' 
+            {
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'CentralAdministrationSite')
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'CentralSoftwareUpdatePoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+
+                if ($siteCodeHashTable[$system.SiteCode] -eq 'SecondarySite')
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'SecondarySoftwareUpdatePoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+                else
+                {             
+                    $useParentWSUS = $system.Props | Where-Object {$_.PropertyName -eq 'UseParentWSUS'}
+                    if ($useParentWSUS.Value -eq 1)
+                    {
+                        $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                        $tmpObj.Role = 'PrimarySoftwareUpdatePoint'
+                        $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                        $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                        $tmpObj.SiteCode = $system.SiteCode
+                        $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                        [void]$outObject.Add($tmpObj)
+                    }
+                }
+
+                $supSQLServer = $system.Props | Where-Object {$_.PropertyName -eq 'DBServerName'}
+                if (-NOT ([string]::IsNullOrEmpty($supSQLServer.Value2)))
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'SUPSQLServerRole'
+                  
+                    $systemNameFromNetworkOSPath = $system.NetworkOSPath -replace '\\\\'
+                    [array]$dbServerName = $supSQLServer.Value2 -split '\\' # extract servername from server\instancename string
+                    # making sure we have a FQDN
+                    if ($systemNameFromNetworkOSPath -like "$($dbServerName[0])*")
+                    {
+                        $tmpObj.FullQualifiedDomainName = $systemNameFromNetworkOSPath
+                    }
+                    else 
+                    {
+                        if ($dbServerName[0] -notmatch '\.') # in case we don't have a FQDN, create one based on the FQDN of the initial system  
+                        {
+                            [array]$fqdnSplit =  $systemNameFromNetworkOSPath -split '\.' # split FQDN to easily replace hostname
+                            $fqdnSplit[0] = $dbServerName[0] # replace hostname
+                            $tmpObj.FullQualifiedDomainName = $fqdnSplit -join '.' # join back to FQDN
+                        }   
+                        else 
+                        {
+                            $tmpObj.FullQualifiedDomainName = $dbServerName[0] 
+                        }              
+                    }
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                    
+                }
+                
+                
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'SoftwareUpdatePoint'            
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+
+            }
+            'SMS Endpoint Protection Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'EndpointProtectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Distribution Point' 
+            {
+
+                $isPXE = $system.Props | Where-Object {$_.PropertyName -eq 'IsPXE'}
+                if ($isPXE.Value -eq 1)
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'DistributionPointPXE'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)                
+                }
+
+                $isPullDP = $system.Props | Where-Object {$_.PropertyName -eq 'IsPullDP'}
+                if ($isPullDP.Value -eq 1)
+                {
+                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                    $tmpObj.Role = 'PullDistributionPoint'
+                    $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                    $tmpObj.SiteCode = $system.SiteCode
+                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                    [void]$outObject.Add($tmpObj)
+    
+                    $pullSources = $system.PropLists | Where-Object {$_.PropertyListName -eq 'SourceDistributionPoints'}
+                    if (-NOT $pullSources)
+                    {
+                        #Write-host "$(Get-date -Format u): No DP sources found for PullDP" -ForegroundColor Yellow
+                    }
+                    else
+                    {
+    
+                        $pullSources.Values | ForEach-Object {
+                                $Matches = $null
+                                $retVal = $_ -match '(DISPLAY=\\\\)(.+)(\\")'
+                                if ($retVal)
+                                {
+                                    $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                                    $tmpObj.Role = 'PullDistributionPointSource'
+                                    $tmpObj.FullQualifiedDomainName = ($Matches[2])
+                                    $tmpObj.PullDistributionPointToSource = $system.NetworkOSPath -replace '\\\\'
+                                    $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($Matches[2]) -Type $IPType
+                                    $tmpObj.SiteCode = $system.SiteCode
+                                    $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                                    [void]$outObject.Add($tmpObj)
+                                }
+                                else
+                                {
+                                    #Write-host "$(Get-date -Format u): No DP sources found for PullDP" -ForegroundColor Yellow
+                                }
+                            }
+                    }
+                }
+    
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'DistributionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Management Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ManagementPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS SRS Reporting Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ReportingServicePoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Dmp Connector' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'ServiceConnectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'Data Warehouse Service Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'DataWarehouseServicePoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Cloud Proxy Connector' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'CMGConnectionPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS State Migration Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'StateMigrationPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Fallback Status Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'FallbackStatusPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            'SMS Component Server' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            'SMS Site System' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            'SMS Notification Server' 
+            {
+                # Skip role since no firewall rule diretly tied to it
+            }
+            <#
+            'SMS Certificate Registration Point' 
+            {
+                $tmpObj = New-Object pscustomobject | Select-Object FullQualifiedDomainName, IPAddress, Role, SiteCode, ParentSiteCode, PullDistributionPointToSource
+                $tmpObj.Role = 'CertificateRegistrationPoint'
+                $tmpObj.FullQualifiedDomainName = $system.NetworkOSPath -replace '\\\\'
+                $tmpObj.IPAddress = Get-IPAddressFromName -SystemName ($tmpObj.FullQualifiedDomainName) -Type $IPType
+                $tmpObj.SiteCode = $system.SiteCode
+                $tmpObj.ParentSiteCode = $siteCodeHash[$system.SiteCode]
+                [void]$outObject.Add($tmpObj)
+            }
+            #>
+            Default 
+            {
+                #Write-host "$(Get-date -Format u): Role `"$($system.RoleName)`" not supported by the script at the moment. Create you own firewallrules and definitions in the config file if desired." -ForegroundColor Yellow
+            }
+    
+            <# still missing
+                SMS Device Management Point
+                SMS Multicast Service Point
+                SMS AMT Service Point
+                AI Update Service Point
+                SMS Enrollment Server
+                SMS Enrollment Web Site            
+                SMS DM Enrollment Service
+            #>
+    
+        }
+    }
+    
+    # group roles by system to have a by system list
+    $systemsArrayList = New-Object System.Collections.ArrayList
+    foreach ($itemGroup in ($outObject | Group-Object -Property FullQualifiedDomainName))
+    {
+        $roleList = @()
+        $pullDPList = @()
+        foreach ($item in $itemGroup.Group)
+        {
+            $roleList += $item.Role
+            if (-NOT ([string]::IsNullOrEmpty($item.PullDistributionPointToSource)))
+            {
+                $pullDPList += $item.PullDistributionPointToSource
+            }
+        }
+        [array]$roleList = $roleList | Select-Object -Unique
+        [array]$pullDPList = $pullDPList | Select-Object -Unique
+    
+        $itemList = [ordered]@{
+            FullQualifiedDomainName = $itemGroup.Name
+            IPAddress = $itemGroup.Group[0].IPAddress -join ','
+            SiteCode = $itemGroup.Group[0].SiteCode
+            ParentSiteCode = $itemGroup.Group[0].ParentSiteCode
+            Description = ""
+            RoleList = $roleList
+            PullDistributionPointToSourceList = $pullDPList
+        }
+      
+        [void]$systemsArrayList.Add($itemList)
+    }
+
+    $outFileFullName = '{0}\Backup-SiteSystemRoleList.json' -f $OutputFilePath
+        
+    [PSCustomObject]@{
+        SystemAndRoleList = $systemsArrayList
+    } | ConvertTo-Json -Depth 10 | Out-File -FilePath $outFileFullName -Force
+}
+#endregion
+
+
+
+
+
 # Check if none of the switch parameters are set
 if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportCDLatest)) 
 {
     Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportCDLatest" -Severity Warning
     Exit 1 
 }
-
 
 $stoptWatch = New-Object System.Diagnostics.Stopwatch
 $stoptWatch.Start()
@@ -1042,6 +2126,7 @@ Write-CMTraceLog -Message 'Start of script'
 # Lets cleanup first
 Remove-OldExportFolders -RootPath $script:ExportRootFolder -MaxExportFolderAgeInDays $MaxExportFolderAgeInDays -MinExportFoldersToKeep $MinExportFoldersToKeep
 
+#region load ConfigMgr modules
 Write-CMTraceLog -Message 'Will load ConfigurationManager.psd1'
 # Lets make sure we have the ConfigMgr modules
 if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
@@ -1050,13 +2135,11 @@ if (-NOT (Test-Path "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"))
     Exit 1   
 }
 
-
 # Validate path and create if not there yet
 if (-not (Test-Path $script:FullExportFolderName)) 
 {
     New-Item -ItemType Directory -Path $FullExportFolderName -Force | Out-Null
 }
-
 Write-CMTraceLog -Message "Export will be made to folder: $($script:FullExportFolderName)"
 
 # Customizations
@@ -1095,41 +2178,49 @@ Set-Location "$($SiteCode):\" @initParams
 #region Main script
 try
 {
+    # Export configuration items
     if ($ExportConfigurationItems -or $ExportAllItems)
     {
         Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
     }
 
+    # Export configuration baselines
     if ($ExportBaselines -or $ExportAllItems)
     {
         Get-CMBaseline -Fast | Export-CMItemCustomFunction
     }
     
+    # Export task sequences
     if ($ExportTaskSequences -or $ExportAllItems)
     {
         Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
     }
 
+    # Export antimalware policies
     if ($ExportAntimalwarePolicies -or $ExportAllItems)
     {
         Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
     }
 
+    # Export scripts
     if ($ExportScripts -or $ExportAllItems)
     {
         Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
     }
 
+    # Export client settings
     if ($ExportClientSettings -or $ExportAllItems)
     {
         Get-CMClientSetting | Export-CMItemCustomFunction
     }
 
+    # Export configuration policies
     if ($ExportConfigurationPolicies -or $ExportAllItems)
     {
         Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
     }
     
+    # Export collections
     if ($ExportCollections -or $ExportAllItems)
     {
         # Lets export collections into one file
@@ -1150,11 +2241,63 @@ try
         Write-CMTraceLog -Message "Collections exported to: $(($itemFullName -replace 'xml', 'json'))"  
     }
 
+    # Export CD.Latest folder and metadata
     if ($ExportCDLatest -or $ExportAllItems)
     {
-        #Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"   
-    }
+        Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"
+        $SiteData = Get-ConfigMgrSiteInfo -ListOfProviderServers $ProviderMachineName    
 
+        # Export of general site data
+        $SiteData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$($script:FullExportFolderName)\Backup-SiteData.json" -Force
+        
+        # Export of role and system information
+        Export-SystemRoleInformation -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -OutputFilePath $script:FullExportFolderName
+
+        # Backup of CD.Latest folder
+        $folderToZip = '{0}\cd.latest' -f $siteData.InstallDirectory
+        $zipFileName = '{0}_cd.latest.zip' -f $siteData.FullVersionUpdated
+        $zipLogFileName = '{0}_cd.latest.log' -f $siteData.FullVersionUpdated
+        $zipLogFilePath = '{0}\{1}' -f $script:ExportRootFolder, $zipLogFileName
+
+        # We only want to backup the cd.latest folder if it does not exists already, since its contents will only change when a new update is installed
+        $zipBackupFullName = '{0}\{1}' -f $script:ExportRootFolder, $ZipFileName
+        if (-NOT (Test-Path $zipBackupFullName))
+        {
+            Write-CMTraceLog -Message "Start backup of CD.Latest folder to: $($zipBackupFullName)"
+            $compressResult = Compress-FolderOnRemoteMachine -RemoteComputerName $siteData.SiteServerName -FolderToZip $folderToZip -ZipFileName $zipFileName
+            
+            if (-Not ($compressResult -imatch '^[A-Za-z]:\\(?:[^\\\/:*?"<>|\r\n]+\\)*[^\\\/:*?"<>|\r\n]*$'))
+            {    
+                Write-Error 'Failed to get valid local path to copy zip file from remote machine' -Severity Error
+                $script:ExitWithError = $true
+            }
+            else 
+            {
+                # Changing local remote path to UNC path to be able to get the data from the rmeote machine via robocopy
+                $remoteZipFileFullName = '\\{0}\{1}' -f $siteData.SiteServerName, ($compressResult -replace ':', '$')
+                $remoteFolderName = $remoteZipFileFullName | Split-Path -Parent
+                Start-RoboCopy -Source $remoteFolderName -Destination $script:ExportRootFolder -FileNames $zipFileName -RobocopyLogPath $zipLogFilePath
+
+                # Lets test again
+                if (-NOT (Test-Path $zipBackupFullName))
+                {
+                    Write-CMTraceLog -Message "Failed to copy CD.Latest folder to: $($zipBackupFullName)" -Severity Error
+                    $script:ExitWithError = $true
+                }
+                else
+                {
+                    Write-CMTraceLog -Message "Will remove zip file from remote machine: $($remoteZipFileFullName)"
+                    Start-Sleep -Seconds 5
+                    Remove-Item -Path $remoteZipFileFullName -Force
+                }
+            }
+        }
+        else
+        {
+            Write-CMTraceLog -Message "CD.Latest folder already backed up to: $($zipBackupFullName)"
+            Write-CMTraceLog -Message "Will not backup CD.Latest folder again"
+        }
+    }
 }
 catch
 {
@@ -1170,7 +2313,6 @@ Write-CMTraceLog -Message $scriptDurationString
 
 if ($script:ExitWithError)
 {
-
     Write-CMTraceLog -Message 'Script ended with errors' -Severity Warning
 }
 else

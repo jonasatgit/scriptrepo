@@ -67,6 +67,8 @@ To store the individual items the script will create the following folder under 
 The script will create a log file in the same directory as the export and not next to the script.
 
 Changelog:
+29241217 - Fixed an issue were the detection script was always started in a 32bit process
+           Added two new parameters to replace the install and uninstall command for all selected apps
 20241107 - Fixed detection script encoding
            Added detection script path check
            Changed logic to determine if an app exists in Intune
@@ -148,6 +150,12 @@ This parameter should typically not be changed.
 
 .PARAMETER TestForExistingApps
 If set, the script will test if an app has been uploaded before. This will be visible in the GridView just as an indicator.
+
+.PARAMETER ReplaceInstallCommand
+If set, the script will replace the install command with the provided string. This can be useful if the install command is not correct or needs to be changed for all selected apps.
+
+.PARAMETER ReplaceUnInstallCommand
+If set, the script will replace the uninstall command with the provided string. This can be useful if the uninstall command is not correct or needs to be changed for all selected apps.
 
 .EXAMPLE
 Get a Grid-View which shows all ConfigMgr applications to export metadata about them to an export folder.
@@ -239,10 +247,16 @@ param
     [string[]]$RequiredModules = @('Microsoft.Graph.Authentication'),
 
     [Parameter(Mandatory=$false)]
-    [switch]$TestForExistingApps
+    [switch]$TestForExistingApps,
+
+    [Parameter(Mandatory=$false)]
+    [String]$ReplaceInstallCommand = '',
+
+    [Parameter(Mandatory=$false)]
+    [String]$ReplaceUnInstallCommand = ''
 )
 
-$scriptVersion = '20241107'
+$scriptVersion = '20241217'
 $script:LogOutputMode = $OutputMode
 #$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
 $script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
@@ -1460,8 +1474,57 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         default { $LogonRequired = 'Whether or not a user is logged on' }
                     }
 
+                    # 20241217 added parameters for Install and Uninstall command line replacement and moved UNC path detection to here
+                    # In case we do not have a content path and instead the install or uninstall points to a share, correct that
+                    $installStringToRemove = $null
+                    $Matches = $null
+                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
+                    if($deploymentType.Installer.CustomData.InstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
+                    {
+                        $noContentButShare = $true
+                        try
+                        { 
+                            $installLocation = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
+                            $installStringToRemove = '{0}\\' -f ([regex]::Escape($installLocation))
+                        }catch{} 
+                    }
+
+                    $unInstallStringToRemove = $null
+                    $Matches = $null
+                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
+                    if($deploymentType.Installer.CustomData.UninstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
+                    {
+                        $noContentButShare = $true
+                        try
+                        { 
+                            $uninstallLocation = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
+                            $unInstallStringToRemove = '{0}\\' -f ([regex]::Escape($uninstallLocation))
+                        }catch{} 
+                    }                    
+
+                    # Replace string if needed
+                    if (-NOT ([string]::IsNullOrEmpty($ReplaceInstallCommand)))
+                    {
+                        $dtInstallCommandLine = $ReplaceInstallCommand
+                    }
+                    else 
+                    {
+                        # Replace will only happen if the script detected a UNC path in the install cmd
+                        $dtInstallCommandLine = $deploymentType.Installer.CustomData.InstallCommandLine -replace $installStringToRemove
+                    }
+
+                    # Replace string if needed
+                    if (-NOT ([string]::IsNullOrEmpty($ReplaceUninstallCommand)))
+                    {
+                        $dtUnInstallCommandLine = $ReplaceUninstallCommand
+                    }
+                    else 
+                    {
+                        # Replace will only happen if the script detected a UNC path in the uninstall cmd
+                        $dtUnInstallCommandLine = $deploymentType.Installer.CustomData.UninstallCommandLine -replace $unInstallStringToRemove
+                    }                    
+
                     # Extract file info for win32apputil -s parameter
-                    $dtInstallCommandLine = $deploymentType.Installer.CustomData.InstallCommandLine
                     $Matches = $null
                     if ($dtInstallCommandLine -match "powershell" -and $dtInstallCommandLine -match "\.ps1") 
                     {
@@ -1514,6 +1577,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         "ForceReboot" = 'force' # IntuneName: Intune will force a mandatory device restart
                     }
 
+
                     $tmpAppDeploymentType = [PSCustomObject]@{
                         LogicalName = $deploymentType.LogicalName
                         Name = $deploymentType.Title.InnerText
@@ -1528,7 +1592,7 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         IntuneWinAppUtilSetupFile = $intuneWinAppUtilSetupFile
                         UnInstallSetting = $deploymentType.Installer.CustomData.UnInstallSetting
                         UninstallContent = $uninstallLocation # No Intune support
-                        UninstallCommandLine = $deploymentType.Installer.CustomData.UninstallCommandLine
+                        UninstallCommandLine = $dtUnInstallCommandLine
                         RepairCommand = $deploymentType.Installer.CustomData.RepairCommandLine # No Intune support
                         RepairFolder = $deploymentType.Installer.CustomData.RepairFolder # No Intune support
                         RunAs32Bit = ($deploymentType.Installer.InstallAction.Args.arg | Where-Object {$_.name -eq 'RunAs32Bit'}).'#text' # No Intune support
@@ -1544,33 +1608,6 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                         Requirements = $null
                         DetectionRules = $null
 
-                    }
-
-                    # In case we do not have a content path and instead the install or uninstall points to a share, correct that
-                    $Matches = $null
-                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
-                    if($tmpAppDeploymentType.InstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
-                    {
-                        $noContentButShare = $true
-                        try
-                        { 
-                            $tmpAppDeploymentType.InstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
-                            $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.InstallContent))
-                            $tmpAppDeploymentType.InstallCommandLine = $tmpAppDeploymentType.InstallCommandLine -replace $stringToRemove
-                        }catch{} 
-                    }
-
-                    $Matches = $null
-                    # Matches a UNC path with spaces encapsulated in single or double quotes or UNC path without spaces. Can be at the beginning of the string or after a space
-                    if($tmpAppDeploymentType.UninstallCommandLine -match "(\\\\[^ ]*)|[`"\'](\\\\[^`"\']*)[`"\']")
-                    {
-                        $noContentButShare = $true
-                        try
-                        { 
-                            $tmpAppDeploymentType.UninstallContent = ($Matches[0] -replace "[`"']") | Split-Path -Parent 
-                            $stringToRemove = '{0}\\' -f ([regex]::Escape($tmpAppDeploymentType.UninstallContent))
-                            $tmpAppDeploymentType.UninstallCommandLine = $tmpAppDeploymentType.UninstallCommandLine -replace $stringToRemove
-                        }catch{} 
                     }
 
                     # getting requirements
@@ -1654,7 +1691,15 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                             }
                             else 
                             {
-                                $runAs32BitOn64BitSystem = $true
+                                # 20241217 fixed the always true issue
+                                if ($deploymentType.Installer.DetectAction.Args.Arg[3].'#text' -ieq 'true')
+                                {
+                                    $runAs32BitOn64BitSystem = $true
+                                }
+                                else 
+                                {
+                                    $runAs32BitOn64BitSystem = $false
+                                }
                             }
 
                             $scriptFilePath = '{0}\{1}.{2}' -f $ExportFolderScripts, $deploymentType.LogicalName, $dmScriptSuffix
