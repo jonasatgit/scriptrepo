@@ -1273,7 +1273,9 @@ function Get-ConfigMgrSiteInfo
     param
     (
         [Parameter(Mandatory=$true)]
-        [string[]]$ListOfProviderServers
+        [string]$ProviderMachineName,
+        [Parameter(Mandatory=$true)]
+        [string]$SiteCode
     )
 
     $outObject = [pscustomobject][ordered]@{
@@ -1311,42 +1313,15 @@ function Get-ConfigMgrSiteInfo
         SSRSList = $null
     }
 
-    # We will try the first server in the list and if that fails we will try the next one
-    foreach ($smsProviderServer in $ListOfProviderServers)
-    {
-        try 
-        {
-            $providerLocation = Get-CimInstance -ComputerName $smsProviderServer -Namespace "root\sms" -Query "Select * From SMS_ProviderLocation Where ProviderForLocalSite=1 and Machine like '%$($smsProviderServer)%'" -ErrorAction Stop
-            if ($providerLocation)
-            {
-                Write-CMTraceLog -Message "Connected to sms provider: `"$smsProviderServer`""
-                $SiteCode = $providerLocation.SiteCode
-                break
-            }        
-        }
-        catch 
-        {
-            Write-CMTraceLog -Message "Failed to connect to `"$smsProviderServer`" Will try the next one in the list" -Severity Warning
-        }
-
-    }
-
-    # stop the script in case connection was not successful
-    if (-NOT ($SiteCode))
-    {
-        Write-CMTraceLog -Message "Failed to connect to any site server" -Severity Error
-        Exit 1
-    }
-
     # Setting the output object with as much data as possible
     $outObject.SiteCode = $SiteCode
-    $outObject.SMSProvider = $providerLocation.Machine
+    $outObject.SMSProvider = $ProviderMachineName
     $outObject.CloudConnector = 0 # setting service connection point to not installed. Will change later if detected as installed
     $outObject.ConsoleInstalled = 0 # same as with cloud connector  
         
     try 
     {
-        $siteDefinition = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -ErrorAction Stop    
+        $siteDefinition = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -ErrorAction Stop    
     }
     catch 
     {
@@ -1393,7 +1368,7 @@ function Get-ConfigMgrSiteInfo
         # get list of role servers
         try 
         {
-            $SysResUse = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'" -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props   
+            $SysResUse = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'" -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props   
         }
         catch 
         {
@@ -1464,7 +1439,7 @@ function Get-ConfigMgrSiteInfo
         try 
         {
             $query = "SELECT Enabled, DeviceName FROM SMS_SCI_SQLTask WHERE FileType=2 AND ItemName='Backup SMS Site Server' AND ItemType='SQL Task' AND SiteCode='$($SiteCode)'"
-            $backupInfo = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$($SiteCode)" -query $query -ErrorAction Stop    
+            $backupInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$($SiteCode)" -query $query -ErrorAction Stop    
         }
         catch 
         {
@@ -1500,7 +1475,7 @@ function Get-ConfigMgrSiteInfo
     try 
     {
         $query = 'SELECT Name, PackageGuid, DateReleased, DateCreated, Description, FullVersion, ClientVersion, State FROM SMS_CM_UpdatePackages WHERE UpdateType != 3'
-        [array]$configMgrUpdates = Get-CimInstance -ComputerName $providerLocation.Machine -Namespace "root\sms\site_$SiteCode" -Query $query -ErrorAction stop        
+        [array]$configMgrUpdates = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query $query -ErrorAction stop        
     }
     catch 
     {
@@ -2245,7 +2220,7 @@ try
     if ($ExportCDLatest -or $ExportAllItems)
     {
         Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"
-        $SiteData = Get-ConfigMgrSiteInfo -ListOfProviderServers $ProviderMachineName    
+        $SiteData = Get-ConfigMgrSiteInfo -ProviderServerName $ProviderMachineName -SiteCode $SiteCode
 
         # Export of general site data
         $SiteData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$($script:FullExportFolderName)\Backup-SiteData.json" -Force
