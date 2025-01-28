@@ -211,7 +211,7 @@ $updatesDeploymentaudiences.value | ForEach-Object {
                 AudienceID = $audienceID
                 DeviceID = $item.matchedDevices.deviceId
                 DeviceName = $deviceLookupTable[($item.matchedDevices.deviceId)]
-                DriverDsiplayName = $item.catalogEntry.displayName
+                DriverDisplayName = $item.catalogEntry.displayName
                 DriverVersion = $item.catalogEntry.version
                 DriverReleaseDate = $item.catalogEntry.releaseDateTime
                 DriverManufacturer = $item.catalogEntry.manufacturer
