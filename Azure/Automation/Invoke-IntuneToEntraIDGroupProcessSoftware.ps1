@@ -1,3 +1,6 @@
+#requires -module Microsoft.Graph.Authentication
+#requires -module Microsoft.Graph.Groups
+
 #************************************************************************************************************
 # Disclaimer
 #
@@ -34,7 +37,7 @@ param(
     [string]$SubscriptionId = '1dab7506-e24e-485a-9a56-442b1d89fd07',
     [string]$storageAccountName = 'intuneautomation345346',
     [string]$storageAccountContainerName = 'intunedata',
-    [array]$requiredModules = ('Microsoft.Graph.Authentication', 'Microsoft.Graph.Groups', 'Az.Accounts', 'Az.Storage'),
+    #[array]$requiredModules = ('Microsoft.Graph.Authentication', 'Microsoft.Graph.Groups', 'Az.Accounts', 'Az.Storage'),
     [Switch]$ShowPermissionsScript
 )
 
@@ -86,6 +89,7 @@ $jsonDefinition = @"
   "ReportData": {
     "reportName": "AppInvRawData",
     "format": "csv",
+    "filter": "(Platform eq 'Windows')",
     "localizationType": "localizedValuesAsAdditionalColumn",
     "select": [
       "ApplicationId",

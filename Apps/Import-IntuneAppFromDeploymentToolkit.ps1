@@ -423,7 +423,13 @@ function Test-ProbableFileEncoding
 
 
 #region Intune PowerShell sample functions
+#
 # https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
+#
+#***************************************************************************************************************#
+#***************************************************************************************************************#
+#***************************************************************************************************************#
+
 
 <#
 .SYNOPSIS
@@ -485,9 +491,6 @@ $Rules += New-ScriptRequirementRule -ScriptFile "E:\VSCodeRequirement.ps1" -Disp
 $Rules += New-ScriptDetectionRule -ScriptFile "E:\VSCodeDetection.ps1" -EnforceSignatureCheck $false -RunAs32Bit $false 
 $Rules += New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
 Invoke-Win32AppUpload -displayName "VS Code" -SourceFile "C:\IntuneApps\vscode\VSCodeSetup-x64-1.93.1.intunewin" -publisher "Microsoft" -description "VS Code (script detection)" -RunAsAccount "system" -Rules $Rules -returnCodes $returnCodes -InstallCommandLine "VSCodeSetup-x64-1.93.1.exe /VERYSILENT /MERGETASKS=!runcode" -UninstallCommandLine "C:\Program Files\Microsoft VS Code\unins000.exe /VERYSILENT" -DeviceRestartBehavior "basedOnReturnCode"
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function Invoke-Win32AppUpload {
     [cmdletbinding()]
@@ -508,6 +511,9 @@ function Invoke-Win32AppUpload {
         [parameter(Mandatory = $true, Position = 4)]
         [ValidateNotNullOrEmpty()]
         [string]$description,
+
+        [parameter(Mandatory = $false, Position = 5)]
+        [string]$version,
 
         [parameter(Mandatory = $true, Position = 6)]
         [ValidateNotNullOrEmpty()]
@@ -540,7 +546,7 @@ function Invoke-Win32AppUpload {
         Write-Host "Creating JSON data to pass to the service..." -ForegroundColor Yellow
 
         # Extract the detection.xml file from the .intunewin file
-        $DetectionXML = Get-IntuneWinXML "$SourceFile" -fileName "detection.xml" -removeitem $true
+        $DetectionXML = Get-IntuneWinXML -SourceFile "$SourceFile" -fileName "detection.xml" -removeitem $true
 
         # If displayName input don't use Name from detection.xml file
         if ($displayName) { $DisplayName = $displayName }
@@ -573,6 +579,7 @@ function Invoke-Win32AppUpload {
             $mobileAppBody = GetWin32AppBody `
                 -MSI `
                 -displayName "$DisplayName" `
+                -Version $version `
                 -publisher "$publisher" `
                 -description $description `
                 -filename $FileName `
@@ -590,6 +597,7 @@ function Invoke-Win32AppUpload {
         else {
             $mobileAppBody = GetWin32AppBody `
                 -EXE -displayName "$DisplayName" `
+                -Version $version `
                 -publisher "$publisher" `
                 -description $description `
                 -filename $FileName `
@@ -614,9 +622,13 @@ function Invoke-Win32AppUpload {
             break
         }
 
+        $mobileAppBody | ConvertTo-Json
+        break
+
         # Create the application in Intune and get the application ID
         Write-Host "Creating application in Intune..." -ForegroundColor Yellow
-        $MobileApp = New-MgDeviceAppManagementMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
+        #$MobileApp = New-MgDeviceAppManagementMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
+        $MobileApp = New-MgDeviceAppManagementMobileApp -BodyParameter $mobileAppBody
         $mobileAppId = $MobileApp.id
 
         # Create a new content version for the application
@@ -644,7 +656,7 @@ function Invoke-Win32AppUpload {
 
         # Create a new file entry in Azure for the upload
         $ContentVersionId = $ContentVersion.Id
-        $fileBody = GetAppFileBody "$FileName" $Size $EncrySize $null
+        $fileBody = Get-AppFileBody -name "$FileName" -size $Size -sizeEncrypted $EncrySize
         $fileBody = $fileBody | ConvertTo-Json 
 
         # Create a new file entry in Azure for the upload and get the file ID
@@ -738,9 +750,6 @@ The value to compare the script output to.
 .EXAMPLE
 # Creates a new file system rule for a Win32 app.
 New-FileSystemRule -ruleType detection -path 'C:\Program Files\Microsoft VS Code' -fileOrFolderName 'code.exe' -check32BitOn64System $false -operationType exists -operator notConfigured -comparisonValue $null
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function New-FileSystemRule() {
     param
@@ -814,9 +823,6 @@ The value to compare the script output to.
 .EXAMPLE
 # Creates a new product code rule for a Win32 app.
 New-ProductCodeRule -ruleType detection -productCode "{3248F0A8-6813-4B6F-8C3A-4B6C4F512345}" -productVersionOperator equal -productVersion "130.0"
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function New-ProductCodeRule {
     param
@@ -876,9 +882,6 @@ The value to compare the script output to.
 .EXAMPLE
 # Creates a new registry rule for a Win32 app.
 New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function New-RegistryRule {
     param
@@ -942,11 +945,8 @@ New-ScriptDetectionRule -ScriptFile "E:\VSCodeDetection.ps1" -EnforceSignatureCh
 
 .NOTES
 This function only creates a script detection rule. To create a script requirement rule, use the New-ScriptRequirementRule function.
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
-function New-ScriptDetectionRule() {
+function New-ScriptDetectionRule{
     param
     (
         [parameter(Mandatory = $true)]
@@ -1017,9 +1017,6 @@ New-ScriptRequirementRule -ScriptFile "E:\VSCodeRequirement.ps1" -DisplayName "V
 
 .NOTES
 This function only creates a script requirement rule. To create a script detection rule, use the New-ScriptDetectionRule function.
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function New-ScriptRequirementRule {
     param
@@ -1095,9 +1092,6 @@ The type of return code. Valid values are 'success', 'softReboot', 'hardReboot
 .EXAMPLE
 # Creates a new return code object with a return code of 0 and a type of 'success'
 New-ReturnCode -returnCode 0 -type 'success'
-
-.LINK
-https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 #>
 function New-ReturnCode() {
     param
@@ -1114,8 +1108,29 @@ function New-ReturnCode() {
 
 ####################################################
 # Function to wait for file processing to complete by polling the file upload state
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-function WaitForFileProcessing($fileUri, $stage) {
+<#
+.SYNOPSIS
+Waits for the file processing to complete by polling the file upload state.
+
+.DESCRIPTION
+This function waits for the file processing to complete by polling the file upload state. 
+The function will check the file upload state every second for a maximum of 60 seconds.
+
+.PARAMETER fileUri
+The URI of the file to check.
+
+.PARAMETER stage
+The stage of the file processing to check.
+#>
+function WaitForFileProcessing {
+    param(
+        [parameter(Mandatory = $true)]
+        [string]$fileUri,
+
+        [parameter(Mandatory = $true)]
+        [string]$stage
+    )
+
     $attempts = 60
     $waitTimeInSeconds = 1
     $successState = "$($stage)Success"
@@ -1144,8 +1159,34 @@ function WaitForFileProcessing($fileUri, $stage) {
 
 ####################################################
 # Function to upload a file to Azure Storage using the SAS URI
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-function UploadFileToAzureStorage($sasUri, $filepath, $blockSizeMB) {
+<#
+.SYNOPSIS
+Uploads a file to Azure Storage using the SAS URI.
+
+.DESCRIPTION
+This function uploads a file to Azure Storage using the SAS URI. The function will upload the file in chunks of the specified size.
+
+.PARAMETER sasUri
+The SAS URI for the Azure Storage account.
+
+.PARAMETER filepath
+The path to the file to upload.
+
+.PARAMETER blockSizeMB
+The size of the block in MiB.
+#>
+function UploadFileToAzureStorage {
+    param(
+        [parameter(Mandatory = $true)]
+        [string]$sasUri,
+
+        [parameter(Mandatory = $true)]
+        [string]$filepath,
+
+        [parameter(Mandatory = $true)]
+        [int]$blockSizeMB
+    )
+
     # Chunk size in MiB
     $chunkSizeInBytes = (1024 * 1024 * $blockSizeMB)  
 
@@ -1184,8 +1225,34 @@ function UploadFileToAzureStorage($sasUri, $filepath, $blockSizeMB) {
 
 ####################################################
 # Function to upload a chunk to Azure Storage
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-function UploadAzureStorageChunk($sasUri, $id, $body) {
+<#
+.SYNOPSIS
+Uploads a chunk to Azure Storage.
+
+.DESCRIPTION
+This function uploads a chunk to Azure Storage.
+
+.PARAMETER sasUri
+The SAS URI for the Azure Storage account.
+
+.PARAMETER id
+The block ID.
+
+.PARAMETER body
+The body of the request.
+#>
+function UploadAzureStorageChunk {
+    param(
+        [parameter(Mandatory = $true)]
+        [string]$sasUri,
+
+        [parameter(Mandatory = $true)]
+        [string]$id,
+
+        [parameter(Mandatory = $true)]
+        [byte[]]$body
+    )
+
     $uri = "$sasUri&comp=block&blockid=$id"
     $request = "PUT $uri"
 
@@ -1206,8 +1273,27 @@ function UploadAzureStorageChunk($sasUri, $id, $body) {
 
 ####################################################
 # Function to finalize the Azure Storage upload
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-function FinalizeAzureStorageUpload($sasUri, $ids) {
+<#
+.SYNOPSIS
+Finalizes the Azure Storage upload.
+
+.DESCRIPTION
+This function finalizes the Azure Storage upload.
+
+.PARAMETER sasUri
+The SAS URI for the Azure Storage account.
+
+.PARAMETER ids
+The block IDs.
+#>
+function FinalizeAzureStorageUpload {
+    param(
+        [parameter(Mandatory = $true)]
+        [string]$sasUri,
+
+        [parameter(Mandatory = $true)]
+        [string[]]$ids
+    )
     $uri = "$sasUri&comp=blocklist"
     $request = "PUT $uri"
 
@@ -1236,7 +1322,6 @@ function FinalizeAzureStorageUpload($sasUri, $ids) {
 
 ####################################################
 # Function to construct the JSON body for a Win32 app
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 function GetWin32AppBody() {
     param
     (
@@ -1273,6 +1358,9 @@ function GetWin32AppBody() {
         [parameter(Mandatory = $true)]
         [ValidateSet('basedOnReturnCode', 'allow', 'suppress', 'force')]
         [string]$DeviceRestartBehavior,
+
+        [parameter(Mandatory = $false)]
+        [string]$Version,
     
         [parameter(Mandatory = $true, ParameterSetName = "EXE")]
         [ValidateNotNullOrEmpty()]
@@ -1315,6 +1403,7 @@ function GetWin32AppBody() {
         $body.description = $description
         $body.developer = ""
         $body.displayName = $displayName
+        $body.versionNumber = $Version
         $body.fileName = $filename
         $body.installCommandLine = "msiexec /i `"$SetupFileName`""
         $body.installExperience = @{
@@ -1347,6 +1436,7 @@ function GetWin32AppBody() {
         $body.description = $description
         $body.developer = ""
         $body.displayName = $displayName
+        $body.versionNumber = $Version
         $body.fileName = $filename
         $body.installCommandLine = $installCommandLine
         $body.installExperience = @{
@@ -1371,8 +1461,7 @@ function GetWin32AppBody() {
 
 ####################################################
 # Function to test if the source file exists
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-Function Test-SourceFile() {
+Function Test-SourceFile {
     param
     (
         [parameter(Mandatory = $true)]
@@ -1396,8 +1485,7 @@ Function Test-SourceFile() {
 }
 
 ####################################################
-# Function to get the default return codes  
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1  
+# Function to get the default return codes    
 function Get-DefaultReturnCodes() {
     @{"returnCode" = 0; "type" = "success" }, `
     @{"returnCode" = 1707; "type" = "success" }, `
@@ -1409,7 +1497,6 @@ function Get-DefaultReturnCodes() {
 
 ####################################################
 # Function to extract the IntuneWin XML file from the .intunewin file
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 Function Get-IntuneWinXML() {
     param
     (
@@ -1445,7 +1532,6 @@ Function Get-IntuneWinXML() {
 
 ####################################################
 # Function to extract the IntuneWin file from the .intunewin file
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 Function Get-IntuneWinFile() {
     param
     (
@@ -1480,17 +1566,35 @@ Function Get-IntuneWinFile() {
 
 ####################################################
 # Function to create a new app file body containing the file and encryption information
-# https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
-function GetAppFileBody($name, $size, $sizeEncrypted, $manifest) {
+function Get-AppFileBody{
+    param(
+        [parameter(Mandatory = $true)]
+        [string]$name,
+
+        [parameter(Mandatory = $true)]
+        [int64]$size,
+
+        [parameter(Mandatory = $true)]
+        [int64]$sizeEncrypted,
+
+        [parameter(Mandatory = $false)]
+        [string]$manifest
+    )
     $body = @{ "@odata.type" = "#microsoft.graph.mobileAppContentFile" }
     $body.name = $name
     $body.size = $size
     $body.sizeEncrypted = $sizeEncrypted
-    $body.manifest = $manifest
+    $body.manifest = if([string]::IsNullOrEmpty($manifest)) { $null } else { $manifest }
     $body.isDependency = $false
         
     $body
 }
+
+
+
+#***************************************************************************************************************#
+#***************************************************************************************************************#
+#***************************************************************************************************************#
 #endregion
 
 #******************************************************************#
@@ -1556,7 +1660,7 @@ else
             {
                 Write-Warning "The Detection.ps1 file is saved with `"$($testResult)`" encoding. Intune requires UTF-8-BOM encoding. You can use Notepad++ and save it with UTF-8-BOM encoding"
                 Write-Warning "Will skip import of this app."
-                Continue
+                #Continue
             }
             else 
             {
@@ -1615,7 +1719,7 @@ else
             DeviceRestartBehavior = "basedOnReturnCode"
             InstallCommandLine = $selectedApp.'IN-IntuneInstallCommand'
             UninstallCommandLine = $selectedApp.'IN-IntuneUninstallCommand'
-            #Version = $selectedApp.'ADT-AppVersion'
+            Version = $selectedApp.'ADT-AppVersion'
             #Owner = ""
             Rules = $Rules
             ReturnCodes = Get-DefaultReturnCodes
