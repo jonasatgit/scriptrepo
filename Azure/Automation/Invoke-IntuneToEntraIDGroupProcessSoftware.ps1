@@ -292,8 +292,8 @@ else
 {
     # This part is only needed when running the script locally without Azure Automation
     # Check if all required modules are installed and load them if not    
-    #Connect-MgGraph -ClientId $ClientID -TenantId $TenantID
-    Connect-MgGraph
+    Connect-MgGraph -ClientId $ClientID -TenantId $TenantID
+    #Connect-MgGraph
 }
 #endregion
 
