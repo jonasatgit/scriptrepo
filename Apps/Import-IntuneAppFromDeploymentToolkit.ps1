@@ -421,6 +421,42 @@ function Test-ProbableFileEncoding
 }
 #endregion
 
+#region New-AppIconContent
+function New-AppIconContent
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$IconPath
+    )
+
+    process 
+    {
+        # Check if the icon file exists
+        if (-not (Test-Path $IconPath)) 
+        {
+            Write-Error "Icon file not found: $IconPath"
+            return $null
+        }
+
+        # Read the icon file and convert it to a Base64 string
+        $iconBytes = [System.IO.File]::ReadAllBytes($IconPath)
+        $iconBase64 = [System.Convert]::ToBase64String($iconBytes)
+
+        # Create the icon content object
+        $iconContent = @{
+            "@odata.type" = '#microsoft.graph.win32LobApp'
+            "largeIcon" = @{ 
+                "type" = "image/png"
+                "value" = $iconBase64
+            }
+        }
+
+        return $iconContent
+    }
+}
+#endregion New-AppIconContent
 
 #region Intune PowerShell sample functions
 #
@@ -443,6 +479,9 @@ The path to the .intunewin file.
 
 .PARAMETER displayName
 The display name of the app. If not specified, the script uses the Name from the detection.xml file.
+
+.PARAMETER version
+The version of the app.
 
 .PARAMETER publisher
 The publisher of the app.
@@ -467,6 +506,9 @@ The account to run the app as. Valid values are 'system' or 'user'.
 
 .PARAMETER DeviceRestartBehavior
 The device restart behavior for the app. Valid values are 'basedOnReturnCode', 'allow', 'suppress', 'force'.
+
+.PARAMETER IconPath
+The path to the icon file for the app. The icon file must be in PNG format.
 
 .EXAMPLE
 # Uploads a .exe Win32 app to Intune using the default return codes and a file system rule.
@@ -535,7 +577,11 @@ function Invoke-Win32AppUpload {
 
         [parameter(Mandatory = $true, Position = 11)]
         [ValidateSet('basedOnReturnCode', 'allow', 'suppress', 'force')]
-        [string]$DeviceRestartBehavior
+        [string]$DeviceRestartBehavior,
+
+        [parameter(Mandatory = $false, Position = 12)]
+        [string]$IconPath
+
     )
     try	{
 
@@ -622,6 +668,8 @@ function Invoke-Win32AppUpload {
             break
         }
 
+        ($mobileAppBody | ConvertTo-Json)
+
         # Create the application in Intune and get the application ID
         Write-Host "Creating application in Intune..." -ForegroundColor Yellow
         #$MobileApp = New-MgDeviceAppManagementMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
@@ -685,14 +733,62 @@ function Invoke-Win32AppUpload {
 
         $params = @{
             "@odata.type"           = "#microsoft.graph.win32LobApp"
-            committedContentVersion = "1"
+            "committedContentVersion" = "1"
         }
 
         $params = $params | ConvertTo-Json
 
         # Update the application with the new content version
         Write-Host "Updating the application with the new content version..." -ForegroundColor Yellow
-        Update-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId -BodyParameter $params
+        # The cmdlet resulted in: "Cannot convert the literal '1' to the expected type 'Edm.String'.
+        # Wil use invoke-mgraphrequest instead
+        #Update-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId -BodyParameter $params
+
+        $paramSplatting = @{
+            "Method" = 'PATCH'
+            "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($mobileAppId)"
+            "Body" = $params
+            "ContentType" = "application/json"
+        }
+        Invoke-MgGraphRequest @paramSplatting
+
+        # Update the application with the correct display version
+        $params = @{
+            "@odata.type"   = "#microsoft.graph.win32LobApp"
+            "displayVersion"  = "$($version)"
+        }
+
+        $params = $params | ConvertTo-Json 
+        
+        $paramSplatting = @{
+            "Method" = 'PATCH'
+            "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($mobileAppId)"
+            "Body" = $params
+            "ContentType" = "application/json"
+        }
+        Invoke-MgGraphRequest @paramSplatting
+        
+        # Update the application with the correct display version
+        Write-Host "Updating the application with the correct display version..." -ForegroundColor Yellow
+        #Update-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId -BodyParameter $params    
+
+        if (-NOT ([string]::IsNullOrEmpty($IconPath))) {
+
+            $params = New-AppIconContent -IconPath $IconPath
+            $params = $params | ConvertTo-Json
+            # Update the application with an icon
+            Write-Host "Updating the application with an icon..." -ForegroundColor Yellow
+            #Update-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId -BodyParameter $params  
+
+            $paramSplatting = @{
+                "Method" = 'PATCH'
+                "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($mobileAppId)"
+                "Body" = $params
+                "ContentType" = "application/json"
+            }
+            Invoke-MgGraphRequest @paramSplatting
+
+        }
 
         # Return the application ID
         Write-Host "Application created successfully." -ForegroundColor Green
@@ -706,12 +802,12 @@ function Invoke-Win32AppUpload {
         # This will allow you to re-run the script without having to manually delete the incomplete app record.
         # Note: This will only work if the app record was successfully created in Intune.
 
-        <#
+        
         if ($mobileAppId) {
             Write-Host "Removing the incomplete application record from Intune..." -ForegroundColor Yellow
             Remove-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId
         }
-        #>
+        
         break
     }
 }
@@ -1400,7 +1496,7 @@ function GetWin32AppBody() {
         $body.description = $description
         $body.developer = ""
         $body.displayName = $displayName
-        $body.versionNumber = $Version
+        $body.displayVersion = $Version
         $body.fileName = $filename
         $body.installCommandLine = "msiexec /i `"$SetupFileName`""
         $body.installExperience = @{
@@ -1433,7 +1529,7 @@ function GetWin32AppBody() {
         $body.description = $description
         $body.developer = ""
         $body.displayName = $displayName
-        $body.versionNumber = $Version
+        $body.displayVersion = $Version
         $body.fileName = $filename
         $body.installCommandLine = $installCommandLine
         $body.installExperience = @{
@@ -1686,6 +1782,18 @@ else
             }
         }
 
+        # Check if the script has an Icon.png file in its folder
+        $iconPath = '{0}\Icon.png' -f ($selectedApp.FilePath | Split-Path -Parent)
+        if (-not (Test-Path -Path $iconPath))
+        {
+            Write-Warning "No Icon.png file found in $($selectedApp.FilePath)."
+            $iconDetected = $false
+        }
+        else 
+        {
+            $iconDetected = $true
+        }
+
         # Step 1: Create the Intunwin file
         $paramSplatting = @{
             AppOutFolder = $AppOutFolder
@@ -1718,8 +1826,14 @@ else
             UninstallCommandLine = $selectedApp.'IN-IntuneUninstallCommand'
             Version = $selectedApp.'ADT-AppVersion'
             #Owner = ""
+            IconPath = $null
             Rules = $Rules
             ReturnCodes = Get-DefaultReturnCodes
+        }
+
+        if ($iconDetected)
+        {
+            $appParamSplatting.IconPath = $iconPath
         }
     
         Invoke-Win32AppUpload @appParamSplatting
