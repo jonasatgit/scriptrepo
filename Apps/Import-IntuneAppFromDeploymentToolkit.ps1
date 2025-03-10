@@ -791,9 +791,10 @@ function Invoke-Win32AppUpload {
         }
 
         # Return the application ID
-        Write-Host "Application created successfully." -ForegroundColor Green
-        Write-Host "Application Details:"
-        Get-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId | Format-List
+        #Write-Host "Application created successfully." -ForegroundColor Green
+        #Write-Host "Application Details:"
+
+        return (Get-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId)
     }
     catch {
         Write-Host -ForegroundColor Red "Aborting with exception: $($_.Exception.ToString())"
@@ -1641,7 +1642,7 @@ Function Get-IntuneWinFile() {
     $Directory = [System.IO.Path]::GetDirectoryName("$SourceFile")
     
     if (!(Test-Path "$Directory\$folder")) {
-        New-Item -ItemType Directory -Path "$Directory" -Name "$folder" -Force
+        $null = New-Item -ItemType Directory -Path "$Directory" -Name "$folder" -Force
     }
     
     Add-Type -Assembly System.IO.Compression.FileSystem
@@ -1836,7 +1837,8 @@ else
             $appParamSplatting.IconPath = $iconPath
         }
     
-        Invoke-Win32AppUpload @appParamSplatting
+        $uploadedApp = $null
+        $uploadedApp = Invoke-Win32AppUpload @appParamSplatting
 
         #Always remove the detection.xml file after upload
         Remove-Item -Path "$($filePath | Split-Path -Parent)\Detection.xml" -Force
@@ -1846,6 +1848,134 @@ else
             Remove-Item -Path $filePath -Force            
         }
 
+        if (-NOT ([string]::IsNullOrEmpty($uploadedApp.Id)))
+        {
+            Write-Host "App $($selectedApp.'ADT-AppName') uploaded successfully. App ID: $($uploadedApp.Id)" -ForegroundColor Green
+        }
+        else 
+        {
+            Write-Host "Failed to upload app $($selectedApp.'ADT-AppName')." -ForegroundColor Red
+            continue
+        }
+
+        try 
+        {
+            if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentEntraIDGroupName')))
+            {
+                Write-Host "Will search for group displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+
+                if ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentIntent'))
+                {
+                    Write-Host "No InstallAssignmentIntent provided. Will use: `"Available`")`"" -ForegroundColor Green
+                    $selectedApp.'IN-InstallAssignmentIntent' = "Available"
+                }
+                # nstallAssignmentIntent has to be required or available
+                if ($selectedApp.'IN-InstallAssignmentIntent' -inotin ("Available","Required"))
+                {
+                    Write-Host "Invalid InstallAssignmentIntent provided. Has to be Available or Required. Fallback to: `"Available`"" -ForegroundColor Green
+                    $selectedApp.'IN-InstallAssignmentIntent' = "Available"
+                }
+
+                if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentStartDate')))
+                {
+                    Write-Host "Will use `"$($selectedApp.'IN-InstallAssignmentStartDate')`" as start date" -ForegroundColor Green
+                    $selectedApp.'IN-InstallAssignmentStartDate' = (Get-Date $selectedApp.'IN-InstallAssignmentStartDate').ToString("yyyy-MM-ddTHH:mm:ssZ")
+                }
+                else 
+                {
+                    Write-Host "No InstallAssignmentStartDate provided. Will use: `"$((Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ"))`"" -ForegroundColor Green
+                    $selectedApp.'IN-InstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                }
+
+                $startTimeHash = $null
+                if ($selectedApp.'IN-InstallAssignmentIntent' -ieq "Required")
+                {
+                    $startTimeHash = @{
+                        startDateTime = $selectedApp.'IN-InstallAssignmentStartDate'
+                        useLocalTime = $true
+                        deadlineDateTime = $selectedApp.'IN-InstallAssignmentStartDate'   
+                    }
+                }
+                else 
+                {
+                    $startTimeHash = @{
+                        startDateTime = $selectedApp.'IN-InstallAssignmentStartDate'
+                    }
+                }
+            }
+            else 
+            {
+                Write-Host "No Entra ID group name provided. Will skip deployment" -ForegroundColor Yellow
+                continue
+            }
+      
+
+            Write-Host "Will search for group displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+            #$group = Get-MgGroup -Filter "displayName eq '$($item.GroupName)'"
+            $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')'"
+            $groupResult = Invoke-MgGraphRequest -Uri $uri -Method Get -ErrorAction Stop -OutputType PSObject       
+        }
+        catch 
+        {
+            Write-Host "Failed to get group `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
+            Write-Host "$($_)" -ForegroundColor Red
+            continue
+        }
+    
+        if ($groupResult.value.count -eq 0)
+        {
+            Write-Host "No group found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
+            continue
+        }
+        elseif ($groupResult.value.count -gt 1) 
+        {
+            Write-Host "Multiple groups found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Group needs to be unique. Skipping group" -ForegroundColor Yellow
+            continue
+        }
+        elseif ($groupResult.value.count -eq 1) 
+        {
+            Write-Host "Group found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Will use this group for assignment" -ForegroundColor Green
+        }
+
+        $assignmentSettings = @{
+            source = "direct"
+            settings = @{
+                "@odata.type" = "#microsoft.graph.win32LobAppAssignmentSettings"
+                installTimeSettings = $startTimeHash
+
+                <#
+                "installTimeSettings": {
+                    "startDateTime": "2024-12-31T06:20:00Z",
+                    "useLocalTime": true,
+                    "deadlineDateTime": null,   
+                #>
+
+                autoUpdateSettings = $null
+                deliveryOptimizationPriority = "foreground"
+                notifications = "showAll"
+                restartSettings = $null
+            }
+            target = @{
+                deviceAndAppManagementAssignmentFilterId = $null
+                "@odata.type" = "#microsoft.graph.groupAssignmentTarget"
+                deviceAndAppManagementAssignmentFilterType = "none"
+                groupId = $groupResult.value.id
+            }
+            intent = $selectedApp.'IN-InstallAssignmentIntent'
+        }
+
+        try 
+        {
+            Write-Host "Will try to assign App as `"$($selectedApp.'IN-InstallAssignmentIntent')`" to group `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+            $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($uploadedApp.Id)/assignments"
+            $result = Invoke-MgGraphRequest -Uri $uri -Method Post -Body ($assignmentSettings | ConvertTo-Json) -ContentType "application/json" -ErrorAction Stop           
+        }
+        catch 
+        {
+            write-host "Failed to assign app to group" -ForegroundColor Yellow
+            Write-Host "$($_)" -ForegroundColor Red
+            continue
+        }
     }
 }
 #endregion
