@@ -622,9 +622,6 @@ function Invoke-Win32AppUpload {
             break
         }
 
-        $mobileAppBody | ConvertTo-Json
-        break
-
         # Create the application in Intune and get the application ID
         Write-Host "Creating application in Intune..." -ForegroundColor Yellow
         #$MobileApp = New-MgDeviceAppManagementMobileApp -BodyParameter ($mobileAppBody | ConvertTo-Json)
