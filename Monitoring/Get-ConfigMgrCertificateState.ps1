@@ -644,7 +644,7 @@ else
                             if ($sslCert.Issuer -inotlike '*sms issuing*')
                             {
                                 # Let's also check if the cert is coming from the correct template
-                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -imatch $templateSearchString)}))
+                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -iin ('Certificate Template Information','Zertifikatvorlageninformationen')) -and ($_.Format(0) -imatch $templateSearchString)}))
                                 {
                                     $tmpObj.CheckType = 'Certificate'
                                     $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
@@ -735,7 +735,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
             if ($sslCert.Issuer -inotlike '*sms issuing*')
             {
                 # Let's also check if the cert is coming from the correct template
-                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -imatch $templateSearchString)}))
+                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -iin ('Certificate Template Information','Zertifikatvorlageninformationen')) -and ($_.Format(0) -imatch $templateSearchString)}))
                 {
                     $tmpObj.CheckType = 'Certificate'
                     $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
