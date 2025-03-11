@@ -400,6 +400,45 @@ Function ConvertTo-CustomMonitoringObject
 }
 #endregion
 
+#region function Get-SQLServerServiceCertitificates
+function Get-SQLServerServiceCertitificates
+{
+    try 
+    {
+        # Define the base registry path for SQL Server instances
+        $baseRegistryPath = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server"
+
+        # Get all SQL Server instance keys
+        $instanceKeys = Get-ChildItem -Path $baseRegistryPath | Where-Object { $_.PSChildName -like "MSSQL*" }
+
+        # Initialize an array to store the certificate information
+        $certificates = @()
+
+        # Loop through each instance key
+        foreach ($instanceKey in $instanceKeys) {
+            # Define the registry path for the SuperSocketNetLib key
+            $superSocketNetLibPath = "$baseRegistryPath\$($instanceKey.PSChildName)\MSSQLServer\SuperSocketNetLib"
+
+            # Check if the SuperSocketNetLib key exists
+            if (Test-Path -Path $superSocketNetLibPath) {
+                # Get the certificate value
+                $certificate = Get-ItemProperty -Path $superSocketNetLibPath -Name "Certificate"
+
+                # Add the certificate information to the array
+                $certificates += [PSCustomObject]@{
+                    Instance = $instanceKey.PSChildName
+                    Thumbprint = $certificate.Certificate
+                }
+            }
+        }
+    }
+    catch {return $null}
+
+    return $certificates 
+}
+#endregion
+
+
 #region log path
 if ($WriteLog)
 {
@@ -605,7 +644,7 @@ else
                             if ($sslCert.Issuer -inotlike '*sms issuing*')
                             {
                                 # Let's also check if the cert is coming from the correct template
-                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -iin ('Certificate Template Information','Zertifikatvorlageninformationen')) -and ($_.Format(0) -imatch $templateSearchString)}))
+                                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -imatch $templateSearchString)}))
                                 {
                                     $tmpObj.CheckType = 'Certificate'
                                     $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
@@ -668,6 +707,73 @@ else
     }
 }
 #endregion
+
+
+#region check SQL Server service certificate
+foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
+{
+    try 
+    {
+        $sslCert = Get-item "Cert:\LocalMachine\my\$($sqlInstance.Thumbprint)"  
+        if ($sslCert)
+        {
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            # Let's check the cert expiration date first
+            $expireDays = (New-TimeSpan -Start (Get-Date) -End ($sslCert.NotAfter)).Days
+            if ($expireDays -le $minValidDays)
+            {              
+                $tmpObj.CheckType = 'Certificate'
+                $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                $tmpObj.SystemName = $systemName
+                $tmpObj.Status = 'Warning'
+                $tmpObj.SiteCode = ""
+                $tmpObj.Description = 'SQL certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
+                $tmpObj.PossibleActions = 'Renew certificate or request a new one'            
+            }
+
+            # check if it is a ConfigMgr managed certificate. Only if not, we will check the template
+            if ($sslCert.Issuer -inotlike '*sms issuing*')
+            {
+                # Let's also check if the cert is coming from the correct template
+                if (-NOT($sslCert.Extensions | Where-Object{ ($_.Oid.FriendlyName -ieq 'Certificate Template Information') -and ($_.Format(0) -imatch $templateSearchString)}))
+                {
+                    $tmpObj.CheckType = 'Certificate'
+                    $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, ($sslCert.Thumbprint)
+                    $tmpObj.SystemName = $systemName
+                    $tmpObj.Status = 'Warning'
+                    $tmpObj.SiteCode = ""
+                    $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding info to the description in case both checks are successful
+                }
+            }
+            else
+            {
+                if($WriteLog){Write-CMTraceLog -Message ('Found ConfigMgr managed certificate. Will skip check.') -Component ($MyInvocation.MyCommand)}
+            }
+
+            
+            if (-NOT([string]::IsNullOrEmpty($tmpObj.Name)))
+            {
+                [void]$resultObject.Add($tmpObj)
+            }
+        }
+        else 
+        {
+            $tmpObj = New-Object psobject | Select-Object $propertyList
+            $tmpObj.CheckType = 'Certificate'
+            $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $certPath
+            $tmpObj.SystemName = $systemName
+            $tmpObj.Status = 'Error'
+            $tmpObj.SiteCode = ""
+            $tmpObj.Description = "SQL site certificate not found:  $($certPath)"
+            $tmpObj.PossibleActions = 'Add a new cert to SQL'                            
+            [void]$resultObject.Add($tmpObj)
+        }
+    }
+    catch 
+    {
+        <#Do this if a terminating exception happens#>
+    }
+}
  
  
 # Adding overall script state to list
@@ -798,4 +904,3 @@ switch ($OutputMode)
 }
 if($WriteLog){Write-CMTraceLog -Message "End of script" -Component ($MyInvocation.MyCommand)}
 #endregion 
-
