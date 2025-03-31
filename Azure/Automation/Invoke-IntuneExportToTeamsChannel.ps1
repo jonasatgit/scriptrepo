@@ -20,7 +20,7 @@
 
     The script exports data from Intune and uploads it to a Microsoft Teams channel using Microsoft Graph API.
     The script uses the Microsoft Graph API to connect to Intune and retrieve data about managed devices.
-    The data is then exported to a CSV file and uploaded to a Microsoft Teams channel.
+    The data is then converted to CSV format and uploaded to a Microsoft Teams channel.
     The script uses the Microsoft Graph API to create an upload session for the file and upload it in chunks.
     The script is intended as a sample and should be modified to fit your needs.
 
@@ -85,9 +85,20 @@ $intuneResult = Invoke-MgGraphRequest -Uri $intuneDevicesUri -Method Get -Output
 # Using output type json to be able to convert the result to a JSON object with a depth of 10 and not just 1
 $intuneResultObject = $intuneResult | ConvertFrom-Json -Depth 10
 
-# Export the result to a temp CSV file. We will delete it later
-$csvFullName = "{0}\Devices-{1}.csv" -f $env:TEMP, (Get-Date -Format 'yyyyMMdd-HHmmss')
-$intuneResultObject.value | Export-Csv -Path $csvFullName -NoTypeInformation -Force -Encoding UTF8
+# Convert the result to a CSV string array. Because we want to upload the data as a CSV file to the Teams channel
+# Export-csv would also work with: $fileBytes = [System.IO.File]::ReadAllBytes($csvFullName)
+# But this step makes the export obsolete and we don't need to create a file on the disk.
+$stringArray = $intuneResultObject.value | ConvertTo-Csv -NoTypeInformation
+
+$fileBytes = $null
+foreach ($string in $stringArray) 
+{
+    # We need to add a new line to the end of each string in the array
+    $string = $string + "`r`n"
+    # We need to convert the string to a byte array to be able to upload it to the Teams channel
+    # We will set the encoding to UTF8
+    $fileBytes += [System.Text.Encoding]::UTF8.GetBytes($string)
+}
 
 Write-Host "Found $($intuneResultObject.value.Count) devices for export" -ForegroundColor Green
 
@@ -155,9 +166,9 @@ $uploadSessionUri = $uploadSessionReturnObject.uploadUrl
 [int]$maxChunkSize = 320 * 1024  
 
 # Read all bytes from the file to be uploaded
-$fileBytes = [System.IO.File]::ReadAllBytes($csvFullName)
+#$fileBytes = [System.IO.File]::ReadAllBytes($csvFullName)
 # Lets delete the file after we read it, since we don't need it anymore
-Remove-Item -Path $csvFullName -Force -ErrorAction SilentlyContinue
+#Remove-Item -Path $csvFullName -Force -ErrorAction SilentlyContinue
 
 # Calculate the number of chunks we needed to upload the file
 $chunkCount = [System.Math]::Ceiling($fileBytes.Length / $maxChunkSize)
