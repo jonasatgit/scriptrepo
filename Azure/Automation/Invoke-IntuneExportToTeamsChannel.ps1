@@ -32,6 +32,12 @@
     - Files.ReadWrite.All: Read and write all files in all site collections (Delegated permission).
     - Sites.ReadWrite.All: Read and write items in all site collections (Application permission). (Required for Azure Automation)
 
+    We need to create an upload session to upload the file in chunks. The upload session will return a URL to which we can upload the file in chunks.
+    For the upload session, we need to specify the conflict behavior. The conflict behavior can be set to "fail" (default), "replace", or "rename".
+    We also need to construct headers for the upload request. The headers must include the Content-Length and range information about the chunks we are uploading.
+    The script will upload the file in chunks of 320 KiB. The chunk size must be a multiple of 320 KiB.
+    See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
+
 .PARAMETER TeamName
     The name of the Microsoft Teams team to which the file will be uploaded. Default is 'Contoso'.
 
