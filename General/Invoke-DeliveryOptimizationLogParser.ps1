@@ -23,6 +23,23 @@
 
 #>
 
+[CmdletBinding()]
+param()
+
+# Test if the script is running with admin rights
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator))
+{
+    Write-Warning "This script requires to be run with admin rights. Please run it as administrator."
+    return
+}
+
+# We also need powershell 7 or higher to run this script
+if ($PSVersionTable.PSVersion.Major -lt 7)
+{
+    Write-Warning "This script requires PowerShell 7 or higher. Please run it with PowerShell 7 or higher."
+    return
+}
+
 $GetDeliveryOptimizationLog = Get-DeliveryOptimizationLog
 
 # Load some previous exported data from a different machine
