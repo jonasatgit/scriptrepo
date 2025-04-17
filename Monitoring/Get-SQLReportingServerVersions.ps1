@@ -97,13 +97,13 @@ param
     [String]$MailInfotext = 'Status about SQL Server Reporting Services Versions',
 
     [Parameter(Mandatory=$false)]
-    [switch]$SendMailOnlyWhenNewVersionsFound,
+    [switch]$SendMailOnlyWhenNewVersionsFound
 
-    [Parameter(Mandatory=$false)]
-    [string]$ReportServerVersionListURI = 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services',
+    #[Parameter(Mandatory=$false)]
+    #[string]$ReportServerVersionListURI = 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services',
 
-    [Parameter(Mandatory=$false)]
-    [string]$PowerBIReportServerVersionListURI = 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog'
+    #[Parameter(Mandatory=$false)]
+    #[string]$PowerBIReportServerVersionListURI = 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog'
  
     #[Parameter(Mandatory=$false)]
     #[string]$ProxyUser,
@@ -115,169 +115,228 @@ param
     #[string]$ProxyPassword
  
 )
- 
- 
-#region CIMSession settings
-if (-NOT ($ForceWSMANConnection))
-{
-    $cimSessionOption = New-CimSessionOption -Protocol Dcom
-    $cimSession = New-CimSession -ComputerName $ProviderMachineName -SessionOption $cimSessionOption
-    Write-Verbose "Using DCOM for CimSession"
-}
-else
-{
-    $cimSession = New-CimSession -ComputerName $ProviderMachineName
-    Write-Verbose "Using WSMAN for CimSession"
-}
-#endregion
- 
- 
-#region Get ConfigMgr sitecode
-if (-NOT($siteCode))
-{
-    # getting sitecode
-    $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms -Query 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode -First 1
-}
- 
-if (-NOT($siteCode))
-{
-    # stopping script, no sitecode means script cannot run
-    $cimSession | Remove-CimSession -ErrorAction SilentlyContinue
-    exit 1
-}
-Write-Verbose "$($siteCode) detected sitecode"
- 
- 
-[array]$listOfReportServers = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -query "select * from SMS_SCI_SysResUse where RoleName = 'SMS SRS Reporting Point'"
-$cimSession | Remove-CimSession -ErrorAction SilentlyContinue # no longer needed
 
-$simplifiedListOfReportServers = [System.Collections.Generic.List[pscustomobject]]::new()
-foreach($server in $listOfReportServers)
+
+function Get-ReportServerMetadata
 {
-    $simplifiedListOfReportServers.add([pscustomobject][ordered]@{
-        ServerType = $null
-        Servername = ($server.Props.Where({$_.PropertyName -ieq 'Server Remote Name'})).Value1
-        ReportServerInstance = ($server.Props.Where({$_.PropertyName -ieq 'ReportServerInstance'})).Value2
-        VersionString = $null
-        VersionStringLatest = $null
-        BuildVersion = ($server.Props.Where({$_.PropertyName -ieq 'Version'})).Value2
-        BuildVersionLatest = $null
-        Status = $null
-        DatabaseServerName = ($server.Props.Where({$_.PropertyName -ieq 'DatabaseServerName'})).Value2
-        #DatabaseName = ($server.Props.Where({$_.PropertyName -ieq 'DatabaseName'})).Value2
-        #Username = ($server.Props.Where({$_.PropertyName -ieq 'Username'})).Value2
-        ReportServerUri = ($server.Props.Where({$_.PropertyName -ieq 'ReportServerUri'})).Value2
-        ReportManagerUri = ($server.Props.Where({$_.PropertyName -ieq 'ReportManagerUri'})).Value2
-    })
+    param 
+    (
+        [Parameter(Mandatory=$false)]
+        [string]$ProviderMachineName = $env:ComputerName,
  
-}
+        [Parameter(Mandatory=$false)]
+        [string]$SiteCode,
  
-if ($simplifiedListOfReportServers.count -gt 0)
-{
-    # Initialize a list to hold the results
-    $versionObjectList = [System.Collections.Generic.List[PSCustomObject]]::new()
+        [Parameter(Mandatory=$false)]
+        [Switch]$ForceWSMANConnection,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$TestMode
+    )
+
  
-    # GETTING DATA FOR SQL SERVER REPORTING SERVICES
-    # SQL Server Report Server
-    try
+    $simplifiedListOfReportServers = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    if ($TestMode)
     {
-        # Define the base parameters for Invoke-WebRequest
-        $params = @{
-            Uri = $ReportServerVersionListURI
-            UseBasicParsing = $true
-            ErrorAction = 'Stop'
-        }
+        $simplifiedListOfReportServers.add([pscustomobject][ordered]@{
+            ServerType = $null
+            Servername = 'testserver1.contoso.local'
+            ReportServerInstance = 'SSRS'
+            VersionString = $null
+            VersionStringLatest = $null
+            BuildVersion = '15.0.1102.962'
+            BuildVersionLatest = $null
+            Status = $null
+            DatabaseServerName = 'testserver1.contoso.local'
+            ReportServerUri = 'https://testserver1.contoso.local/ReportServer'
+            ReportManagerUri = 'https://testserver1.contoso.local/Reports'
+        })
 
-        # Check if a proxy URL is provided and add it to the parameters if it is
-        if ($ProxyURI) {
-            $params['Proxy'] = $ProxyURI
-        }
+        $simplifiedListOfReportServers.add([pscustomobject][ordered]@{
+            ServerType = $null
+            Servername = 'testserver2.contoso.local'
+            ReportServerInstance = 'PBIRS'
+            VersionString = $null
+            VersionStringLatest = $null
+            BuildVersion = '15.0.1113.162'
+            BuildVersionLatest = $null
+            Status = $null
+            DatabaseServerName = 'testserver2.contoso.local'
+            ReportServerUri = 'https://testserver2.contoso.local/ReportServer'
+            ReportManagerUri = 'https://testserver2.contoso.local/Reports'
+        })
 
-        # Use parameter splatting to invoke the web request with the defined parameters
-        $webRequestResult = Invoke-WebRequest @params
+        return $simplifiedListOfReportServers
     }
-    catch
+    else 
     {
-        Write-Output "Failed to retrieve the page: $($uri)"
-        Write-Output "Error: $($_.Exception.Message)"
-        break
-    }
-
-    # The site contains multiple sections all with a title called: "SQL Server <Version> Reporting Services"
-    # In between each section there is a list of version for each of the SQL Server versions
-    # We first need to find each section containing the version information
-    $regexString = '(<h2 id="sql-server-\d+-reporting-services">SQL Server \d+ Reporting Services</h2>)(.*?)(?=<h2 id="sql-server-\d+-reporting-services"|<\/html>)'
-    [array]$matchResultList = [regex]::Matches($webRequestResult.Content, $regexString, 'Singleline')
-   
-    # Iterate over each match to extract information
-    foreach ($match in $matchResultList ) {
-        $section = $match.Value
-       
-        # Extract the title
-        $title = $match.Groups[1].Value -replace '<.*?>', ''
-        # Extract version information within this section
-        # looking for entries like the following:
-        #   <h2 id="1406001763-20210628">14.0.600.1763, 2021/06/28</h2>
-        #   <p><em>(Product Version: 14.0.600.1763)</em></p>
-        $versionPattern = '<h2 id="[^"]+">(?<version>\d+\.\d+\.\d+\.\d+), (?<date>\d+/\d+/\d+)</h2>(?:\s*<p><em>\(Product Version: (?<productversion>\d+\.\d+\.\d+\.\d+)\)</em></p>)?'
-        $versionMatches = [regex]::Matches($section, $versionPattern)
-   
-        # Process each version match
-        foreach ($versionMatch in $versionMatches)
+        #region CIMSession settings
+        if (-NOT ($ForceWSMANConnection))
         {
-            $version = [version]($versionMatch.Groups['version'].Value)
-            $date = $versionMatch.Groups['date'].Value
-            # If we don't find a build version, use the version instead
-            $buildVersion = if($versionMatch.Groups['productversion'].Success){[version]($versionMatch.Groups['productversion'].Value)}else{$version}
-           
-            # Add to results
-            $versionObjectList.Add([PSCustomObject]@{
-                ServerType = $title
-                Version = $version
-                Build = $buildVersion
-                VersionString = "$title - $version - Releasedate: $date"
+            $cimSessionOption = New-CimSessionOption -Protocol Dcom
+            $cimSession = New-CimSession -ComputerName $ProviderMachineName -SessionOption $cimSessionOption
+            Write-Verbose "Using DCOM for CimSession"
+        }
+        else
+        {
+            $cimSession = New-CimSession -ComputerName $ProviderMachineName
+            Write-Verbose "Using WSMAN for CimSession"
+        }
+        #endregion
+        
+        #region Get ConfigMgr sitecode
+        if (-NOT($siteCode))
+        {
+            # getting sitecode
+            $siteCode = Get-CimInstance -CimSession $cimSession -Namespace root\sms -Query 'Select SiteCode From SMS_ProviderLocation Where ProviderForLocalSite=1' -ErrorAction Stop | Select-Object -ExpandProperty SiteCode -First 1
+        }
+        #endregion
+ 
+        [array]$listOfReportServers = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -query "select * from SMS_SCI_SysResUse where RoleName = 'SMS SRS Reporting Point'" -ErrorAction Stop
+        $cimSession | Remove-CimSession -ErrorAction SilentlyContinue # session no longer needed
+   
+        Write-Verbose "$($siteCode) detected sitecode"
+        
+        foreach($server in $listOfReportServers)
+        {
+            $simplifiedListOfReportServers.add([pscustomobject][ordered]@{
+                ServerType = $null
+                Servername = ($server.Props.Where({$_.PropertyName -ieq 'Server Remote Name'})).Value1
+                ReportServerInstance = ($server.Props.Where({$_.PropertyName -ieq 'ReportServerInstance'})).Value2
+                VersionString = $null
+                VersionStringLatest = $null
+                BuildVersion = ($server.Props.Where({$_.PropertyName -ieq 'Version'})).Value2
+                BuildVersionLatest = $null
+                Status = $null
+                DatabaseServerName = ($server.Props.Where({$_.PropertyName -ieq 'DatabaseServerName'})).Value2
+                ReportServerUri = ($server.Props.Where({$_.PropertyName -ieq 'ReportServerUri'})).Value2
+                ReportManagerUri = ($server.Props.Where({$_.PropertyName -ieq 'ReportManagerUri'})).Value2
             })
+        
         }
+        return $simplifiedListOfReportServers
     }
- 
-    # GETTING DATA FOR POWERBI REPORT SERVER
-    # SQL Server PowerBi Report Server
-    try
-    {
-        # Define the base parameters for Invoke-WebRequest
-        $params = @{
-            Uri = $PowerBIReportServerVersionListURI
-            UseBasicParsing = $true
-            ErrorAction = 'Stop'
-        }
+}
 
-        # Check if a proxy URL is provided and add it to the parameters if it is
-        if ($ProxyURI) {
-            $params['Proxy'] = $ProxyURI
-        }
-
-        # Use parameter splatting to invoke the web request with the defined parameters
-        $webRequestResult = Invoke-WebRequest @params
-    }
-    catch
-    {
-        Write-Output "Failed to retrieve the page: $($uri)"
-        Write-Output "Error: $($_.Exception.Message)"
-        break
-    }          
+function Get-ReportServerVersionList
+{
+    param 
+    (
+        [Parameter(Mandatory=$false)]
+        [string]$ReportServerVersionListURI = 'https://learn.microsoft.com/en-us/sql/reporting-services/release-notes-reporting-services',
  
-    # Example strings we try to parse:
-    # "Version:1.20.8944.34536 (build 15.0.1115.194), Released: June 27, 2024"
-    # "Version: 1.18.8683.7488(build 15.0.1113.165), Released: October 10, 2023"
-    $regexString = '(Version).*(?<versioninfo>\d+\.\d+\.\d+\.\d+).*(?<buildinfo>build.*\d+\.\d+\.\d+\.\d+).*\<\/em\>'
-    [array]$matchResultList = [regex]::Matches($webRequestResult.Content, $regexString, 1) # 1 means not case sensitive
-    Write-Verbose "Found $($matchResultList.count) versions listed on the page: `"$($uri)`""
-    if ($matchResultList.count -gt 0)
-    {
+        [Parameter(Mandatory=$false)]
+        [string]$PowerBIReportServerVersionListURI = 'https://learn.microsoft.com/en-us/power-bi/report-server/changelog',
+
+        [Parameter(Mandatory=$false)]
+        [string]$ProxyURI
+    )
+    
+        # Initialize a list to hold the results
+        $versionObjectList = [System.Collections.Generic.List[PSCustomObject]]::new()
+ 
+        # GETTING DATA FOR SQL SERVER REPORTING SERVICES
+        # SQL Server Report Server
+        #try
+        #{
+            # Define the base parameters for Invoke-WebRequest
+            $params = @{
+                Uri = $ReportServerVersionListURI
+                UseBasicParsing = $true
+                ErrorAction = 'Stop'
+            }
+    
+            # Check if a proxy URL is provided and add it to the parameters if it is
+            if (-NOT ([string]::IsNullOrEmpty($ProxyURI))) 
+            {
+                $params['Proxy'] = $ProxyURI
+            }
+    
+            # Use parameter splatting to invoke the web request with the defined parameters
+            $webRequestResult = Invoke-WebRequest @params
+        #}
+        #catch
+        #{
+           # Write-Output "Failed to retrieve the page: $($uri)"
+            #Write-Output "Error: $($_.Exception.Message)"
+            #break
+        #}
+    
+        # The site contains multiple sections all with a title called: "SQL Server <Version> Reporting Services"
+        # In between each section there is a list of version for each of the SQL Server versions
+        # We first need to find each section containing the version information
+        $regexString = '(<h2 id="sql-server-\d+-reporting-services">SQL Server \d+ Reporting Services</h2>)(.*?)(?=<h2 id="sql-server-\d+-reporting-services"|<\/html>)'
+        [array]$matchResultList = [regex]::Matches($webRequestResult.Content, $regexString, 'Singleline')
+       
+        # Iterate over each match to extract information
+        foreach ($match in $matchResultList ) {
+            $section = $match.Value
+           
+            # Extract the title
+            $title = $match.Groups[1].Value -replace '<.*?>', ''
+            # Extract version information within this section
+            # looking for entries like the following:
+            #   <h2 id="1406001763-20210628">14.0.600.1763, 2021/06/28</h2>
+            #   <p><em>(Product Version: 14.0.600.1763)</em></p>
+            $versionPattern = '<h2 id="[^"]+">(?<version>\d+\.\d+\.\d+\.\d+), (?<date>\d+/\d+/\d+)</h2>(?:\s*<p><em>\(Product Version: (?<productversion>\d+\.\d+\.\d+\.\d+)\)</em></p>)?'
+            $versionMatches = [regex]::Matches($section, $versionPattern)
+       
+            # Process each version match
+            foreach ($versionMatch in $versionMatches)
+            {
+                $version = [version]($versionMatch.Groups['version'].Value)
+                $date = $versionMatch.Groups['date'].Value
+                # If we don't find a build version, use the version instead
+                $buildVersion = if($versionMatch.Groups['productversion'].Success){[version]($versionMatch.Groups['productversion'].Value)}else{$version}
+               
+                # Add to results
+                $versionObjectList.Add([PSCustomObject]@{
+                    ServerType = $title
+                    Version = $version
+                    Build = $buildVersion
+                    VersionString = "$title - $version - Releasedate: $date"
+                })
+            }
+        }
+     
+        # GETTING DATA FOR POWERBI REPORT SERVER
+        # SQL Server PowerBi Report Server
+        #try
+        #{
+            # Define the base parameters for Invoke-WebRequest
+            $params = @{
+                Uri = $PowerBIReportServerVersionListURI
+                UseBasicParsing = $true
+                ErrorAction = 'Stop'
+            }
+    
+            # Check if a proxy URL is provided and add it to the parameters if it is
+            if ($ProxyURI) {
+                $params['Proxy'] = $ProxyURI
+            }
+    
+            # Use parameter splatting to invoke the web request with the defined parameters
+            $webRequestResult = Invoke-WebRequest @params
+        #}
+        #catch
+        #{
+        #    Write-Output "Failed to retrieve the page: $($uri)"
+        #    Write-Output "Error: $($_.Exception.Message)"
+        #    break
+        #}          
+     
+        # Example strings we try to parse:
+        # "Version:1.20.8944.34536 (build 15.0.1115.194), Released: June 27, 2024"
+        # "Version: 1.18.8683.7488(build 15.0.1113.165), Released: October 10, 2023"
+        $regexString = '(Version).*(?<versioninfo>\d+\.\d+\.\d+\.\d+).*(?<buildinfo>build.*\d+\.\d+\.\d+\.\d+).*\<\/em\>'
+        [array]$matchResultList = [regex]::Matches($webRequestResult.Content, $regexString, 1) # 1 means not case sensitive
+        Write-Verbose "Found $($matchResultList.count) versions listed on the page: `"$($uri)`""
+
         foreach($versionItem in $matchResultList)
         {
             $versionString = 'PowerBI Report Server - {0}' -f $versionItem.groups['0'].value -replace '<.*?>'
- 
+    
             $versionObjectList.Add([PSCustomObject]@{
                 ServerType = 'SQL Server PowerBI Report Server'
                 Version = [version]$versionItem.groups['versioninfo'].value
@@ -285,16 +344,35 @@ if ($simplifiedListOfReportServers.count -gt 0)
                 VersionString = $versionString
             })
         }
-    }
-    else
-    {
-        Write-Output "No versions found on the page with regex: `"$($regexString)`" on page: `"$($uri)`""
-        break
-    }
- 
-    # Total List results
-    Write-Verbose "Found $($versionObjectList.count) versions of Report Server"
- 
+        
+        return $versionObjectList
+        # Total List results
+        Write-Verbose "Found $($versionObjectList.count) versions of Report Server"
+}
+
+
+#region main script logic
+$outList = [System.Collections.Generic.List[pscustomobject]]::new()
+
+# object to store the status of the script
+$scriptStatusObject = [pscustomobject]@{
+    CheckType = 'ScriptStatus'
+    Name = "ScriptStatus"
+    SystemName = $env:COMPUTERNAME
+    Status = 'Ok'
+    SiteCode = $null
+    Description = $null
+    PossibleActions = $null
+}
+
+$listOfReportServers = Get-ReportServerMetadata -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -ForceWSMANConnection:$ForceWSMANConnection -TestMode:$TestMode 
+
+$versionObjectList = Get-ReportServerVersionList 
+
+if ($simplifiedListOfReportServers.count -gt 0)
+{
+
+
  
     $finalServerList = [System.Collections.Generic.List[pscustomobject]]::new()
     # Lets now test the servers
