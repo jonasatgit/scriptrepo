@@ -85,9 +85,9 @@ param
     [Parameter(Mandatory = $false)]
     [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe',
     [Parameter(Mandatory = $false)]
-    [string]$ClientID, # Prep for alternate authentication method
+    [string]$ClientID, 
     [Parameter(Mandatory = $false)]
-    [string]$TenantID # Prep for alternate authentication method
+    [string]$TenantID 
 )
 
 
@@ -1741,11 +1741,23 @@ if ($null -eq $selectedApps)
 }
 else 
 {
-
     # We need to authenticate first
-    Connect-MgGraph
-    
+    if (-NOT ([string]::IsNullOrEmpty($ClientID)) -and -NOT ([string]::IsNullOrEmpty($TenantID)))
+    {
+        Write-Host "Authenticating to Microsoft Graph with ClientID `"$ClientID`"" -ForegroundColor Green
+        $authParams = @{
+            ClientId     = $ClientID
+            TenantId     = $TenantID
+        }
 
+        Connect-MgGraph @authParams -ErrorAction Stop
+    }
+    else 
+    {
+        Connect-MgGraph # using the default authentication method
+    }     
+    
+    # Do for each selected app
     foreach ($selectedApp in $selectedApps)
     {
         Write-Host "Importing app $($selectedApp.'ADT-AppName') version $($selectedApp.'ADT-AppVersion')..." -ForegroundColor Green
