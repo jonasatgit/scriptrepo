@@ -54,6 +54,12 @@
         # InstallAssignmentStartDate can have a specific date in the format of "yyyy-MM-dd hh:mm" or now value. 
         # No value means the import script will use the runtime of the script as startdatetime. 
         InstallAssignmentStartDate = "2023-11-30 14:00"	
+
+        # Description of the app in Intune. This is the description that will be shown in the Company Portal
+        IntuneAppDescription = "This is a test app for Intune"
+
+        # Either System or User. This is the account that will be used to run the app via Intune.
+        IntuneRunAsAccount = "System"
     }
 
 
@@ -77,7 +83,11 @@ param
     [Parameter(Mandatory = $false)]
     [Switch]$RemoveIntuneWinFileAfterUpload,
     [Parameter(Mandatory = $false)]
-    [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe'
+    [string]$Win32ContentPrepToolUri = 'https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/raw/master/IntuneWinAppUtil.exe',
+    [Parameter(Mandatory = $false)]
+    [string]$ClientID, # Prep for alternate authentication method
+    [Parameter(Mandatory = $false)]
+    [string]$TenantID # Prep for alternate authentication method
 )
 
 
@@ -1707,7 +1717,9 @@ $arrayOfDisplayedProperties = @(
     'IN-IntuneAppCategory',
     'IN-InstallAssignmentEntraIDGroupName',
     'IN-InstallAssignmentIntent',
-    'IN-InstallAssignmentStartDate'
+    'IN-InstallAssignmentStartDate',
+    'IN-IntuneAppDescription',
+    'IN-IntuneRunAsAccount',
     'FilePath',
     'ID'
 )
@@ -1816,12 +1828,32 @@ else
         $Rules += New-ScriptDetectionRule -ScriptFile $detectionScriptPath -EnforceSignatureCheck $false -RunAs32Bit $false 
         #$Rules += New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
 
+        # Validate input parameters
+        if ([string]::IsNullOrEmpty($selectedApp.'IN-IntuneAppDescription'))
+        {
+            $selectedApp.'IN-IntuneAppDescription' = 'App imported from AppDeployToolkit'
+            Write-Host "Will use `"$($selectedApp.'IN-IntuneAppDescription')`" as description" -ForegroundColor Green
+        }
+        
+        if ([string]::IsNullOrEmpty($selectedApp.'IN-IntuneRunAsAccount'))
+        {
+            $selectedApp.'IN-IntuneRunAsAccount' = "system"
+            Write-Host "Will use `"$($selectedApp.'IN-IntuneRunAsAccount')`" as RunAsAccount" -ForegroundColor Green
+        }
+        
+        if ($selectedApp.'IN-IntuneRunAsAccount' -inotin ("system","user"))
+        {
+            Write-Host "Invalid RunAsAccount provided. Has to be system or user. Fallback to: `"system`"" -ForegroundColor Green
+            $selectedApp.'IN-IntuneRunAsAccount' = "system"
+        }
+
+
         $appParamSplatting = @{
             DisplayName = $selectedApp.'ADT-AppName'
             SourceFile = $filePath
             Publisher = $selectedApp.'ADT-AppVendor'
-            Description = "Interesting app"
-            RunAsAccount = "system"
+            Description = $selectedApp.'IN-IntuneAppDescription'
+            RunAsAccount = $selectedApp.'IN-IntuneRunAsAccount'
             DeviceRestartBehavior = "basedOnReturnCode"
             InstallCommandLine = $selectedApp.'IN-IntuneInstallCommand'
             UninstallCommandLine = $selectedApp.'IN-IntuneUninstallCommand'
