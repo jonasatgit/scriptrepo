@@ -590,10 +590,17 @@ function Invoke-Win32AppUpload {
         [string]$DeviceRestartBehavior,
 
         [parameter(Mandatory = $false, Position = 12)]
-        [string]$IconPath
+        [string]$IconPath,
+
+        [parameter(Mandatory = $false, Position = 13)]
+        [switch]$AllowAvailableUninstall
 
     )
     try	{
+
+        if ($null -eq $AllowAvailableUninstall) {
+            $AllowAvailableUninstall = $false
+        }
 
         # Check if the source file exists
         Write-Host "Testing if SourceFile '$SourceFile' Path is valid..." -ForegroundColor Yellow
@@ -633,6 +640,7 @@ function Invoke-Win32AppUpload {
             elseif ($MsiRequiresReboot -eq "true") { $MsiRequiresReboot = $true }
  
             $mobileAppBody = GetWin32AppBody `
+                -AllowAvailableUninstall $AllowAvailableUninstall `
                 -MSI `
                 -displayName "$DisplayName" `
                 -Version $version `
@@ -652,6 +660,7 @@ function Invoke-Win32AppUpload {
         }
         else {
             $mobileAppBody = GetWin32AppBody `
+                -AllowAvailableUninstall $AllowAvailableUninstall `
                 -EXE -displayName "$DisplayName" `
                 -Version $version `
                 -publisher "$publisher" `
@@ -1498,11 +1507,15 @@ function GetWin32AppBody() {
     
         [parameter(Mandatory = $true, ParameterSetName = "MSI")]
         [ValidateNotNullOrEmpty()]
-        $MsiUpgradeCode
+        $MsiUpgradeCode,
+
+        [parameter(Mandatory = $false)]
+        [Bool]$AllowAvailableUninstall
     )
     
     if ($MSI) {
         $body = @{ "@odata.type" = "#microsoft.graph.win32LobApp" }
+        $body.allowAvailableUninstall = $AllowAvailableUninstall
         $body.applicableArchitectures = "x64,x86"
         $body.description = $description
         $body.developer = ""
@@ -1859,6 +1872,12 @@ else
             $selectedApp.'IN-IntuneRunAsAccount' = "system"
         }
 
+        if ($null -eq $selectedApp.'IN-AllowAvailableUninstall')
+        {
+            $selectedApp.'IN-AllowAvailableUninstall' = $false
+            Write-Host "Will use `"$($selectedApp.'IN-AllowAvailableUninstall')`" as AllowAvailableUninstall" -ForegroundColor Green
+        }
+
 
         $appParamSplatting = @{
             DisplayName = $selectedApp.'ADT-AppName'
@@ -1873,6 +1892,7 @@ else
             #Owner = ""
             IconPath = $null
             Rules = $Rules
+            AllowAvailableUninstall = $selectedApp.'IN-AllowAvailableUninstall'
             ReturnCodes = Get-DefaultReturnCodes
         }
 
