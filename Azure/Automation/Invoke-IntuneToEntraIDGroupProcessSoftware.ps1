@@ -408,6 +408,12 @@ if ($deviceChangeListUnique)
     # Now we can loop through the list of devices and add the Entra ID object ID
     foreach ($item in $deviceChangeListUnique)
     {
+        if ($null -eq $item.EntraIDDeviceID)
+        {
+            Write-Host "No Entra ID device ID found for device: `"$($item.DeviceName)`" Need to skip device"
+            continue
+        }
+
         $item.EntraIDObjectID = $entraIDObjectIDLookupTable[$item.EntraIDDeviceID]
         if ($null -eq $item.EntraIDObjectID)
         {
@@ -454,7 +460,7 @@ if ($deviceChangeListUnique)
     }
 
     # Lets now add new members to the group in case they are not already in the group
-    foreach ($item in $deviceChangeListWithEntraID)
+    foreach ($item in $deviceChangeListUnique)
     {
         if ([string]::IsNullOrEmpty($item.EntraIDObjectID))
         {
