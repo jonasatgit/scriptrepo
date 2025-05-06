@@ -273,8 +273,8 @@ try
 }
 catch [System.Exception] 
 {
-    Write-CMTraceLog -Message "An error occurred while loading System.IO.Compression.FileSystem assembly." -Severity Error
-    Write-CMTraceLog -Message "Error message: $($_)"
+    Write-Host "An error occurred while loading System.IO.Compression.FileSystem assembly."
+    Write-Host "Error message: $($_)"
     Exit 0
 }
 #endregion

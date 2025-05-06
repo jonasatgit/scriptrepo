@@ -195,9 +195,12 @@ Function New-ConfigMgrCertificateRequest
 
 
 #region Main script logic
+New-ConfigMgrCertificateEvent -EventType "StartScript" -EventMessage "Script stated"
+
+# We need a custom store for ConfigMgr certificates 
 if (-not (Test-path Cert:\LocalMachine\ConfigMgr))
 { 
-    $NULL = New-Item -Path Cert:\LocalMachine -Name "ConfigMgr" -ItemType Directory
+    $Null = New-Item -Path Cert:\LocalMachine -Name "ConfigMgr" -ItemType Directory
     New-ConfigMgrCertificateEvent -EventType "CreateStore" -EventMessage "Custom store ConfigMgr created"
 }
 
