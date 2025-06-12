@@ -1282,6 +1282,7 @@ function Get-ConfigMgrSiteInfo
         SiteCode = $null
         ParentSiteCode = $null
         InstallDirectory = $null
+        SiteDefaultShare = $null
         SiteName = $null
         SiteServerDomain = $null
         SiteServerName = $null
@@ -1457,18 +1458,23 @@ function Get-ConfigMgrSiteInfo
         {
             $outObject.BackupEnabled = 'Unknown'
         }
-
-        # Is console installed on site server?
-        # will use WMI/CIM method to avoid any issues with remote registry access
-        # Is console installed on site server?
-        # will use WMI/CIM method to avoid any issues with remote registry access
-        $regKeyPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\AdminUI"
-        $regKeyValue = "AdminUILog"
-        
-        if (Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath $regKeyPath -RegKeyValue $regKeyValue -Method GetStringValue) 
+      
+        try 
         {
-            $outObject.ConsoleInstalled = 1
+            # Is console installed on site server?
+            # will use WMI/CIM method to avoid any issues with remote registry access
+            $regKeyPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\AdminUI"
+            $regKeyValue = "AdminUILog"
+            if (Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath $regKeyPath -RegKeyValue $regKeyValue -Method GetStringValue) 
+            {
+                $outObject.ConsoleInstalled = 1
+            }         
         }
+        catch 
+        {
+            # We will ignore any errors. The console can be installed at any time. That info is not that important. 
+        }
+
     }
 
     # Getting site update information
@@ -1552,7 +1558,25 @@ function Get-ConfigMgrSiteInfo
         $outObject.FullVersionUpdatedName = ($outObject.InConsoleUpdates | Where-Object { $_.State -eq "INSTALL_SUCCESS" } | Select-Object -First 1).Name
 
         # Getting list of all HA site servers in case HA is used
-        $outObject.SiteServerHAList = Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -RegKeyValue 'Site Servers' -Method GetStringValue
+        #$outObject.SiteServerHAList = Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -RegKeyValue 'Site Servers' -Method GetStringValue
+
+        # Getting list of all HA site servers in case HA is used
+        $haQuery = "SELECT * FROM SMS_HA_SiteServerTopLevelMonitoring WHERE SiteCode='{0}'" -f $SiteCode
+        $cimHAResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $haQuery 
+
+        $siteQuery = "SELECT * FROM SMS_Site WHERE SiteCode='{0}'" -f $SiteCode
+        $cimSiteResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $siteQuery
+        
+        $passiveSiteServer = $null
+        $passiveSiteServer = $cimHAResult | Select-Object -Property SiteServerName -Unique | Where-Object -Property SiteServerName -NE $cimSiteResult.ServerName | Select-Object -ExpandProperty SiteServerName
+        
+        $outObject.SiteServerHAList = [pscustomobject]@{
+                            SiteServerActive = $cimSiteResult.ServerName
+                            SiteServerPassive = $passiveSiteServer
+                        }
+
+        # Setting default share based on active site server
+        $outObject.SiteDefaultShare = '\\{0}\SMS_{1}' -f $cimSiteResult.ServerName, $SiteCode
 
     }
     else
@@ -2079,8 +2103,33 @@ Function Export-SystemRoleInformation
 }
 #endregion
 
+#region New-WimFileFromFolder
+function New-WimFileFromFolder
+{
+    param 
+    (
+        [string]$SourceFolder,
+        [string]$OutputFileFullName,
+        [String]$ImageName,
+        [String]$DismScratchDir,
+        [String]$LogFileFullName
+    )
 
+    # Run the DISM command to capture the folder into a WIM file with
+    $argumentList = '/Capture-Image /ImageFile:"{0}" /CaptureDir:"{1}" /Name:"{2}" /LogPath:"{3}" /ScratchDir:"{4}"' 
+    $argumentList = $argumentList -f $OutputFileFullName, $SourceFolder, $ImageName, $LogFileFullName, $DismScratchDir
+    Write-CMTraceLog -Message "Will run DISM with the following arguments:"
+    Write-CMTraceLog -Message "$($argumentList)"
 
+    $processRetVal = Start-Process dism.exe -ArgumentList $argumentList -Wait -PassThru -NoNewWindow
+    
+    if ($processRetVal.ExitCode -ne 0) 
+    {
+        Write-CMTraceLog -Message "Error during dism command. Check the logfile at: $($LogFileFullName)" -Severity Error
+        $script:ExitWithError = $true
+    }    
+}
+#endregion
 
 
 # Check if none of the switch parameters are set
@@ -2219,8 +2268,10 @@ try
     # Export CD.Latest folder and metadata
     if ($ExportCDLatest -or $ExportAllItems)
     {
+        Set-Location "C:\" # to avoid any errors sice we would normally have the ConfigMgr drive at this point
+        $proccedWithAction = $true
         Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"
-        $SiteData = Get-ConfigMgrSiteInfo -ProviderServerName $ProviderMachineName -SiteCode $SiteCode
+        $SiteData = Get-ConfigMgrSiteInfo -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode
 
         # Export of general site data
         $SiteData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$($script:FullExportFolderName)\Backup-SiteData.json" -Force
@@ -2228,49 +2279,81 @@ try
         # Export of role and system information
         Export-SystemRoleInformation -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -OutputFilePath $script:FullExportFolderName
 
-        # Backup of CD.Latest folder
-        $folderToZip = '{0}\cd.latest' -f $siteData.InstallDirectory
-        $zipFileName = '{0}_cd.latest.zip' -f $siteData.FullVersionUpdated
-        $zipLogFileName = '{0}_cd.latest.log' -f $siteData.FullVersionUpdated
-        $zipLogFilePath = '{0}\{1}' -f $script:ExportRootFolder, $zipLogFileName
+        # We will save the cd.latest folder with the latest versionnumber
+        $cdLatestFileName = '{0}_cd.latest.wim' -f $siteData.FullVersionUpdated
+        $cdLatestFileFullName = '{0}\{1}' -f $script:ExportRootFolder, $cdLatestFileName
+        $cdLatestRobocopyLogFileFullName = $cdLatestFileFullName -replace '.wim$', '-robocopy.log'
+        $cdLatestDismLogFileFullName = $cdLatestFileFullName -replace '.wim$', '-dism.log'
 
-        # We only want to backup the cd.latest folder if it does not exists already, since its contents will only change when a new update is installed
-        $zipBackupFullName = '{0}\{1}' -f $script:ExportRootFolder, $ZipFileName
-        if (-NOT (Test-Path $zipBackupFullName))
+        if (Test-Path $cdLatestFileFullName)
         {
-            Write-CMTraceLog -Message "Start backup of CD.Latest folder to: $($zipBackupFullName)"
-            $compressResult = Compress-FolderOnRemoteMachine -RemoteComputerName $siteData.SiteServerName -FolderToZip $folderToZip -ZipFileName $zipFileName
-            
-            if (-Not ($compressResult -imatch '^[A-Za-z]:\\(?:[^\\\/:*?"<>|\r\n]+\\)*[^\\\/:*?"<>|\r\n]*$'))
-            {    
-                Write-Error 'Failed to get valid local path to copy zip file from remote machine' -Severity Error
-                $script:ExitWithError = $true
+            Write-CMTraceLog -Message "CD.Latest folder for current version already backed up to:"
+            Write-CMTraceLog -Message "$($cdLatestFileFullName)"
+            Write-CMTraceLog -Message "Will not backup CD.Latest folder again"
+        }
+        else 
+        {
+            # Lets make sure we can reach the default share to copy the cd.latest folder
+            if (Test-Path $SiteData.SiteDefaultShare)
+            {
+                Write-CMTraceLog -Message "Default share can be reached: $($SiteData.SiteDefaultShare)"   
             }
             else 
             {
-                # Changing local remote path to UNC path to be able to get the data from the rmeote machine via robocopy
-                $remoteZipFileFullName = '\\{0}\{1}' -f $siteData.SiteServerName, ($compressResult -replace ':', '$')
-                $remoteFolderName = $remoteZipFileFullName | Split-Path -Parent
-                Start-RoboCopy -Source $remoteFolderName -Destination $script:ExportRootFolder -FileNames $zipFileName -RobocopyLogPath $zipLogFilePath
-
-                # Lets test again
-                if (-NOT (Test-Path $zipBackupFullName))
-                {
-                    Write-CMTraceLog -Message "Failed to copy CD.Latest folder to: $($zipBackupFullName)" -Severity Error
-                    $script:ExitWithError = $true
-                }
-                else
-                {
-                    Write-CMTraceLog -Message "Will remove zip file from remote machine: $($remoteZipFileFullName)"
-                    Start-Sleep -Seconds 5
-                    Remove-Item -Path $remoteZipFileFullName -Force
-                }
+                Write-CMTraceLog -Message "Default share cannot be reached: $($SiteData.SiteDefaultShare)" -Severity Error
+                $script:ExitWithError = $true
+                $proccedWithAction = $false
             }
         }
-        else
+
+
+        if ($proccedWithAction)
         {
-            Write-CMTraceLog -Message "CD.Latest folder already backed up to: $($zipBackupFullName)"
-            Write-CMTraceLog -Message "Will not backup CD.Latest folder again"
+            $remoteFolderName = '{0}\cd.latest' -f $SiteData.SiteDefaultShare
+
+            # We need a temp folder to copy the cd.latest folder. Ideally in the root of the drive of $script:ExportRootFolder to avoid long path names
+            $configMgrBkpTMPFolder = '{0}ConfigMgrBkpTMP' -f ([System.IO.Path]::GetPathRoot($Script:ExportRootFolder))
+            
+            # Delete the temp folder if it exists already from a previous run
+            if (Test-Path $configMgrBkpTMPFolder )
+            {
+                Write-CMTraceLog -Message "Deleting existing temp folder: $($configMgrBkpTMPFolder)"
+                $null = Remove-Item -Path $configMgrBkpTMPFolder -Recurse -Force
+            }
+
+            # A folder for the cd.latest files locally to be able to capture them into a wim file
+            # The wim file should speed up copy time and does not need to be extracted
+            $configMgrBkpTMPFolderCdLatest = '{0}\cd.Latest' -f $configMgrBkpTMPFolder
+            # A second folder for dism as scratch directory
+            $configMgrBkpTMPFolderDismTmp = '{0}\dismTmp' -f $configMgrBkpTMPFolder
+
+            # Create the temp folder
+            Write-CMTraceLog -Message "Creating temp folder and sub-folders: $($configMgrBkpTMPFolder)"
+            $null = New-Item -ItemType Directory -Path $configMgrBkpTMPFolder -Force
+            $null = New-Item -ItemType Directory -Path $configMgrBkpTMPFolderCdLatest -Force
+            $null = New-Item -ItemType Directory -Path $configMgrBkpTMPFolderDismTmp -Force
+
+            # we will now robocopy the cd.latest folder to the temp folder
+            Write-CMTraceLog -Message "Copying cd.latest folder to temp folder: $($configMgrBkpTMPFolder)"
+            Start-RoboCopy -Source $remoteFolderName -Destination $configMgrBkpTMPFolderCdLatest -RobocopyLogPath $cdLatestRobocopyLogFileFullName
+            # In case the robocopy failed, the script will exit with an error
+
+            $paramSplatting = @{
+                SourceFolder = $configMgrBkpTMPFolderCdLatest
+                OutputFileFullName = $cdLatestFileFullName
+                ImageName = ($cdLatestFileName -replace '\.wim')
+                DismScratchDir = $configMgrBkpTMPFolderDismTmp
+                LogFileFullName = $cdLatestDismLogFileFullName
+            }
+
+            New-WimFileFromFolder @paramSplatting
+
+            if (Test-Path $configMgrBkpTMPFolder )
+            {
+                Write-CMTraceLog -Message "Remove temp folder: $($configMgrBkpTMPFolder)"
+                $null = Remove-Item -Path $configMgrBkpTMPFolder -Recurse -Force
+            }
+
         }
     }
 }
