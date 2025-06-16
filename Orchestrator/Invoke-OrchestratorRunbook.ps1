@@ -171,7 +171,7 @@ if ($TestMode)
     }
     else 
     {
-        #$credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
+        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
     }
 }
 else 
