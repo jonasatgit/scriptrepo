@@ -56,8 +56,25 @@
     The name of the runbook to start.
 
 .PARAMETER RunbookParams
-    A hashtable with the runbook parameters. 
+    A hashtable with input runbook parameters. Leave empty if no parameters are needed.
     Example: @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+
+.PARAMETER RunbookOutParamsList
+    An array of runbook output parameters to return. If no output parameters are needed, leave empty.
+    Example: @('Parameter 1', 'Parameter 2')
+    Output parameters must be defined in the runbook first and can be used to return values from the runbook.
+    - Go to the runbook designer and open the runbook. 
+    - Right click on the runbook and select "Properties"
+    - Go to "Returned data" and add a new output parameter
+    - Add a "return data" activity to the runbook and set the output parameter name to the name of the output parameter defined in the runbook properties
+    Use the same name in the RunbookOutParamsList parameter to get the output parameter value from the runbook.
+
+.PARAMETER RunbookOutParamType
+    The type of the runbook output parameters to return.
+    Default is 'Object'. Possible values are 'Hashtable', 'JSON' and 'Object'.
+    - Hashtable: Returns the output parameters as a hashtable
+    - JSON: Returns the output parameters as a JSON string
+    - Object: Returns the output parameters as a PowerShell object
 
 .PARAMETER TestMode
     A switch to enable test mode.
@@ -90,6 +107,11 @@
     Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
     -ScorchURI '%TS-ScorchURI%' -RunbookName '%TS-RunbookName%' -RunbookParams @{'Parameter 1'='%TS-RunbookParam1%';'Parameter 2'='%TS-RunbookParam1%'}
 
+.EXAMPLE
+    Run a runbook in ConfigMgr task sequence mode with runbook output parameters via the "Run PowerShell Script" step.
+    Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
+    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookOutParamsList @('Parameter 1', 'Parameter 2')
+
 .LINK
     https://github.com/jonasatgit/scriptrepo
 
@@ -97,13 +119,46 @@
 
 [CmdletBinding()]
 param(
-    [string]$ScorchURI, # System Center Orchestrator web API service URI e.g. 'https://scorch.contoso.local:8181',
+    [Parameter(Mandatory = $true)]
+    # System Center Orchestrator web API service URI e.g. 'https://scorch.contoso.local:8181'
+    [string]$ScorchURI, 
+    
+    [Parameter(Mandatory = $false)]
+    # 10 second to 30 minutes
+    [ValidateRange(10, 1800)] 
     [int]$MaxJobRuntimeSec = 30,
+
+    [Parameter(Mandatory = $false)]
+    # The name of the task sequence variable that contains the username. Default is 'Variable1'. Adjust this parameter if you want to use a different task sequence variable name.
     [string]$UserVariableName = "Variable1",
+
+    [Parameter(Mandatory = $false)]
+    # The name of the task sequence variable that contains the password. Default is 'Variable2'. Adjust this parameter if you want to use a different task sequence variable name.
     [string]$PwdVariableName = "Variable2",
-    [string]$RunbookName,
-    [hashtable]$RunbookParams,
-    [switch]$TestMode,
+
+    [Parameter(Mandatory = $true)]
+    # The name of the runbook to start. The name must be unique in the Orchestrator web service
+    [string]$RunbookName, 
+
+    [Parameter(Mandatory = $false)]
+    # A hashtable with input runbook parameters. Leave empty if no parameters are needed. Example: @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+    [hashtable]$RunbookParams, 
+
+    [Parameter(Mandatory = $false)]
+    # An array of runbook output parameters to return. If no output parameters are needed, leave empty. Example: @('Parameter 1', 'Parameter 2')
+    [array]$RunbookOutParamsList, 
+
+    [Parameter(Mandatory = $false)]
+    # The type of the runbook output parameters to return. Default is 'Object'. Possible values are 'Hashtable', 'JSON' and 'Object'.
+    [ValidateSet("Hashtable", "JSON", "Object")]
+    [string]$RunbookOutParamType = 'Object',
+
+    [Parameter(Mandatory = $false)]
+    # A switch to enable test mode. In test mode the script will prompt for credentials. In production mode the script will try to get the credentials from task sequence variables.
+    [switch]$TestMode, 
+    
+    [Parameter(Mandatory = $false)]
+    # The username to use in test mode. If not specified, the script will prompt for
     [string]$TestModeUserName
 )
 
@@ -116,7 +171,7 @@ if ($TestMode)
     }
     else 
     {
-        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
+        #$credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
     }
 }
 else 
@@ -298,3 +353,92 @@ catch
     Exit 1 # to let a task sequence step fail
 }
 #endregion
+
+
+# region Get runbook output parameters
+if ($RunbookOutParamsList.count -gt 0)
+{
+    Write-Host "Will try to get runbook output parameters"
+    $runbookInstanceID = $runbookJobResult.RunbookInstances.Id
+
+    $runbookInstanceParamSplat = @{
+        Uri = '{0}/api/RunbookInstances/{1}?&$expand=RunBookInstanceParameters' -f $ScorchURI, $runbookInstanceID
+        Method = 'Get' 
+        ContentType = 'application/json'
+        Credential = $credential
+        ErrorAction = 'Stop'
+    }
+
+    try 
+    {
+        $runbookInstance = Invoke-RestMethod @runbookInstanceParamSplat
+    }
+    catch 
+    {
+        Write-Host "Could not get runbook instance parameters"
+        Write-Host $_
+        Exit 1 # to let a task sequence step fail
+    }
+
+    $runbookOutParams = @{}
+    Write-Host "Getting runbook out parameter values"
+    # Lets get the out parameters from the runbook instance of type 'Out'
+    foreach ($runbookInstanceParameter in ($runbookInstance.RunbookInstanceParameters | Where-Object -Property Direction -eq 'Out'))
+    {
+        if ($RunbookOutParamsList -contains $runbookInstanceParameter.Name)
+        {
+            $runbookOutParams[$runbookInstanceParameter.Name] = $runbookInstanceParameter.Value
+        }        
+    }
+    Write-Host "Found $($runbookOutParams.Keys.count) runbook output parameter/s. Expected $($RunbookOutParamsList.count) out parameter/s"
+
+    # Lets check if we have found all required parameters
+    $foundAll = $true
+    foreach ($runbookOutParam in $RunbookOutParamsList)
+    {
+        if ($runbookOutParam -notin $runbookOutParams.Keys)
+        {
+            $runbookOutParams[$runbookOutParam] = 'ERROR: Outparameter not found in job result'
+            $foundAll = $false
+        }
+    }
+
+    # Define the output type of the runbook output parameters
+    Write-Host "Will return runbook output parameters as: $RunbookOutParamType"
+    switch ($RunbookOutParamType)
+    {
+        'Hashtable' 
+        {
+            $runbookOutParams
+        }
+        'JSON' 
+        {
+            $runbookOutParams | ConvertTo-Json
+        }
+        'Object' 
+        {
+            [pscustomobject]$runbookOutParams
+        }
+        Default 
+        {
+            $runbookOutParams
+        }
+    }  
+    
+    if (-NOT $foundAll)
+    {
+        Write-Host "Not all runbook output parameters were found in the runbook job result. Will exit with error code 1"
+        Exit 1 # to let a task sequence step fail
+    }
+    else 
+    {
+        Write-Host "All requested runbook output parameters were found in the runbook job result"
+    }
+}
+else 
+{
+    Write-Host "No runbook output parameters requested"
+}
+#endregion
+
+Write-Host "End of script"
