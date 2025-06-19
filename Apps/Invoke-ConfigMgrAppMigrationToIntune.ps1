@@ -3012,7 +3012,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         catch 
         {
             Write-CMTraceLog -Message "$($_)" -Severity Error
-            Write-CMTraceLog "Delete app in Intune and retry again. Will skip to the next one..." -Severity Warning
+            Write-CMTraceLog -Message "Delete app in Intune and retry again. Will skip to the next one..." -Severity Warning
             continue
         }
 
