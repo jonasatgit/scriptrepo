@@ -1,23 +1,49 @@
-#************************************************************************************************************
-# Disclaimer
-#
-# This sample script is not supported under any Microsoft standard support program or service. This sample
-# script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
-# including, without limitation, any implied warranties of merchantability or of fitness for a particular
-# purpose. The entire risk arising out of the use or performance of this sample script and documentation
-# remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
-# production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
-# damages for loss of business profits, business interruption, loss of business information, or other
-# pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
-# if Microsoft has been advised of the possibility of such damages.
-#
-#************************************************************************************************************
 <#
 .Synopsis
     Script to export certain ConfigMgr items
  
 .DESCRIPTION
-    Script to export certain ConfigMgr items
+    #************************************************************************************************************
+    # Disclaimer
+    #
+    # This sample script is not supported under any Microsoft standard support program or service. This sample
+    # script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+    # including, without limitation, any implied warranties of merchantability or of fitness for a particular
+    # purpose. The entire risk arising out of the use or performance of this sample script and documentation
+    # remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+    # production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+    # damages for loss of business profits, business interruption, loss of business information, or other
+    # pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+    # if Microsoft has been advised of the possibility of such damages.
+    #
+    #************************************************************************************************************
+    
+    Script to export certain ConfigMgr items intto a folder structure.
+    The script will create a folder structure based on the current date and time and item-type.
+    The script will export the following items:
+    - Collections
+    - Configuration Items
+    - Configuration Baselines
+    - Task Sequences
+    - Antimalware Policies
+    - Scripts
+    - Client Settings
+    - Configuration Policies
+    - CD.Latest folder content
+
+    Use parameters to select which items to export or export all items with parameter -ExportAllItemTypes.
+    
+    The script will use the default export functions from the ConfigMgr PowerShell module if available.
+    In case an item does not have a default export function, the script will use a custom export function and export data via Export-CliXml.
+    All XML files can be imported again with Import-CliXml. That preserves the data structure and types and schould make restore of items easy.
+
+    NOTE: There is no import function available in this script at this time.
+
+    The following additional files might be created per item:
+    <itemname>.metadata.xml     -> The item metadata, such as the item name, item type, item ID, and other information.
+    <itemname>.deployments.xml  -> The deployments of the item, if available.
+    <itemname>.hinvclasses.xml  -> The hardware inventory classes of the item, if available.
+    <itemname>.references.xml   -> The references of the item, if available. Such as packages for task sequences for example.
 
 .PARAMETER SiteCode
     The site code of the ConfigMgr site
@@ -33,7 +59,7 @@
     Brefore the script will delete the folders older than this value
 
 .PARAMETER MinExportFoldersToKeep
-    The minimum amount of export folders to keep. Default is 2
+    The minimum amount of export folders to keep. Default is 10
     The script will keep at least this amount of folders to avoid being left with nothing
 
 .PARAMETER ExportAllItemTypes
@@ -64,7 +90,11 @@
     Export configuration policies
 
 .PARAMETER ExportCDLatest
-    Export the latest version of the content of the CD.Latest folder to be able to restore ConfigMgr
+    Export the latest version of the content of the CD.Latest folder to be able to restore ConfigMgr.
+    The CD.Latest folder will be captured into a wim file and stored in the export folder.
+    Next to the wim file, a text file will be created with instructions on how to mount and use the wim file.
+    The wim file will be named "<ConfigMgr version>_cd.latest.wim".
+    The CD.Latest folder will be captured when the versionnumber of ConfigMgr changes and not every time the script is run.
     
 .EXAMPLE
     Export-ConfigMgrItems.ps1
@@ -83,9 +113,9 @@ param
     [Parameter(Mandatory=$true)]
     [ValidateNotNullOrEmpty()]
     [String]$ExportRootFolder,
-    
-    [int]$MaxExportFolderAgeInDays = 30,
-    [int]$MinExportFoldersToKeep = 30,
+
+    [int]$MaxExportFolderAgeInDays = 10,
+    [int]$MinExportFoldersToKeep = 10,
     [Switch]$ExportAllItemTypes,
     [Switch]$ExportCollections,
     [Switch]$ExportConfigurationItems,
