@@ -29,7 +29,7 @@
     - Scripts
     - Client Settings
     - Configuration Policies
-    - CD.Latest folder content
+    - CD.Latest folder content to a wim file
 
     Use parameters to select which items to export or export all items with parameter -ExportAllItemTypes.
     
