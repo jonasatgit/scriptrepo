@@ -72,11 +72,20 @@
 
 param
 (
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
     [String]$SiteCode,
+
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
     [String]$ProviderMachineName,
+
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
     [String]$ExportRootFolder,
-    [int]$MaxExportFolderAgeInDays = 10,
-    [int]$MinExportFoldersToKeep = 2,
+    
+    [int]$MaxExportFolderAgeInDays = 30,
+    [int]$MinExportFoldersToKeep = 30,
     [Switch]$ExportAllItemTypes,
     [Switch]$ExportCollections,
     [Switch]$ExportConfigurationItems,
@@ -282,7 +291,7 @@ function Remove-OldExportFolders
             }
             Catch
             {
-                Write-CMTraceLog -Message "Not able to delete: $($item.FullName)" -Severity Error
+                Write-CMTraceLog -Message "Not able to delete: $($item.FullName) Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
                 Write-CMTraceLog -Message "$($_)" -Severity Error
                 $script:ExitWithError = $true   
             }
@@ -694,7 +703,7 @@ function New-CMCollectionListCustom
         }
         catch 
         {
-            Write-CMTraceLog -Message "Error exporting getting collection deployments" -Severity Error
+            Write-CMTraceLog -Message "Error exporting getting collection deployments. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
             Write-CMTraceLog -Message "$($_)" -Severity Error
             $script:ExitWithError = $true
         }
@@ -980,10 +989,20 @@ function Export-CMItemCustomFunction
 
                         # Lets export the TS refenrence data as well
                         $wmiQuery = "Select * from SMS_TaskSequencePackageReference_Flat where PackageID = '$($item.PackageID)'"
-                        $tsRefData = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
-                        if ($tsRefData)
+                        #$tsRefData = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+                        
+                        try
                         {
-                            $tsRefData | Export-Clixml -Path $tsReferenceFileName
+                            $tsRefData = Invoke-CMWmiQuery -Query $wmiQuery -ErrorAction Stop
+                            if ($tsRefData)
+                            {
+                                $tsRefData | Export-Clixml -Path $tsReferenceFileName
+                            }
+                        }
+                        catch
+                        {
+                            Write-CMTraceLog -Message "Export of TS references failed. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Warning
+                            Write-CMTraceLog -Message "$_" -Severity Warning
                         }
 
                     }
@@ -1033,14 +1052,26 @@ function Export-CMItemCustomFunction
                         if ($hinvDataItem)
                         {
                             $wmiQuery = "Select * from SMS_InventoryReport where InventoryReportID = '$($hinvDataItem.InventoryReportID)'"
-                            $inventoryReport = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
-                            if ($inventoryReport)
+                            #$inventoryReport = Get-CimInstance -ComputerName $script:ProviderMachineName -Namespace "root\sms\site_$script:SiteCode" -Query $wmiQuery -ErrorAction SilentlyContinue
+
+                            try
+			                {
+                                $inventoryReport = Invoke-CMWmiQuery -Query $wmiQuery -Option Fast -ErrorAction Stop 
+                                if ($inventoryReport)
+                                {
+                                    # load lazy properties
+                                    #$inventoryReport = $inventoryReport | Get-CimInstance
+                                    $inventoryReport.Get() # -Option lazy does not seem to work properly, hence the get()
+                                    $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
+                                }
+                            }
+                            catch
                             {
-                                # load lazy properties
-                                $inventoryReport = $inventoryReport | Get-CimInstance
-                                $inventoryReport | Export-Clixml -Depth 100 -Path $inventoryFileName
-                            }
-                            }
+                                Write-CMTraceLog -Message "Export of HINV data failed. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Warning
+                                Write-CMTraceLog -Message "$_" -Severity Warning
+                            }                            
+
+                        }
                 
                     }
                     'SMS_ConfigurationPolicy'
@@ -1063,7 +1094,7 @@ function Export-CMItemCustomFunction
             }
             catch
             {
-                 Write-CMTraceLog -Message "Error exporting: $($itemFullName)" -Severity Error
+                 Write-CMTraceLog -Message "Error exporting: $($itemFullName). Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
                  Write-CMTraceLog -Message "$($_)" -Severity Error
                  $script:ExitWithError = $true
             }
@@ -1210,7 +1241,7 @@ Function Start-RoboCopy
     }
     Catch
     {
-        Write-CMTraceLog -Message "RoboCopy failed" -Severity Error
+        Write-CMTraceLog -Message "RoboCopy failed. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
         Write-CMTraceLog -Message "$($_)" -Severity Error
         Exit 1  
     }
@@ -1246,7 +1277,8 @@ Function Start-RoboCopy
     }
     Catch
     {
-        Write-CMTraceLog -Message "Not able to check robocopy log $($_)" -Severity Error	
+        Write-CMTraceLog -Message "Not able to check robocopy log $($_). Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
+        Write-CMTraceLog -Message "$_" -Severity Error	
         Write-CMTraceLog -Message "Stopping script!" -Severity Warning
         Exit 1
     }
@@ -1322,11 +1354,12 @@ function Get-ConfigMgrSiteInfo
         
     try 
     {
-        $siteDefinition = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -ErrorAction Stop    
+        #$siteDefinition = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -ErrorAction Stop    
+        $siteDefinition = Invoke-CMWmiQuery -Query "SELECT * FROM SMS_SCI_SiteDefinition WHERE FileType=2 AND ItemName='Site Definition' AND ItemType='Site Definition' AND SiteCode='$($SiteCode)'" -Option Fast -ErrorAction Stop
     }
     catch 
     {
-        Write-CMTraceLog -Message "Failed to get site definition" -Severity Error
+        Write-CMTraceLog -Message "Failed to get site definition. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
         Write-CMTraceLog -Message "$($_)" -Severity Error
         Exit 1
     }
@@ -1369,11 +1402,12 @@ function Get-ConfigMgrSiteInfo
         # get list of role servers
         try 
         {
-            $SysResUse = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'" -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props   
+            #$SysResUse = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'" -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props   
+            $SysResUse = Invoke-CMWmiQuery -Query "select * from SMS_SCI_SysResUse where SiteCode = '$($SiteCode)'"  -Option Fast -ErrorAction Stop | Select-Object NetworkOsPath, RoleName, PropLists, Props
         }
         catch 
         {
-            Write-CMTraceLog -Message "Failed to get role servers" -Severity Error
+            Write-CMTraceLog -Message "Failed to get role servers. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
             Write-CMTraceLog -Message "$($_)" -Severity Error
             Exit 1
         }
@@ -1440,11 +1474,12 @@ function Get-ConfigMgrSiteInfo
         try 
         {
             $query = "SELECT Enabled, DeviceName FROM SMS_SCI_SQLTask WHERE FileType=2 AND ItemName='Backup SMS Site Server' AND ItemType='SQL Task' AND SiteCode='$($SiteCode)'"
-            $backupInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$($SiteCode)" -query $query -ErrorAction Stop    
+            #$backupInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$($SiteCode)" -query $query -ErrorAction Stop    
+            $backupInfo = Invoke-CMWmiQuery -Query $query -Option Fast -ErrorAction Stop
         }
         catch 
         {
-            write-CMTraceLog -Message "Failed to get backup info" -Severity Error
+            write-CMTraceLog -Message "Failed to get backup info. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
             write-CMTraceLog -Message "$($_)" -Severity Error
             Exit 1
         }
@@ -1481,11 +1516,12 @@ function Get-ConfigMgrSiteInfo
     try 
     {
         $query = 'SELECT Name, PackageGuid, DateReleased, DateCreated, Description, FullVersion, ClientVersion, State FROM SMS_CM_UpdatePackages WHERE UpdateType != 3'
-        [array]$configMgrUpdates = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query $query -ErrorAction stop        
+        #[array]$configMgrUpdates = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query $query -ErrorAction stop        
+        [array]$configMgrUpdates = Invoke-CMWmiQuery -Query $query -Option Fast -ErrorAction stop
     }
     catch 
     {
-        Write-CMTraceLog "Failed to get ConfigMgr updates" -Severity Error
+        Write-CMTraceLog "Failed to get ConfigMgr updates. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
         Write-CMTraceLog "$($_)" -Severity Error
         Exit 1
     }
@@ -1560,24 +1596,33 @@ function Get-ConfigMgrSiteInfo
         # Getting list of all HA site servers in case HA is used
         #$outObject.SiteServerHAList = Get-RegistryValueFromRemoteMachine -ComputerName $siteDefinition.SiteServerName -RegKeyPath 'HKLM:\SOFTWARE\Microsoft\SMS\Identification' -RegKeyValue 'Site Servers' -Method GetStringValue
 
-        # Getting list of all HA site servers in case HA is used
-        $haQuery = "SELECT * FROM SMS_HA_SiteServerTopLevelMonitoring WHERE SiteCode='{0}'" -f $SiteCode
-        $cimHAResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $haQuery 
+        try
+        {
+            # Getting list of all HA site servers in case HA is used
+            $haQuery = "SELECT * FROM SMS_HA_SiteServerTopLevelMonitoring WHERE SiteCode='{0}'" -f $SiteCode
+            #$cimHAResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $haQuery 
+            $cimHAResult = Invoke-CMWmiQuery -Query $haQuery -Option Fast -ErrorAction Stop
 
-        $siteQuery = "SELECT * FROM SMS_Site WHERE SiteCode='{0}'" -f $SiteCode
-        $cimSiteResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $siteQuery
+            $siteQuery = "SELECT * FROM SMS_Site WHERE SiteCode='{0}'" -f $SiteCode
+            #$cimSiteResult = Get-CimInstance -Namespace "Root\sms\site_$siteCode" -ComputerName $Provider -Query $siteQuery
+            $cimSiteResult = Invoke-CMWmiQuery -Query $siteQuery -Option Fast -ErrorAction Stop
         
-        $passiveSiteServer = $null
-        $passiveSiteServer = $cimHAResult | Select-Object -Property SiteServerName -Unique | Where-Object -Property SiteServerName -NE $cimSiteResult.ServerName | Select-Object -ExpandProperty SiteServerName
+            $passiveSiteServer = $null
+            $passiveSiteServer = $cimHAResult | Select-Object -Property SiteServerName -Unique | Where-Object -Property SiteServerName -NE $cimSiteResult.ServerName | Select-Object -ExpandProperty SiteServerName
         
-        $outObject.SiteServerHAList = [pscustomobject]@{
-                            SiteServerActive = $cimSiteResult.ServerName
-                            SiteServerPassive = $passiveSiteServer
-                        }
+            $outObject.SiteServerHAList = [pscustomobject]@{
+                                SiteServerActive = $cimSiteResult.ServerName
+                                SiteServerPassive = $passiveSiteServer
+                            }
 
-        # Setting default share based on active site server
-        $outObject.SiteDefaultShare = '\\{0}\SMS_{1}' -f $cimSiteResult.ServerName, $SiteCode
-
+            # Setting default share based on active site server
+            $outObject.SiteDefaultShare = '\\{0}\SMS_{1}' -f $cimSiteResult.ServerName, $SiteCode
+        }
+        catch
+        {
+            Write-CMTraceLog -Message "Export of SiteServerHAList failed. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Warning
+            Write-CMTraceLog -Message "$_" -Severity Warning            
+        }
     }
     else
     {
@@ -1638,7 +1683,7 @@ function Get-RegistryValueFromRemoteMachine
         return $null
     }
     catch {
-        Write-CMTraceLog -Message "Failed to read `"$($RegKeyPath)`" - `"$($RegKeyValue)`" on remote machine: `"$($ComputerName)`"" -Type Warning
+        Write-CMTraceLog -Message "Failed to read `"$($RegKeyPath)`" - `"$($RegKeyValue)`" on remote machine: `"$($ComputerName)`". Line: $($_.InvocationInfo.ScriptLineNumber)" -Type Warning
         Write-CMTraceLog -Message "$($_)" -Type Warning
         return $null
     }
@@ -1668,16 +1713,18 @@ Function Export-SystemRoleInformation
   
     try
     {
-        $siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -ErrorAction Stop
+        #$siteSystems = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -ErrorAction Stop
+        $siteSystems = Invoke-CMWmiQuery -Query "SELECT * FROM SMS_SCI_SysResUse WHERE NALType = 'Windows NT Server'" -Option Fast -ErrorAction Stop
         # getting sitecode and parent to have hierarchy information
         $siteCodeHash = @{}
-        $siteCodeInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -ClassName SMS_SCI_SiteDefinition -ErrorAction Stop
+        #$siteCodeInfo = Get-CimInstance -ComputerName $ProviderMachineName -Namespace "root\sms\site_$SiteCode" -ClassName SMS_SCI_SiteDefinition -ErrorAction Stop
+        $siteCodeInfo = Invoke-CMWmiQuery -Query "SELECT * FROM SMS_SCI_SiteDefinition" -Option Fast -ErrorAction Stop
     }
     Catch
     {
-        Write-CMTraceLog -Type Error -Message "Could not get site info" -Component ($commandName) -LogType LogAndEventlog
-        Write-CMTraceLog -Type Error -Message "$($Error[0].Exception)" -Component ($commandName) -LogType LogAndEventlog
-        Invoke-StopScriptIfError
+        Write-CMTraceLog -Message "Could not get site info. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
+        Write-CMTraceLog -Message "$_" -Severity Error
+        Exit 1
     }
 
     $siteCodeInfo | ForEach-Object {   
@@ -2200,53 +2247,100 @@ Set-Location "$($SiteCode):\" @initParams
 
 
 #region Main script
+
+# helptext for wim file actions for CD.Latest folder
+$mountInfo = @"
+    -----------------
+    Step 1: 
+    Create a folder to mount the wim file to
+    Like: C:\MountFolder
+    -----------------
+    Step 2: 
+    Mount the wim file like this:
+    dism.exe /Mount-Wim /WimFile:"{0}" /Index:1 /MountDir:"<Path to mount folder>"
+    -----------------
+    Step 3: 
+    Start the recovery process
+    -----------------
+    Step 4:
+    Unmount the file like this:
+    dism.exe /Unmount-Wim /MountDir:"<Path to mount folder>" /Discard
+    -----------------
+"@
+
+
+
 try
 {
     # Export configuration items
-    if ($ExportConfigurationItems -or $ExportAllItems)
+    if ($ExportConfigurationItems -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export configuration items..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMConfigurationItem -Fast | Export-CMItemCustomFunction
     }
 
     # Export configuration baselines
-    if ($ExportBaselines -or $ExportAllItems)
+    if ($ExportBaselines -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export baselines..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMBaseline -Fast | Export-CMItemCustomFunction
     }
     
     # Export task sequences
-    if ($ExportTaskSequences -or $ExportAllItems)
+    if ($ExportTaskSequences -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export task sequences..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMTaskSequence -Fast | Export-CMItemCustomFunction
     }
 
     # Export antimalware policies
-    if ($ExportAntimalwarePolicies -or $ExportAllItems)
+    if ($ExportAntimalwarePolicies -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export AntimalwarePolicies..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMAntimalwarePolicy | Export-CMItemCustomFunction
     }
 
     # Export scripts
-    if ($ExportScripts -or $ExportAllItems)
+    if ($ExportScripts -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export scripts..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMScript -WarningAction Ignore | Export-CMItemCustomFunction
     }
 
     # Export client settings
-    if ($ExportClientSettings -or $ExportAllItems)
+    if ($ExportClientSettings -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export client settings..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMClientSetting | Export-CMItemCustomFunction
     }
 
     # Export configuration policies
-    if ($ExportConfigurationPolicies -or $ExportAllItems)
+    if ($ExportConfigurationPolicies -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export configurations..."
+        Write-CMTraceLog -Message "---------------------------------"
         Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
     }
     
     # Export collections
-    if ($ExportCollections -or $ExportAllItems)
+    if ($ExportCollections -or $ExportAllItemTypes)
     {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export collections..."
+        Write-CMTraceLog -Message "---------------------------------"
         # Lets export collections into one file
         $itemExportRootFolder = '{0}\Collections' -f $script:FullExportFolderName
         $itemFullName  = '{0}\CollectionList.xml' -f $itemExportRootFolder
@@ -2266,17 +2360,21 @@ try
     }
 
     # Export CD.Latest folder and metadata
-    if ($ExportCDLatest -or $ExportAllItems)
+    if ($ExportCDLatest -or $ExportAllItemTypes)
     {
-        Set-Location "C:\" # to avoid any errors sice we would normally have the ConfigMgr drive at this point
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export site info and CD.latest folder..."
+        Write-CMTraceLog -Message "---------------------------------"
+
         $proccedWithAction = $true
-        Write-CMTraceLog -Message "Start exporting ConfigMgr CD.Latest folder and metadata"
+        Write-CMTraceLog -Message "Start export of general site data"
         $SiteData = Get-ConfigMgrSiteInfo -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode
 
         # Export of general site data
         $SiteData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$($script:FullExportFolderName)\Backup-SiteData.json" -Force
         
         # Export of role and system information
+        Write-CMTraceLog -Message "Start export of site system role information"
         Export-SystemRoleInformation -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -OutputFilePath $script:FullExportFolderName
 
         # We will save the cd.latest folder with the latest versionnumber
@@ -2284,15 +2382,28 @@ try
         $cdLatestFileFullName = '{0}\{1}' -f $script:ExportRootFolder, $cdLatestFileName
         $cdLatestRobocopyLogFileFullName = $cdLatestFileFullName -replace '.wim$', '-robocopy.log'
         $cdLatestDismLogFileFullName = $cdLatestFileFullName -replace '.wim$', '-dism.log'
+        $cdLatestReadmeFileFullName = $cdLatestFileFullName -replace '.wim$', '-readme.log'
 
+        # Adding filepath to wim info file
+        $mountInfo = $mountInfo -f $cdLatestFileFullName
+        if (-Not (Test-Path $cdLatestReadmeFileFullName))
+        {
+            $mountInfo | Out-File -FilePath $cdLatestReadmeFileFullName -Force
+        }
+
+        #Set-Location "C:\" # to avoid any errors sice we would normally have the ConfigMgr drive at this point
+        Set-Location "C:\"
+        
         if (Test-Path $cdLatestFileFullName)
         {
+            $proccedWithAction = $false
             Write-CMTraceLog -Message "CD.Latest folder for current version already backed up to:"
             Write-CMTraceLog -Message "$($cdLatestFileFullName)"
             Write-CMTraceLog -Message "Will not backup CD.Latest folder again"
         }
         else 
         {
+            Write-CMTraceLog -Message "Will backup CD.Latest folder to: $($cdLatestFileFullName)"
             # Lets make sure we can reach the default share to copy the cd.latest folder
             if (Test-Path $SiteData.SiteDefaultShare)
             {
@@ -2346,6 +2457,7 @@ try
                 LogFileFullName = $cdLatestDismLogFileFullName
             }
 
+            Write-CMTraceLog -Message "Cretie wim file from CD.latest folder"
             New-WimFileFromFolder @paramSplatting
 
             if (Test-Path $configMgrBkpTMPFolder )
@@ -2359,7 +2471,7 @@ try
 }
 catch
 {
-    Write-CMTraceLog -Message "Error during export" -Severity Error
+    Write-CMTraceLog -Message "Error during export. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
     Write-CMTraceLog -Message "$($_)" -Severity Error
     $script:ExitWithError = $true
 }
