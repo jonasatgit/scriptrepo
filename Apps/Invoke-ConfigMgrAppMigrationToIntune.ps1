@@ -2611,7 +2611,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
                                 }
 
                                 # Other types
-                                if ($flatRule.RegDataType -ieq 'String)')
+                                if ($flatRule.RegDataType -ieq 'String')
                                 {
                                     $DetectionType = "string"
                                     $DetectionRule = [ordered]@{
