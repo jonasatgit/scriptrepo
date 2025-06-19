@@ -18,7 +18,7 @@
     #
     #************************************************************************************************************
     
-    Script to export certain ConfigMgr items intto a folder structure.
+    Script to export certain ConfigMgr items into a folder structure.
     The script will create a folder structure based on the current date and time and item-type.
     The script will export the following items:
     - Collections
