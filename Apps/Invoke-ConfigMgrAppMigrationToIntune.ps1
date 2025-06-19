@@ -2753,6 +2753,79 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
                                     continue
                                 }
                             }
+                            'FolderSetting'
+                            {
+
+                                if ($flatRule.FolderMethod -ieq 'Count')
+                                {
+                                    $DetectionRule = [ordered]@{
+                                        "@odata.type" = "#microsoft.graph.win32LobAppFileSystemDetection"
+                                        "operator" = "notConfigured"
+                                        "detectionValue" = $null
+                                        "path" = $flatRule.ParentFolder
+                                        "fileOrFolderName" = $flatRule.FolderName
+                                        "check32BitOn64System" = $flatRule.Is32BitOn64BitSystem
+                                        "detectionType" = 'exists' # "doesNotExist" is not possible in ConfigMgr
+                                    }
+                                    $detectionRulesListToAdd.Add($DetectionRule)
+                                }
+                                elseif ($flatRule.FolderPropertyName -ieq 'DateModified')
+                                {
+                                    $DateValueString = $flatRule.FolderValue -replace 'Z', '.000Z' # '2021-06-01T00:00:00Z' -> '2021-06-01T00:00:00.000Z'
+                                    # needs to match this pattern '2021-06-01T00:00:00.000Z'
+                                    If(-NOT ($DateValueString -match '(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)'))
+                                    {
+                                        Write-CMTraceLog -Message "Date value for DateModified is not in the correct format. Skipping rule." -Severity Warning
+                                        Write-CMTraceLog -Message "Value: $DateValueString"
+                                        Write-CMTraceLog -Message "Expected format: '2021-06-01T00:00:00.000Z'"
+                                        Write-CMTraceLog -Message "Folder: $($flatRule.ParentFolder)"
+                                        continue
+                                    }
+
+                                    $DetectionRule = [ordered]@{
+                                        "@odata.type" = "#microsoft.graph.win32LobAppFileSystemDetection"
+                                        "operator" = $flatRule.OperatorIntune
+                                        "detectionValue" = $DateValueString
+                                        "path" = $flatRule.ParentFolder
+                                        "fileOrFolderName" = $flatRule.FolderName
+                                        "check32BitOn64System" = $flatRule.Is32BitOn64BitSystem
+                                        "detectionType" = "modifiedDate"
+                                    }
+                                    $detectionRulesListToAdd.Add($DetectionRule)
+                                }
+                                elseif ($flatRule.FolderPropertyName -ieq 'DateCreated')
+                                {
+                                    $DateValueString = $flatRule.FolderValue -replace 'Z', '.000Z' # '2021-06-01T00:00:00Z' -> '2021-06-01T00:00:00.000Z'
+                                    # needs to match this pattern '2021-06-01T00:00:00.000Z'
+                                    If(-NOT ($DateValueString -match '(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)'))
+                                    {
+                                        Write-CMTraceLog -Message "Date value for DateCreated is not in the correct format. Skipping rule." -Severity Warning
+                                        Write-CMTraceLog -Message "Value: $DateValueString"
+                                        Write-CMTraceLog -Message "Expected format: '2021-06-01T00:00:00.000Z'"
+                                        Write-CMTraceLog -Message "Folder: $($flatRule.ParentFolder)"
+                                        continue
+                                    }
+
+                                    $DetectionRule = [ordered]@{
+                                        "@odata.type" = "#microsoft.graph.win32LobAppFileSystemDetection"
+                                        "operator" = $flatRule.OperatorIntune
+                                        "detectionValue" = $DateValueString
+                                        "path" = $flatRule.ParentFolder
+                                        "fileOrFolderName" = $flatRule.FolderName
+                                        "check32BitOn64System" = $flatRule.Is32BitOn64BitSystem
+                                        "detectionType" = "createdDate"
+                                    }
+                                    $detectionRulesListToAdd.Add($DetectionRule)
+                                }
+                                else 
+                                {
+                                    Write-CMTraceLog -Message "FolderPropertyName $($flatRule.FolderPropertyName) is not supported. Skipping rule." -Severity Warning
+                                    Write-CMTraceLog -Message "Folder: $($flatRule.ParentFolder)"
+                                    Write-CMTraceLog -Message "FolderName: $($flatRule.FolderName)"
+                                    Write-CMTraceLog -Message "Value: $($flatRule.FolderValue)"
+                                    continue
+                                }
+                            }
                             'MsiSetting'
                             {
                                 if ($flatRule.MSIMethod -ieq "Count")
