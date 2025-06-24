@@ -494,6 +494,89 @@ function Get-ReportServerVersionList
 #endregion
 
 
+#region 
+Function Out-ScriptStatusObject
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [psobject]$StatusObject,
+        [Parameter(Mandatory=$false)]
+        [string]$OutputMode = 'List',
+        [Parameter(Mandatory=$false)]
+        [switch]$SendMailOnlyWhenNewVersionsFound,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName,
+        [Parameter(Mandatory=$false)]
+        [string]$MailSubject = 'Status about SQL Server Reporting Services Versions',
+        [Parameter(Mandatory=$false)]
+        [string]$MailInfotext = 'Status about SQL Server Reporting Services Versions'
+
+    )
+
+    Switch ($OutputMode)
+    {
+        "MonAgentJSON" 
+        {
+            $StatusObject | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2
+        }
+        "MonAgentJSONCompressed"
+        {
+            $StatusObject | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2 -Compress
+        }
+        'List'
+        {
+            $StatusObject | Format-List
+        }
+        "GridView"
+        {
+            $StatusObject | Out-GridView
+        }
+        'HTMLMail'
+        {
+            if ($SendMailOnlyWhenNewVersionsFound -and ($newVersionFound -eq $false))
+            {
+                Write-Host 'No changes found. No email send.' -ForegroundColor Yellow
+                Exit
+            }
+
+            # Reference email script
+            .$PSScriptRoot\Send-CustomMonitoringMail.ps1
+
+            $MailInfotext = '<br>{0}' -f $MailInfotext
+            Send-CustomMonitoringMail -MailMessageObject $StatusObject -MailSubject $MailSubject -MailInfotext $MailInfotext        
+        }
+        "PSObject"
+        {
+            $StatusObject
+        }
+        "PRTGString"
+        {
+            $badResults = $StatusObject.Where({$_.Status -ine 'OK'}) 
+            if ($badResults)
+            {
+                $resultString = '{0}:ConfigMgr Components in failure state' -f $badResults.count
+                Write-Output $resultString
+            }
+            else
+            {
+                Write-Output "0:No active ConfigMgr component alerts"
+            }
+        }
+        "PRTGJSON"
+        {
+            $StatusObject | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
+        }
+        "JSON"
+        {
+            $StatusObject | ConvertTo-Json -Depth 5
+        }
+    }
+}
+#endregion
+
+
 #region main script logic
 $outList = [System.Collections.Generic.List[pscustomobject]]::new()
 
@@ -506,6 +589,36 @@ $scriptStatusObject = [pscustomobject]@{
     SiteCode = $null
     Description = $null
     PossibleActions = $null
+}
+
+# getting sitecode and provider machine name
+if ((-NOT $SiteCode) -or (-NOT $ProviderMachineName))
+{
+    # getting provider machine name
+    $providerInfo = Get-CimInstance -Namespace root\sms -Query "SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MachineName -First 1
+    if (-NOT $providerInfo)
+    {
+        $scriptStatusObject.Status = 'Error'
+        $scriptStatusObject.Description = 'No ConfigMgr Provider found'
+    }
+
+    $SiteCode = $providerInfo.SiteCode
+    $ProviderMachineName = $providerInfo.ProviderMachineName
+}
+
+if (-NOT $SiteCode)
+{
+    $scriptStatusObject.Status = 'Error'
+    $scriptStatusObject.Description = 'No ConfigMgr SiteCode found'
+    Out-ScriptStatusObject -StatusObject $scriptStatusObject -OutputMode $OutputMode -SendMailOnlyWhenNewVersionsFound:$SendMailOnlyWhenNewVersionsFound -PrtgLookupFileName $PrtgLookupFileName -MailSubject $MailSubject -MailInfotext $MailInfotext
+    break
+}
+if (-NOT $ProviderMachineName)
+{
+    $scriptStatusObject.Status = 'Error'
+    $scriptStatusObject.Description = 'No ConfigMgr ProviderMachineName found'
+    Out-ScriptStatusObject -StatusObject $scriptStatusObject -OutputMode $OutputMode -SendMailOnlyWhenNewVersionsFound:$SendMailOnlyWhenNewVersionsFound -PrtgLookupFileName $PrtgLookupFileName -MailSubject $MailSubject -MailInfotext $MailInfotext
+    break
 }
 
 [array]$listOfReportServers = Get-ReportServerMetadata -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -ForceWSMANConnection:$ForceWSMANConnection -TestMode:$TestMode 
@@ -566,67 +679,13 @@ if ($listOfReportServers.count -gt 0)
 }
 else
 {
-    Write-Host "No Report Servers in ConfigMgr environment found"
+    $scriptStatusObject.Status = 'Error'
+    $scriptStatusObject.Description = 'No Report Servers found in ConfigMgr environment'
+    Out-ScriptStatusObject -StatusObject $scriptStatusObject -OutputMode $OutputMode -SendMailOnlyWhenNewVersionsFound:$SendMailOnlyWhenNewVersionsFound -PrtgLookupFileName $PrtgLookupFileName -MailSubject $MailSubject -MailInfotext $MailInfotext
     break
 }
 
+Out-ScriptStatusObject -StatusObject $finalServerList -OutputMode $OutputMode -SendMailOnlyWhenNewVersionsFound:$SendMailOnlyWhenNewVersionsFound -PrtgLookupFileName $PrtgLookupFileName -MailSubject $MailSubject -MailInfotext $MailInfotext
 
-#  [ValidateSet("Object","JSON","GridView", "MonAgentJSON", "MonAgentJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON","VersionList")]
-Switch ($OutputMode)
-{
-    "MonAgentJSON" 
-    {
-        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2
-    }
-    "MonAgentJSONCompressed"
-    {
-        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2 -Compress
-    }
-    'List'
-    {
-        $finalServerList | Format-List
-    }
-    "GridView"
-    {
-        $versionObjectList | Out-GridView
-    }
-    'HTMLMail'
-    {
-        if ($SendMailOnlyWhenNewVersionsFound -and ($newVersionFound -eq $false))
-        {
-            Write-Host 'No changes found. No email send.' -ForegroundColor Yellow
-            Exit
-        }
 
-        # Reference email script
-        .$PSScriptRoot\Send-CustomMonitoringMail.ps1
 
-        $MailInfotext = '<br>{0}' -f $MailInfotext
-        Send-CustomMonitoringMail -MailMessageObject $finalServerList -MailSubject $MailSubject -MailInfotext $MailInfotext        
-    }
-    "PSObject"
-    {
-        $finalServerList
-    }
-    "PRTGString"
-    {
-        $badResults = $finalServerList.Where({$_.Status -ine 'OK'}) 
-        if ($badResults)
-        {
-            $resultString = '{0}:ConfigMgr Components in failure state' -f $badResults.count
-            Write-Output $resultString
-        }
-        else
-        {
-            Write-Output "0:No active ConfigMgr component alerts"
-        }
-    }
-    "PRTGJSON"
-    {
-        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
-    }
-    "JSON"
-    {
-        $finalServerList | ConvertTo-Json -Depth 5
-    }
-}
