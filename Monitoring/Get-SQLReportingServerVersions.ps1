@@ -87,8 +87,8 @@ param
     [string]$ProxyURI,
 
     [Parameter(Mandatory=$false)]
-    [ValidateSet("Object", "HTMLMail", "VersionList")]
-    [string]$OutputMode = 'Object',
+    [ValidateSet("List","JSON","GridView", "MonAgentJSON", "MonAgentJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON")]
+    [string]$OutputMode = 'List',
 
     [Parameter(Mandatory=$false)]
     [String]$MailSubject = 'Status about SQL Server Reporting Services Versions',
@@ -117,6 +117,146 @@ param
 )
 
 
+
+
+#region ConvertTo-CustomMonitoringObject
+<# 
+.Synopsis
+   Function ConvertTo-CustomMonitoringObject
+
+.DESCRIPTION
+   Will convert a specific input object to a custom JSON like object
+   Which then can be used as an input object for a custom monitoring solution
+
+.PARAMETER InputObject
+   Well defined input object
+
+.EXAMPLE
+   $CustomObject | ConvertTo-CustomMonitoringObject
+#>
+Function ConvertTo-CustomMonitoringObject
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object]$InputObject,
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("MonAgentObject", "PrtgObject")]
+        [string]$OutputType,
+        [Parameter(Mandatory=$false)]
+        [string]$PrtgLookupFileName        
+    )
+
+    Begin
+    {
+        $resultsObject = New-Object System.Collections.ArrayList
+        switch ($OutputType)
+        {
+            'MonAgentObject'
+            {
+                $outObject = New-Object psobject | Select-Object InterfaceVersion, Results
+                $outObject.InterfaceVersion = 1  
+            }
+            'PrtgObject'
+            {
+                $outObject = New-Object psobject | Select-Object prtg
+            }
+        }  
+    }
+    Process
+    {
+        switch ($OutputType) 
+        {
+            'MonAgentObject' 
+            {  
+                # Adding infos to short description field
+                Switch ($InputObject.CheckType)
+                {
+                    'Certificate'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    'Inbox'
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >    
+                    }
+                    Default 
+                    {
+                        [string]$shortDescription = $InputObject.Description -replace "\'", "" -replace '>','_' # Remove some chars like quotation marks or >
+                    }
+                }
+
+                # ShortDescription has a 300 character limit
+                if ($shortDescription.Length -gt 300)
+                {
+                    $shortDescription = $shortDescription.Substring(0, 299) 
+                } 
+
+
+                switch ($InputObject.Status) 
+                {
+                    'Ok' {$outState = 0}
+                    'Warning' {$outState = 1}
+                    'Error' {$outState = 2}
+                    Default {$outState = 3}
+                }
+
+                $tmpResultObject = New-Object psobject | Select-Object Name, Epoch, Status, ShortDescription, Debug
+                $tmpResultObject.Name = $InputObject.Name -replace "\'", "" -replace '>','_'
+                $tmpResultObject.Epoch = 0 # NOT USED at the moment. FORMAT: [int][double]::Parse((Get-Date (get-date).touniversaltime() -UFormat %s))
+                $tmpResultObject.Status = $outState
+                $tmpResultObject.ShortDescription = $shortDescription
+                $tmpResultObject.Debug = ''
+                [void]$resultsObject.Add($tmpResultObject)
+            }
+            'PrtgObject'
+            {
+                if ($PrtgLookupFileName)
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value, ValueLookup
+                    $tmpResultObject.ValueLookup = $PrtgLookupFileName
+                }
+                else 
+                {
+                    $tmpResultObject = New-Object psobject | Select-Object Channel, Value
+                }
+               
+                $tmpResultObject.Channel = $InputObject.Name -replace "\'", "" -replace '>','_'
+                if ($InputObject.Status -ieq 'Ok')
+                {
+                    $tmpResultObject.Value = 0
+                }
+                else
+                {
+                    $tmpResultObject.Value = 1
+                }                    
+                [void]$resultsObject.Add($tmpResultObject)  
+            }
+        }                  
+    }
+    End
+    {
+        switch ($OutputType)
+        {
+            'MonAgentObject'
+            {
+                $outObject.Results = $resultsObject
+                $outObject
+            }
+            'PrtgObject'
+            {
+                $tmpPrtgResultObject = New-Object psobject | Select-Object result
+                $tmpPrtgResultObject.result = $resultsObject
+                $outObject.prtg = $tmpPrtgResultObject
+                $outObject
+            }
+        }  
+
+    }
+}
+#endregion
+
+#region function Get-ReportServerMetadata
 function Get-ReportServerMetadata
 {
     param 
@@ -218,7 +358,9 @@ function Get-ReportServerMetadata
         return $simplifiedListOfReportServers
     }
 }
+#endregion
 
+#region function Get-ReportServerVersionList
 function Get-ReportServerVersionList
 {
     param 
@@ -349,6 +491,7 @@ function Get-ReportServerVersionList
         # Total List results
         Write-Verbose "Found $($versionObjectList.count) versions of Report Server"
 }
+#endregion
 
 
 #region main script logic
@@ -356,7 +499,7 @@ $outList = [System.Collections.Generic.List[pscustomobject]]::new()
 
 # object to store the status of the script
 $scriptStatusObject = [pscustomobject]@{
-    CheckType = 'ScriptStatus'
+    CheckType = 'SSRS'
     Name = "ScriptStatus"
     SystemName = $env:COMPUTERNAME
     Status = 'Ok'
@@ -426,14 +569,24 @@ else
     Write-Host "No Report Servers in ConfigMgr environment found"
     break
 }
- 
+
+
+#  [ValidateSet("Object","JSON","GridView", "MonAgentJSON", "MonAgentJSONCompressed","HTMLMail","PSObject","PrtgString","PrtgJSON","VersionList")]
 Switch ($OutputMode)
 {
-    'Object'
+    "MonAgentJSON" 
+    {
+        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2
+    }
+    "MonAgentJSONCompressed"
+    {
+        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType MonAgentObject | ConvertTo-Json -Depth 2 -Compress
+    }
+    'List'
     {
         $finalServerList | Format-List
     }
-    'VersionList'
+    "GridView"
     {
         $versionObjectList | Out-GridView
     }
@@ -450,5 +603,30 @@ Switch ($OutputMode)
 
         $MailInfotext = '<br>{0}' -f $MailInfotext
         Send-CustomMonitoringMail -MailMessageObject $finalServerList -MailSubject $MailSubject -MailInfotext $MailInfotext        
+    }
+    "PSObject"
+    {
+        $finalServerList
+    }
+    "PRTGString"
+    {
+        $badResults = $finalServerList.Where({$_.Status -ine 'OK'}) 
+        if ($badResults)
+        {
+            $resultString = '{0}:ConfigMgr Components in failure state' -f $badResults.count
+            Write-Output $resultString
+        }
+        else
+        {
+            Write-Output "0:No active ConfigMgr component alerts"
+        }
+    }
+    "PRTGJSON"
+    {
+        $finalServerList | ConvertTo-CustomMonitoringObject -OutputType PrtgObject -PrtgLookupFileName $PrtgLookupFileName | ConvertTo-Json -Depth 3
+    }
+    "JSON"
+    {
+        $finalServerList | ConvertTo-Json -Depth 5
     }
 }
