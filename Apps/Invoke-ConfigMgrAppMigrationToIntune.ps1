@@ -565,6 +565,13 @@ function Get-EnhancedDetectionData{
                 $resultList | Add-Member -MemberType NoteProperty -Name "And" -Value @() -ErrorAction stop
             }         
 
+            # Add from mstraessner - https://github.com/mstraessner - 04.06.2025 - Line 568 - 573
+			# we need to add an info about the OR operator seperatly, because it is not supported by Intune at the moment
+            $tmpObj = [PSCustomObject]@{
+                RulesWithOr = $false
+            }
+            $flatResultList.Add($tmpObj)
+            
             # Lets get all sub-operands for this operator
             $resultObj = Get-EnhancedDetectionData -EnhancedDetectionMethods $EnhancedDetectionMethods -RuleExpression $operand.Operands.Expression
             foreach ($item in $resultObj.ConfigMgrList)
@@ -1752,7 +1759,8 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                             $tmpDetectionItem.Rules = $tmpRulesObject.ConfigMgrList
                             $tmpDetectionItem.RulesFlat = $tmpRulesObject.FlatList
                             $tmpDetectionItem.RulesWithGroups = $deploymentType.Installer.DetectAction.args.arg[1].'#text' -imatch ([regex]::Escape('<Expression IsGroup="true">'))
-                            $tmpDetectionItem.RulesWithOr = $tmpDetectionItem.RulesFlat.RulesWithOR
+                            # # comment out from mstraessner - https://github.com/mstraessner - 04.06.2025
+                            #$tmpDetectionItem.RulesWithOr = $tmpDetectionItem.RulesFlat.RulesWithOR
 
                             $tmpRulesWithOr = $null
                             $tmpRulesWithOr = $tmpDetectionItem.RulesFlat | Where-Object {$_.RulesWithOR -eq $true}
@@ -1761,6 +1769,12 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                                 $tmpDetectionItem.RulesWithOr = $true
                                 # Lets remove the RulesWithOr sub object
                                 $tmpDetectionItem.RulesFlat = $tmpDetectionItem.RulesFlat | Where-Object {$_.RulesWithOr -eq $null}
+                            }
+                            # Add from mstraessner - https://github.com/mstraessner - 04.06.2025 - Line 1773 - 1777
+                            # Comment out line 1763, because $tmpDetectionItem.RulesFlat.RulesWithOR is an arry; We tested this script all day and searched for all issues, because our application, which uses two conditions with an AND operation, was interpreted as an OR operation.
+                            else
+                            {
+                                $tmpDetectionItem.RulesWithOr = $false
                             }
                         }
                         Default
