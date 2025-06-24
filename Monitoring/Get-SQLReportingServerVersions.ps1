@@ -365,19 +365,17 @@ $scriptStatusObject = [pscustomobject]@{
     PossibleActions = $null
 }
 
-$listOfReportServers = Get-ReportServerMetadata -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -ForceWSMANConnection:$ForceWSMANConnection -TestMode:$TestMode 
+[array]$listOfReportServers = Get-ReportServerMetadata -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode -ForceWSMANConnection:$ForceWSMANConnection -TestMode:$TestMode 
 
-$versionObjectList = Get-ReportServerVersionList 
+$versionObjectList = Get-ReportServerVersionList -ProxyURI $ProxyURI
 
-if ($simplifiedListOfReportServers.count -gt 0)
+if ($listOfReportServers.count -gt 0)
 {
 
-
- 
     $finalServerList = [System.Collections.Generic.List[pscustomobject]]::new()
     # Lets now test the servers
     $newVersionFound = $false
-    foreach($Server in $simplifiedListOfReportServers)
+    foreach($Server in $listOfReportServers)
     {
         # Find matching version to find SQL Reporting Server Type and related versions
         [array]$buildVersionListEqualServerVersion = $versionObjectList.Where({$_.Build -eq $Server.BuildVersion})
@@ -454,5 +452,3 @@ Switch ($OutputMode)
         Send-CustomMonitoringMail -MailMessageObject $finalServerList -MailSubject $MailSubject -MailInfotext $MailInfotext        
     }
 }
-
-
