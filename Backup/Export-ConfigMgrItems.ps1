@@ -96,7 +96,7 @@
     The wim file will be named "<ConfigMgr version>_cd.latest.wim".
     The CD.Latest folder will be captured when the versionnumber of ConfigMgr changes and not every time the script is run.
 
-.PARAMETER BackupConfigMgrDatabases
+.PARAMETER BackupConfigMgrUserDatabases
     Backup the ConfigMgr user databases. This will create a backup of the ConfigMgr user databases in the export folder.
     The backup will be created using the SQL Server Management Objects (SMO) and will create a backup file for each database.
 
