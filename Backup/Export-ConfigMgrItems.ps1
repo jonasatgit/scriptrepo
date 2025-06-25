@@ -95,6 +95,15 @@
     Next to the wim file, a text file will be created with instructions on how to mount and use the wim file.
     The wim file will be named "<ConfigMgr version>_cd.latest.wim".
     The CD.Latest folder will be captured when the versionnumber of ConfigMgr changes and not every time the script is run.
+
+.PARAMETER BackupConfigMgrDatabases
+    Backup the ConfigMgr user databases. This will create a backup of the ConfigMgr user databases in the export folder.
+    The backup will be created using the SQL Server Management Objects (SMO) and will create a backup file for each database.
+
+.PARAMETER BackupWSUSUSusdb
+    Backup the WSUS database. This will create a backup of the WSUS database in the export folder.
+    The backup will be created using the SQL Server Management Objects (SMO) and will create a backup file for the WSUS database.
+    The backup will be created only if the WSUS database is NOT hosted on the same SQL Server as the ConfigMgr databases and already exported.
     
 .EXAMPLE
     Export-ConfigMgrItems.ps1
@@ -106,9 +115,9 @@ param
     [ValidateNotNullOrEmpty()]
     [String]$SiteCode,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
-    [String]$ProviderMachineName,
+    [String]$ProviderMachineName = $env:COMPUTERNAME,
 
     [Parameter(Mandatory=$true)]
     [ValidateNotNullOrEmpty()]
@@ -125,7 +134,9 @@ param
     [Switch]$ExportScripts,
     [Switch]$ExportClientSettings,
     [Switch]$ExportConfigurationPolicies,
-    [switch]$ExportCDLatest
+    [switch]$ExportCDLatest,
+    [switch]$BackupConfigMgrUserDatabases,
+    [switch]$BackupWSUSUSusdb
 )
 
 
@@ -1713,8 +1724,8 @@ function Get-RegistryValueFromRemoteMachine
         return $null
     }
     catch {
-        Write-CMTraceLog -Message "Failed to read `"$($RegKeyPath)`" - `"$($RegKeyValue)`" on remote machine: `"$($ComputerName)`". Line: $($_.InvocationInfo.ScriptLineNumber)" -Type Warning
-        Write-CMTraceLog -Message "$($_)" -Type Warning
+        Write-CMTraceLog -Message "Failed to read `"$($RegKeyPath)`" - `"$($RegKeyValue)`" on remote machine: `"$($ComputerName)`". Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Warning
+        Write-CMTraceLog -Message "$($_)" -Severity Warning
         return $null
     }
 }
@@ -2209,6 +2220,290 @@ function New-WimFileFromFolder
 #endregion
 
 
+#region Function Get-SQLPermissionsAndLogins
+<#
+.Synopsis
+    Get-SQLPermissionsAndLogins
+.DESCRIPTION
+    Get-SQLPermissionsAndLogins
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Get-SQLPermissionsAndLogins -SQLServerName 'sql2.contoso.local\instance2'
+.PARAMETER $SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+#>
+function Get-SQLPermissionsAndLogins
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$SQLServerName
+    )
+
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-CMTraceLog -Message "Export SQL permissions and logins" 
+    $connectionString = "Server=$SQLServerName;Database=msdb;Integrated Security=True"
+    Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
+    
+    $SqlQuery = @'
+    USE msdb
+    SELECT pr.principal_id, pr.name, pr.type_desc,   
+    pe.state_desc, pe.permission_name   
+    FROM sys.server_principals AS pr   
+    JOIN sys.server_permissions AS pe   
+    ON pe.grantee_principal_id = pr.principal_id;
+'@
+
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = $connectionString
+        $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+        $SqlCmd.Connection = $SqlConnection
+        $SqlCmd.CommandText = $SqlQuery
+        $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+        Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
+        $SqlAdapter.SelectCommand = $SqlCmd
+        $ds = New-Object -TypeName System.Data.DataSet
+        $SqlAdapter.Fill($ds) | Out-Null
+        $SqlCmd.Dispose()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Severity Error -Message "Connection to SQL server failed" 
+        Write-CMTraceLog -Severity Error -Message "$($Error[0].Exception)" 
+        Exit 1   
+    }
+
+    if ($SqlConnection)
+    {
+        if($SqlConnection.state -ieq 'Open')
+        {
+            Write-CMTraceLog -Message "Will close SQL connection" 
+            $SqlConnection.Close()
+        }
+    }
+
+    return $ds.tables[0]
+}
+#endregion
+
+
+#region Function Start-SQLDatabaseBackup
+<#
+.Synopsis
+    Start-SQLDatabaseBackup
+.DESCRIPTION
+    Will backup a database or multiple database files
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql2.contoso.local\instance2'
+.EXAMPLE
+    Start-SQLDatabaseBackup -SQLServerName 'sql1.contoso.local' -BackupFolder 'F:\backup' -SQLDBNameList ('AllUserDatabases')
+.PARAMETER SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+.PARAMETER BackupFolder
+    Folder to save the backups to. UNC or local. The function will create a sub-folder called 'SQLBackup'
+.PARAMETER SQLDBNameList
+    Array of database names. Can also contain "AllDatabases" or "AllUserDatabases" to backup everything or just all user databases
+#>
+Function Start-SQLDatabaseBackup
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$SQLServerName,
+        [Parameter(Mandatory=$true)]
+        [string]$BackupFolder,
+        [parameter(Mandatory=$false)]
+        [string[]]$SQLDBNameList=('AllUserDatabases')
+    )
+
+    # We might need to create a folder
+    $sqlBackupFolder = '{0}\SQLBackup' -f $BackupFolder
+    try
+    {
+        # making sure we have a valid backup folder
+        if(-NOT(Test-Path $sqlBackupFolder))
+        {
+            $null = [system.io.directory]::CreateDirectory("$sqlBackupFolder")
+        }
+    }
+    catch
+    {
+        Write-CMTraceLog -Severity Error -Message "ERROR: Folder could not be created `"$sitebackupPath`"" 
+        Write-CMTraceLog -Severity Error -Message "$($Error[0].exception)"  
+        Exit 1
+    }
+
+    Write-CMTraceLog -Message "Will connect to: $SQLServerName" 
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = "Integrated Security=SSPI;Persist Security Info=False;Initial Catalog=msdb;Data Source=$SQLServerName;Connection Timeout=20"
+        $SqlConnection.Open()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Severity Error -Message "Connection to SQL server failed" 
+        Exit 1
+    }   
+
+    
+    # query for all user databases
+    if ($SQLDBNameList -icontains 'AllUserDatabases')
+    {
+        $dbBackupString = 'AllUserDatabases'
+        $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('master','tempdb','model','msdb');"
+    }
+
+    # Query for all DBs. If both AllUserDatabases and AllDatabases passed via parameter, AllDatabases will overwrite the query
+    if ($SQLDBNameList -icontains 'AllDatabases')
+    {
+        $dbBackupString = 'AllDatabases'
+        $userDBQuery = "USE Master SELECT name, database_id, create_date FROM sys.databases Where name not in ('tempdb');"
+    }
+
+    if (($SQLDBNameList -icontains 'AllUserDatabases') -or ($SQLDBNameList -icontains 'AllDatabases'))
+    {
+        Write-CMTraceLog -Message "Getting list of databases from SQL because of `"$($dbBackupString)`" setting" 
+        try 
+        {
+            # Get all user databases
+            $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+            $SqlCmd.Connection = $SqlConnection
+            $SqlCmd.CommandText = $userDBQuery
+            $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+            Write-Verbose "$commandName`: Running Query: `"$userDBQuery`""
+            $SqlAdapter.SelectCommand = $SqlCmd
+            $ds = New-Object -TypeName System.Data.DataSet
+            $SqlAdapter.Fill($ds) | Out-Null
+            $SqlCmd.Dispose()
+            
+            $listOfUserDBs = $ds.tables[0]         
+        }
+        catch 
+        {
+            Write-CMTraceLog -Severity Error -Message "Connection to SQL server failed" 
+            Write-CMTraceLog -Severity Error -Message "$($Error[0].Exception)" 
+            Exit 1           
+        }
+    }
+
+    # If we have a list of DBs. Use them instead of a provided list from parameter $SQLDBNameList
+    if ($listOfUserDBs)
+    {
+        $SQLDBNameList = $listOfUserDBs.Name
+    }
+
+    [string]$backupDatetime = get-date -f 'yyyyMMdd_HHmmss' # Will be added to the backup file name
+    foreach ($dbName in $SQLDBNameList)
+    {
+        Write-CMTraceLog -Message "Will try to backup database: $dbName" 
+        try 
+        {
+            # Backup variable definition
+            [string]$backupFileFullName = '{0}\{1}_backup_{2}.bak' -f $sqlBackupFolder, $dbName, $backupDatetime
+            [string]$backupName = '{0}-Full Database Backup' -f $dbName
+            $SqlCmd = New-Object System.Data.SqlClient.SqlCommand
+            $SqlCmd.CommandText = "BACKUP DATABASE [$dbName] TO  DISK = N'$backupFileFullName' WITH NOFORMAT, NOINIT,  NAME = N'$backupName', SKIP, NOREWIND, NOUNLOAD, COMPRESSION, STATS = 10"
+            $SqlCmd.Connection = $SqlConnection
+            $SqlCmd.CommandTimeout = 0 
+            $null = $SqlCmd.ExecuteScalar()
+        }
+        catch 
+        {
+            Write-CMTraceLog -Severity Error -Message "DB backup failed" 
+            if ($Error[0].Exception -match '(Access is denied)|(error 5)')
+            {
+                Write-CMTraceLog -Severity Error -Message "Access is denied" 
+                Write-CMTraceLog -Severity Error -Message "SQL service account might not have write access to: $BackupFolder" 
+            }
+            else 
+            {
+                Write-CMTraceLog -Severity Error -Message "Database backup failed" 
+                Write-CMTraceLog -Severity Error -Message "$($Error[0].Exception)" 
+            }
+            Exit 1      
+        }
+    }
+
+    if ($SqlConnection)
+    {
+        if($SqlConnection.state -ieq 'Open')
+        {
+            Write-CMTraceLog -Message "Will close SQL connection" 
+            $SqlConnection.Close()
+        }
+    }
+
+}
+#endregion
+
+#region Get-SQLVersionInfo
+<#
+.Synopsis
+    Get-SQLVersionInfo
+.DESCRIPTION
+    Get-SQLVersionInfo
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName [SQL server fqdn\instance name]
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName 'sql1.contoso.local'
+.EXAMPLE
+    Get-SQLVersionInfo -SQLServerName 'sql2.contoso.local\instance2'
+.PARAMETER SQLServerName
+    FQDN of SQL Server with instancename in case of a named instance
+#>
+Function Get-SQLVersionInfo
+{
+    param
+    (
+        [string]$SQLServerName
+    )
+
+    $commandName = $MyInvocation.MyCommand.Name
+    Write-CMTraceLog -Message "Get SQL version info" 
+    $connectionString = "Server=$SQLServerName;Database=msdb;Integrated Security=True"
+    Write-Verbose "$commandName`: Connecting to SQL: `"$connectionString`""
+    
+    $SqlQuery = 'USE msdb;SELECT @@Version as [SQLVersion]'
+
+    try 
+    {
+        $SqlConnection = New-Object System.Data.SqlClient.SqlConnection
+        $SqlConnection.ConnectionString = $connectionString
+        $SqlCmd = New-Object -TypeName System.Data.SqlClient.SqlCommand
+        $SqlCmd.Connection = $SqlConnection
+        $SqlCmd.CommandText = $SqlQuery
+        $SqlAdapter = New-Object -TypeName System.Data.SqlClient.SqlDataAdapter
+        Write-Verbose "$commandName`: Running Query: `"$SqlQuery`""
+        $SqlAdapter.SelectCommand = $SqlCmd
+        $ds = New-Object -TypeName System.Data.DataSet
+        $SqlAdapter.Fill($ds) | Out-Null
+        $SqlCmd.Dispose()
+    }
+    catch 
+    {
+        Write-CMTraceLog -Severity Error -Message "Connection to SQL server failed" 
+        Write-CMTraceLog -Severity Error -Message "$($Error[0].Exception)" 
+        Exit 1   
+    }
+    return $ds.tables[0]
+}
+#endregion
+
+
+
+
 # Check if none of the switch parameters are set
 if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportCDLatest)) 
 {
@@ -2302,6 +2597,11 @@ $mountInfo = @"
 
 try
 {
+    Write-CMTraceLog -Message "---------------------------------"
+    Write-CMTraceLog -Message " -> Getting general site information..."
+    Write-CMTraceLog -Message "---------------------------------"
+    $SiteData = Get-ConfigMgrSiteInfo -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode
+
     # Export configuration items
     if ($ExportConfigurationItems -or $ExportAllItemTypes)
     {
@@ -2398,7 +2698,6 @@ try
 
         $proccedWithAction = $true
         Write-CMTraceLog -Message "Start export of general site data"
-        $SiteData = Get-ConfigMgrSiteInfo -ProviderMachineName $ProviderMachineName -SiteCode $SiteCode
 
         # Export of general site data
         $SiteData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$($script:FullExportFolderName)\Backup-SiteData.json" -Force
@@ -2497,6 +2796,65 @@ try
             }
 
         }
+    }
+
+    if ($BackupConfigMgrUserDatabases)
+    {
+        Start-SQLDatabaseBackup -SQLServerName $SiteData.SQLServerName -BackupFolder $script:FullExportFolderName
+
+        $sqlInfoFile = '{0}\SQLBackup\SQL-Versioninfo.txt' -f $script:FullExportFolderName
+        (Get-SQLVersionInfo -SQLServerName $SiteData.SQLServerName).ItemArray | Out-File $sqlInfoFile -Force
+    }
+
+    if ($BackupWSUSUSusdb)
+    {
+        # We dont want to backup the database twice in case it runs on the same SQL Server as the ConfigMgr db
+        # In case we need to compare netbios name and DB we need to extract that from something like this: CM02.contoso.local
+        $sqlServerNetbiosOnly = $siteInfo.SQLServerName -replace '\..*'
+        [bool]$supDBRunsOnSameSQLServer = $false
+
+        if ($siteInfo.SQLInstance -eq "Default")
+        {
+            # we just need to check the servername
+            if ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLServerName) 
+            {
+                $supDBRunsOnSameSQLServer = $true
+            }
+            elseif ($siteInfo.SUPList.DBServerName -imatch $sqlServerNetbiosOnly)
+            {
+                $supDBRunsOnSameSQLServer = $true
+            }
+        }
+        else
+        {
+            # we also need to check the instancename, could be different
+            if (($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLServerName) -and ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLInstance)) 
+            {
+                $supDBRunsOnSameSQLServer = $true
+            }
+            elseif (($siteInfo.SUPList.DBServerName -imatch $sqlServerNetbiosOnly) -and ($siteInfo.SUPList.DBServerName -imatch $siteInfo.SQLInstance))
+            {
+                $supDBRunsOnSameSQLServer = $true
+            }
+        }
+
+        if ($supDBRunsOnSameSQLServer)
+        {
+            if ($BackupConfigMgrUserDatabases)
+            {
+                Write-CMTraceLog -Message "WSUS runs on the same SQL instance and SQL backup was made already. Will not backup SUSDB again" -Severity Warning
+            }
+            else 
+            {
+                Write-CMTraceLog -Message "WSUS runs on the SQL instance. ConfigMgr DB backup not active. Will start backup of SUSDB."
+                Start-SQLDatabaseBackup -SQLServerName $SiteData.SQLServerName -BackupFolder $script:FullExportFolderName -SQLDBNameList @('SUSDB')
+            }
+        }
+        else 
+        {
+            Write-CMTraceLog -Message "WSUS has its own machine. Will start backup of SUSDB."
+            Start-SQLDatabaseBackup -SQLServerName ($siteInfo.SUPList.DBServerName) -BackupFolder $script:FullExportFolderName -SQLDBNameList @('SUSDB')
+        }        
     }
 }
 catch
