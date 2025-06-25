@@ -67,6 +67,10 @@ To store the individual items the script will create the following folder under 
 The script will create a log file in the same directory as the export and not next to the script.
 
 Changelog:
+20250619 - Fixed logic for folder detection rules.
+20250604 - Fixed an Typo error by using RegKey decetion and issue with operator 'and' by detection rules, because intepred as operator 'or'.
+           https://github.com/jonasatgit/scriptrepo/pull/14
+           https://github.com/jonasatgit/scriptrepo/issues/13
 29241217 - Fixed an issue were the detection script was always started in a 32bit process
            Added two new parameters to replace the install and uninstall command for all selected apps
            The IntunePackage.intunewin and Detection.xml file will now be deleted after the upload to save some space
