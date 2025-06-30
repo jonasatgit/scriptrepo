@@ -76,41 +76,47 @@
     - JSON: Returns the output parameters as a JSON string
     - Object: Returns the output parameters as a PowerShell object
 
-.PARAMETER TestMode
-    A switch to enable test mode.
-    In test mode the script will prompt for credentials.
-    In production mode the script will try to get the credentials from task sequence variables.
+.PARAMETER TaskSequenceMode
+    A switch to enable ConfigMgr task sequence mode.
+    That means that the script will read the credentials from task sequence variables.
+    If not set, the script will prompt for credentials.
 
-.PARAMETER TestModeUserName
-    The username to use in test mode. If not specified, the script will prompt for username.
-    Example: 'contoso\svc-scorch-user'
+.PARAMETER UserName
+    If not specified, the script will prompt for a username.
+    If set, the script will use the given username to prompt for the password.
 
-.EXAMPLE
-    Run a runbook in testmode without runbook parameters
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -TestMode
-
-.EXAMPLE
-    Run a runbook in testmode with runbook parameters
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode
+.PARAMETER OutputAllOutParameters
+    A switch to enable the output of all runbook output parameters.
+    If set, the script will return all output parameters defined in the runbook
+    and not just the ones defined in the RunbookOutParamsList parameter.
+    The RunbookOutParamsList parameter will be ignored if this switch is set.
 
 .EXAMPLE
-    Run a runbook in testmode with runbook parameters and a given username
-    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TestMode -TestModeUserName 'contoso\sctest'
+    Run a runbook in without runbook parameters
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02'
+
+.EXAMPLE
+    Run a runbook with runbook parameters
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+
+.EXAMPLE
+    Run a runbook with runbook parameters and a given username
+    .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -UserName 'contoso\sctest'
 
 .EXAMPLE
     Run a runbook in ConfigMgr task sequence mode with runbook parameters via the "Run PowerShell Script" step.
     Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
-    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'}
+    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookParams @{'Parameter 1'='Some text';'Parameter 2'='Some other text'} -TaskSequenceMode -UserVariableName 'TS-Variable1' -PwdVariableName 'TS-Variable2'
 
 .EXAMPLE
     Run a runbook in ConfigMgr task sequence mode with runbook parameters passed via task sequence variables via the "Run PowerShell Script" step.
     Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
-    -ScorchURI '%TS-ScorchURI%' -RunbookName '%TS-RunbookName%' -RunbookParams @{'Parameter 1'='%TS-RunbookParam1%';'Parameter 2'='%TS-RunbookParam1%'}
+    -ScorchURI '%TS-ScorchURI%' -RunbookName '%TS-RunbookName%' -RunbookParams @{'Parameter 1'='%TS-RunbookParam1%';'Parameter 2'='%TS-RunbookParam1%'} -TaskSequenceMode -UserVariableName 'TS-Variable1' -PwdVariableName 'TS-Variable2'
 
 .EXAMPLE
     Run a runbook in ConfigMgr task sequence mode with runbook output parameters via the "Run PowerShell Script" step.
     Copy the below example into the parameters field of the "Run PowerShell Script" step and adjust the parameters to fit your environment.    
-    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookOutParamsList @('Parameter 1', 'Parameter 2')
+    -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02' -RunbookOutParamsList @('Parameter 1', 'Parameter 2') -TaskSequenceMode -UserVariableName 'TS-Variable1' -PwdVariableName 'TS-Variable2'
 
 .LINK
     https://github.com/jonasatgit/scriptrepo
@@ -149,57 +155,25 @@ param(
     [array]$RunbookOutParamsList, 
 
     [Parameter(Mandatory = $false)]
+    # A switch to enable the putput of all runbook output parameters. If set, the script will return all output parameters defined in the runbook
+    # and not just the ones defined in the RunbookOutParamsList parameter. The RunbookOutParamsList parameter will be ignored if this switch is set.
+    [Switch]$OutputAllOutParameters,
+
+    [Parameter(Mandatory = $false)]
     # The type of the runbook output parameters to return. Default is 'Object'. Possible values are 'Hashtable', 'JSON' and 'Object'.
     [ValidateSet("Hashtable", "JSON", "Object")]
     [string]$RunbookOutParamType = 'Object',
 
     [Parameter(Mandatory = $false)]
-    # A switch to enable test mode. In test mode the script will prompt for credentials. In production mode the script will try to get the credentials from task sequence variables.
-    [switch]$TestMode, 
+    # A switch to read the credentials from task sequence variables. If not set, the script will prompt for credentials.
+    [switch]$TaskSequenceMode, 
     
     [Parameter(Mandatory = $false)]
-    # The username to use in test mode. If not specified, the script will prompt for
-    [string]$TestModeUserName
+    # If not specified, the script will prompt for a username
+    [string]$UserName
 )
 
-#region Get Credentils
-if ($TestMode)
-{
-    if ([string]::IsNullOrEmpty($TestModeUserName))
-    {
-        $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
-    }
-    else 
-    {
-        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $TestModeUserName
-    }
-}
-else 
-{
-    try 
-    {
-        # Create an instance of the TSEnvironment COM object
-        $tsEnv = New-Object -ComObject Microsoft.SMS.TSEnvironment
 
-        # Read the task sequence variables
-        $username = $tsEnv.Value("$userVariableName")
-        $password = $tsEnv.Value("$pwdVariableName")
-
-        # Convert the password to a secure string
-        $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
-
-        # Create a PSCredential object
-        $credential = New-Object System.Management.Automation.PSCredential ($username, $securePassword)
-        Write-host "Credential read from task sequence variables"
-    }
-    catch 
-    {
-        Write-host "Credential could not been determined"
-        Write-host $_
-        Exit 1 # to let a task sequence step fail
-    }
-}
-#endregion
 
 #region Function Get-CredentialFromTaskSequenceVariables
 Function Get-CredentialFromTaskSequenceVariables
@@ -316,7 +290,6 @@ Function Invoke-OrchestratorRunbookJob
         [hashtable]$RunbookParams
     )
 
-    Write-Host "Will create JSON body for runbook job"
     $body = [ordered]@{
         RunbookId = $runbookID
         CreatedBy = $null
@@ -325,7 +298,7 @@ Function Invoke-OrchestratorRunbookJob
     
     if($RunbookParams)
     {
-        Write-Host "$($RunbookParams.Keys.count) runbook parameters passed to script"
+        Write-Host "$($RunbookParams.Keys.count) runbook parameter/s passed to script"
         $longestValue = $RunbookParams.Values | Sort-Object { $_.Length } -Descending | Select-Object Length -First 1
         Write-Host "Largest parameter value has $($longestValue.Length) characters"
         # Will convert parameter hashtable to an array of hashtables
@@ -339,7 +312,6 @@ Function Invoke-OrchestratorRunbookJob
         }
     }
 
-    Write-Host "Will create runbook job and post json definition"
     $invokeRunbookParamSplat = @{
         Uri = '{0}/api/Jobs' -f $ScorchURI
         Body = ($body | ConvertTo-Json -Depth 10)
@@ -413,7 +385,7 @@ Function Get-OrchestratorRunbookJobStatus
         If ($outObject.RunbookInstanceStatus -imatch 'warning')
         {
             Write-Host 'The runbook started successfully but did not fully complete'
-            Write-Host 'Warning could also mean that a parameter was missing for the iniliazation of the runbook'
+            Write-Host 'Warning could also mean that a parameter was missing for the initialization of the runbook'
         }
     }
     else 
@@ -517,17 +489,44 @@ Function Get-OrchestratorRunbookOutputParameters
 #endregion
 
 
+
+#region MAIN SCRIPT EXECUTION
+#region Get Credentils
+if (-NOT $TaskSequenceMode)
+{
+    if ([string]::IsNullOrEmpty($UserName))
+    {
+        $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
+    }
+    else 
+    {
+        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $UserName
+    }
+}
+else 
+{
+    try 
+    {
+        Write-Host "Will try to get credentials from task sequence variables: $UserVariableName and $PwdVariableName"
+        $credential = Get-CredentialFromTaskSequenceVariables -UserVariableName $UserVariableName -PwdVariableName $PwdVariableName
+        Write-Host "Credentials successfully retrieved from task sequence variables"
+    }
+    catch 
+    {
+        Write-host "Credential could not been determined"
+        Write-host $_
+        Exit 1 # to let a task sequence step fail
+    }
+}
+#endregion
+
+
 #region getting runbook id
 Write-Host "Will try to get RunbookID for runbook: `"$($RunbookName)`""
 try 
 {
-    $parmSplat = @{
-        Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $ScorchURI, $RunbookName
-        Method = 'Get'
-        Credential = $credential
-        ErrorAction = 'Stop'
-    }
-    $runbooksList = Invoke-RestMethod @parmSplat    
+    [array]$runbooksList = Get-OrchestratorRunbookByName -ScorchURI $ScorchURI -RunbookName $RunbookName -credential $credential
+    Write-Host "Runbook list returned with $($runbooksList.count) runbooks"
 }
 catch 
 {
@@ -535,7 +534,7 @@ catch
     Exit 1 # to let a task sequence step fail
 }
 
-if ($null -eq $runbooksList.value)
+if ($runbooksList.count -eq 0)
 {
     Write-Host "No runbook found with name: `"$($RunbookName)`""
     Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
@@ -544,64 +543,40 @@ if ($null -eq $runbooksList.value)
 else 
 {
     Write-Host "Will test if we have just one runbook with the name: `"$($RunbookName)`""
-    Write-Host "Found $($runbooksList.value.count) runbooks with the name: `"$($RunbookName)`""
-    if ($runbooksList.value.count -eq 0)
+    Write-Host "Found $($runbooksList.count) runbooks with the name: `"$($RunbookName)`""
+    if ($runbooksList.count -eq 0)
     {
         Write-Host "No runbook found with name: `"$($RunbookName)`"."
         Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
         Exit 1 # to let a task sequence step fail
     }    
-    elseif($runbooksList.value.count -gt 1)
+    elseif($runbooksList.count -gt 1)
     {
-        Write-Host "Found $($runbooksList.value.count) runbooks with same name. The name must be unique. Will stop script." 
+        Write-Host "Found $($runbooksList.count) runbooks with same name. The name must be unique. Will stop script." 
         Exit 1 # to let a task sequence step fail
     }
     else 
     {
-        $runbookID = $runbooksList.value.ID
+        $runbookID = $runbooksList.ID
         Write-Host "Found runbook: `"$($RunbookName)`" with ID: `"$($runbookID)`""
     }
 }
 #endregion
 
 
-
-
-# region create runbook job
+#region create runbook job
 try 
 {
-    Write-Host "Will create JSON body for runbook job"
-    $body = [ordered]@{
-        RunbookId = $runbookID
-        CreatedBy = $null
-        Parameters = $null
-    }
-    
+    Write-Host "Will create runbook job"
+
     if($RunbookParams)
     {
-        Write-Host "$($RunbookParams.Keys.count) runbook parameters passed to script"
-        $longestValue = $RunbookParams.Values | Sort-Object { $_.Length } -Descending | Select-Object Length -First 1
-        Write-Host "Largest parameter value has $($longestValue.Length) characters"
-        # Will convert parameter hashtable to an array of hashtables
-        # This is just to save some space and chars when dealing with the script parameters
-        # Each hashtable will only contain one name and value pair
-        $body.Parameters = @()
-        foreach ($key in $RunbookParams.Keys)
-        {
-            $body.Parameters += @{'Name' = $key; 'Value' = $RunbookParams[$key]}
-        }
+        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential -RunbookParams $RunbookParams
     }
-
-    Write-Host "Will create runbook job and post json definition"
-    $invokeRunbookParamSplat = @{
-        Uri = '{0}/api/Jobs' -f $ScorchURI
-        Body = ($body | ConvertTo-Json -Depth 10)
-        Method = 'Post'
-        ContentType = 'application/json'
-        Credential = $credential
-        ErrorAction = 'Stop'
-    }
-    $runbookJob = Invoke-RestMethod @invokeRunbookParamSplat
+    else 
+    {
+        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential
+    }    
 }
 catch 
 {
@@ -617,50 +592,18 @@ catch
     Exit 1 # to let a task sequence step fail
 }
 Write-Host "Runbook job created"
+#endregion
+
 
 #region Wait for the runbook result
 Write-Host "Waiting for runbook job result"
-$stoptWatch = New-Object System.Diagnostics.Stopwatch
-$stoptWatch.Start()
 try 
 {
-    do
-    {
-        Start-Sleep -Seconds 2
-        $runbookJobParamSplat = @{
-            Uri = '{0}/api/Jobs/{1}?&$expand=RunbookInstances' -f $ScorchURI, $runbookJob.Id
-            Method = 'Get' 
-            ContentType = 'application/json'
-            Credential = $credential
-            ErrorAction = 'Stop'
-        }
-        $runbookJobResult = Invoke-RestMethod @runbookJobParamSplat
+    $runbookJobResult = Get-OrchestratorRunbookJobStatus -ScorchURI $ScorchURI -JobID $runbookJob.Id -Credential $credential -MaxJobRuntimeSec $MaxJobRuntimeSec -WaitForCompletion
 
-        $jobsStateString = 'Runbook job: {0} in state: {1}' -f $runbookJobResult.Id, $runbookJobResult.Status
-        Write-host $jobsStateString
-        
-        if ($stoptWatch.Elapsed.TotalSeconds -ge $MaxJobRuntimeSec)
-        {
-            Write-Host ('Script waited for completion for {0} seconds. Timeout reached! Will end script' -f [math]::Round($stoptWatch.Elapsed.TotalSeconds))
-        }
-    }
-    until (($runbookJobResult.Status -imatch 'Completed') -or ($stoptWatch.Elapsed.TotalSeconds -ge $MaxJobRuntimeSec))
-    $stoptWatch.stop()
-
-    # The runbook job has completed, but we need to check the status of the runbook instance to determine if the runbook was successful
-    if ($runbookJobResult.RunbookInstances.Status -inotmatch 'Success')
+    if ($runbookJobResult.RunbookInstanceStatus -inotmatch 'Success')
     {
-        Write-Host "Runbook completed with status: $($runbookJobResult.RunbookInstances.Status)"
-        If ($runbookJobResult.RunbookInstances.Status -imatch 'warning')
-        {
-            Write-Host 'The runbook started successfully but did not fully complete'
-            Write-Host 'Warning could also mean that a parameter was missing for the iniliazation of the runbook'
-        }
-        Exit 1 # to let a task sequence step fail
-    }
-    else 
-    {
-        Write-Host "Runbook: `"$($RunbookName)`" completed successfully"
+        exit 1 # to let a task sequence step fail
     }
 }
 catch 
@@ -671,85 +614,26 @@ catch
 }
 #endregion
 
-
 # region Get runbook output parameters
-if ($RunbookOutParamsList.count -gt 0)
+$runbookInstanceID = $runbookJobResult.RunbookInstanceID
+if ($OutputAllOutParameters)
+{
+    $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential
+    return $runbookoutParams
+}
+elseif ($RunbookOutParamsList.count -gt 0)
 {
     Write-Host "Will try to get runbook output parameters"
-    $runbookInstanceID = $runbookJobResult.RunbookInstances.Id
-
-    $runbookInstanceParamSplat = @{
-        Uri = '{0}/api/RunbookInstances/{1}?&$expand=RunBookInstanceParameters' -f $ScorchURI, $runbookInstanceID
-        Method = 'Get' 
-        ContentType = 'application/json'
-        Credential = $credential
-        ErrorAction = 'Stop'
-    }
-
     try 
     {
-        $runbookInstance = Invoke-RestMethod @runbookInstanceParamSplat
+        $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential -RunbookOutParamsList $RunbookOutParamsList -RunbookOutParamType $RunbookOutParamType
+        return $runbookoutParams
     }
     catch 
     {
         Write-Host "Could not get runbook instance parameters"
         Write-Host $_
         Exit 1 # to let a task sequence step fail
-    }
-
-    $runbookOutParams = @{}
-    Write-Host "Getting runbook out parameter values"
-    # Lets get the out parameters from the runbook instance of type 'Out'
-    foreach ($runbookInstanceParameter in ($runbookInstance.RunbookInstanceParameters | Where-Object -Property Direction -eq 'Out'))
-    {
-        if ($RunbookOutParamsList -contains $runbookInstanceParameter.Name)
-        {
-            $runbookOutParams[$runbookInstanceParameter.Name] = $runbookInstanceParameter.Value
-        }        
-    }
-    Write-Host "Found $($runbookOutParams.Keys.count) runbook output parameter/s. Expected $($RunbookOutParamsList.count) out parameter/s"
-
-    # Lets check if we have found all required parameters
-    $foundAll = $true
-    foreach ($runbookOutParam in $RunbookOutParamsList)
-    {
-        if ($runbookOutParam -notin $runbookOutParams.Keys)
-        {
-            $runbookOutParams[$runbookOutParam] = 'ERROR: Outparameter not found in job result'
-            $foundAll = $false
-        }
-    }
-
-    # Define the output type of the runbook output parameters
-    Write-Host "Will return runbook output parameters as: $RunbookOutParamType"
-    switch ($RunbookOutParamType)
-    {
-        'Hashtable' 
-        {
-            $runbookOutParams
-        }
-        'JSON' 
-        {
-            $runbookOutParams | ConvertTo-Json
-        }
-        'Object' 
-        {
-            [pscustomobject]$runbookOutParams
-        }
-        Default 
-        {
-            $runbookOutParams
-        }
-    }  
-    
-    if (-NOT $foundAll)
-    {
-        Write-Host "Not all runbook output parameters were found in the runbook job result. Will exit with error code 1"
-        Exit 1 # to let a task sequence step fail
-    }
-    else 
-    {
-        Write-Host "All requested runbook output parameters were found in the runbook job result"
     }
 }
 else 
