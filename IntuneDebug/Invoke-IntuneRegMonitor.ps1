@@ -56,7 +56,7 @@ $watcher.Scope = New-Object System.Management.ManagementScope("root\default")
 
 # Define the action to take when a change is detected
 $null = Register-ObjectEvent -InputObject $watcher -EventName "EventArrived" -Action {
-    Write-Host "Registry change detected under HKLM\$($rootPath -replace '\\\\','\') at $(Get-Date)"
+    Write-Host "Registry change detected at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     # Optional: Add logic here to log or handle the change
 }
 
