@@ -30,6 +30,91 @@ param
 
 
 
+#region Function Get-IntuneDeviceAndUserPolicies
+Function Get-IntuneDeviceAndUserPolicies
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $true)]
+        $MDMData
+    )
+
+    $outObj = [System.Collections.Generic.List[pscustomobject]]::new()
+    # Iterate through each ConfigSource item in the XML
+    foreach ($item in $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSource)
+    {
+        $enrollmentID = $item.EnrollmentId
+        
+        foreach ($PolicyScope in $item.PolicyScope)
+        {
+            $PolicyScopeName = $PolicyScope.PolicyScope
+
+            foreach ($area in $PolicyScope.Area)
+            {
+                if ($area.PolicyAreaName -ieq 'knobs')
+                {
+                    # Skip the 'knobs' area
+                    continue
+                }
+
+                # Define the properties we are interested in 
+                [array]$propertyList = $area | Get-Member | Where-Object {$_.MemberType -eq 'Property'} | Select-Object -Property Name | Where-Object {$_.Name -notlike '*_LastWrite' -and $_.Name -ne 'PolicyAreaName'}
+
+                $tmpObj = [pscustomobject]@{
+                                EnrollmentId = $enrollmentID
+                                EnrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]
+                                PolicyScope  =  $PolicyScopeName
+                                PolicyScopeDisplay = if ($PolicyScopeName -eq 'Device') { $env:COMPUTERNAME } else { $userInfoHash[$PolicyScopeName] }
+                                PolicyAreaName = $area.PolicyAreaName
+                                SettingsCount = $propertyList.Count
+                                Settings = $null
+                            }
+
+                $settingsList = [System.Collections.Generic.List[pscustomobject]]::new()
+                foreach ($property in $propertyList)
+                {
+
+                    # Adding metadata for the property
+                    $metadataInfo = Get-IntunePolicyMetadata -MDMData $xmlFile -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
+                    if ($area.PolicyAreaName -ieq 'knobs')
+                    {
+                        $winningProvider = "Not set"
+                    }
+                    else 
+                    {
+                        $currentPolicyInfo = Get-IntunePolicyCurrentData -PolicyScope $PolicyScopeName -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name -MDMData $xmlFile
+                        if ($null -eq $currentPolicyInfo)
+                        {
+                            $winningProvider = "Not set"    
+                        }
+                        else 
+                        {
+                            $winningProvider = $currentPolicyInfo | Select-Object -ExpandProperty "$($property.Name)_WinningProvider"
+                        }
+                    }                    
+
+                    $settingsList.Add([pscustomobject][ordered]@{
+                        Name = $property.Name
+                        Value = $area.$($property.Name)
+                        WinningProvider = $winningProvider
+                        Metadata = $metadataInfo
+                    })
+
+                }
+
+                $tmpObj.Settings = $settingsList
+                # Add the tmpObj to the $outObj
+                $outObj.Add($tmpObj)
+            }
+        }
+    }
+
+    return $outObj
+}
+#endregion
+
+#region Get-IntuneWin32AppPolicies
 function Get-IntuneWin32AppPolicies
 {
     [CmdletBinding()]
@@ -56,9 +141,10 @@ function Get-IntuneWin32AppPolicies
 
     return ($appList | Sort-Object -Property Name)
 }
+#endregion
 
 
-
+#region Get-LocalUserInfo
 function Get-LocalUserInfo 
 {
     $userHashTable = @{}
@@ -78,12 +164,11 @@ function Get-LocalUserInfo
 
     return $userHashTable
 }
+#endregion
 
 
 
-
-# get other resources
-#Resources
+#region Get-IntuneResourcePolicies
 function Get-IntuneResourcePolicies
 {
     [CmdletBinding()]
@@ -123,8 +208,9 @@ function Get-IntuneResourcePolicies
     }
     return $outList
 }
+#endregion
 
-
+#region Convert-FileTimeToDateTime 
 function Convert-FileTimeToDateTime 
 {
     param 
@@ -144,7 +230,9 @@ function Convert-FileTimeToDateTime
 
     return $datetime.ToString("yyyy-MM-dd HH:mm:ss")
 }
+#endregion
 
+#region Get-IntuneMSIPolicies
 Function Get-IntuneMSIPolicies
 {
     [CmdletBinding()]
@@ -192,10 +280,10 @@ Function Get-IntuneMSIPolicies
     }
 
     return $outList
-
 }
+#endregion
 
-
+#region Get-IntunePolicyCurrentData
 Function Get-IntunePolicyCurrentData
 {
     param 
@@ -221,9 +309,9 @@ Function Get-IntunePolicyCurrentData
 
     return $resultObj
 }
+#edregion
 
-
-
+#region Get-IntunePolicyMetadata
 function Get-IntunePolicyMetadata
 {
     [CmdletBinding()]
@@ -289,7 +377,9 @@ function Get-IntunePolicyMetadata
     }
     return $null
 }
+#endregion
 
+#region Get-EnrollmentIDData
 function Get-EnrollmentIDData
 {
     [CmdletBinding()]
@@ -346,8 +436,9 @@ function Get-EnrollmentIDData
         }
     }
 }
+#endregion
 
-
+#region Get-EnrollmentProviderIDs
 function Get-EnrollmentProviderIDs
 {
     [CmdletBinding()]
@@ -382,9 +473,9 @@ function Get-EnrollmentProviderIDs
 
     return $enrollmentHashTable
 }
+#endregion
 
-
-
+#region Invoke-EscapeHtmlText
 function Invoke-EscapeHtmlText 
 {
     param ([string]$Text)
@@ -394,7 +485,9 @@ function Invoke-EscapeHtmlText
                    -replace '"', '&quot;' `
                    -replace "'", '&#39;'
 }
+#endregion
 
+#region Get-DeviceAndUserHTMLTables
 Function Get-DeviceAndUserHTMLTables
 {
     param
@@ -404,41 +497,50 @@ Function Get-DeviceAndUserHTMLTables
     )
 
     $htmlBody = ""
-
-    foreach ($group in $GroupedPolicies) 
+    $selection = $GroupedPolicies.Where({($_.Name -eq 'Device') -or ($_.Name -match 'S-\d+(-\d+)+')})
+    $deviceSelection = $GroupedPolicies.Where({ $_.Name -eq 'Device' })
+    $userSelection = $GroupedPolicies.Where({ $_.Name -match 'S-\d+(-\d+)+' })
+    foreach ($group in $selection) 
     {
+        <#
         if (($group.Name -ne 'Device') -and ($group.Name -notmatch 'S-\d+(-\d+)+')) 
         {
             # Skip groups that are not 'Device' or do not match the SID pattern
             # We will add them later
             continue
         }
+            #>
 
-        $areaTitleString = if ($group.Name -eq 'Device') 
+        if ($group.Name -eq 'Device') 
         { 
+            $statString = "TotalPolicyAreas: {0}<br>TotalSettings: {1}" -f $deviceSelection.group.count, $deviceSelection.group.Settings.count
+
             if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
             {
-                '💻 Device - Unknown'
+                $areaTitleString = '💻 Device: Unknown'
             }
             else 
             {
-                '💻 Device - {0}' -f $group.group[0].PolicyScopeDisplay
+                $areaTitleString = '💻 Device: {0}' -f $group.group[0].PolicyScopeDisplay
             }
         } 
         else 
         { 
+            $statString = "TotalPolicyAreas: {0}<br>TotalSettings: {1}" -f $userSelection.group.count, $userSelection.group.Settings.count
+
             if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
             {
-                '👤 {0} - Unknown' -f $group.Name
+                $areaTitleString = '👤 {0}: Unknown'
             }
             else 
             {
-                '👤 {0} - {1}' -f $group.Name, $group.group[0].PolicyScopeDisplay
+                $areaTitleString = '👤 {0}: {1}' -f $group.Name, $group.group[0].PolicyScopeDisplay
             }
         }
-
+        
         $htmlBody += "<div class='group-container'>"
         $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+        $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
         $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
         $htmlBody += "<div class='collapsible-content'>"
 
@@ -498,8 +600,9 @@ Function Get-DeviceAndUserHTMLTables
 
     return $htmlBody
 }
+#endregion
 
-
+#region Get-EnterpriseApplicationHTMLTables
 function Get-EnterpriseApplicationHTMLTables 
 {
     param
@@ -547,8 +650,9 @@ function Get-EnterpriseApplicationHTMLTables
     $htmlBody += "</div>"  # Close group-container
     return $htmlBody
 }
+#endregion
 
-
+#region Get-ResourceHTMLTables
 Function Get-ResourceHTMLTables
 {
     param
@@ -567,6 +671,7 @@ Function Get-ResourceHTMLTables
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<p Style='font-size: 13px;'>TotalResources: {0}</p>" -f $groupedResources.group.Count
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
@@ -599,9 +704,6 @@ Function Get-ResourceHTMLTables
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
         $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td  style='font-weight: bold;'>$($enrollmentIdString)</td></tr>"
         $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>ResourceTarget</td><td  style='font-weight: bold;'>$($resourceTargetString)</td></tr>"
-
-        ### Formatting wrong here: -> $htmlBody += "<tr><td class='resource-col' >     </td><td style='font-weight: bold;'>Resource</td></tr>"
-
 
         foreach ($resource in $resourceEntry.Group)  
         {
@@ -652,6 +754,7 @@ Function Get-IntuneWin32AppTables
     $htmlBody += "</div>"  # Close collapsible-content
     $htmlBody += "</div>"  # Close group-container
 }
+#endregion
 
 
 #region Convert-IntunePoliciesToHtml
@@ -788,8 +891,10 @@ $htmlHeader = @"
 
     Set-Content -Path $OutputPath -Value $fullHtml -Encoding UTF8
 }
-#enregion
+#endregion
 
+
+#region Format-StringToXml
 function Format-StringToXml 
 {
     param (
@@ -854,79 +959,11 @@ else
 $userInfoHash = Get-LocalUserInfo
 $script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $xmlFile
 
+# Initialize a list to hold all Intune policies
 $IntunePolicyList = [System.Collections.Generic.List[pscustomobject]]::new()
-# Iterate through each ConfigSource item in the XML
-foreach ($item in $xmlFile.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSource)
-{
-    $enrollmentID = $item.EnrollmentId
-    
-    foreach ($PolicyScope in $item.PolicyScope)
-    {
-        $PolicyScopeName = $PolicyScope.PolicyScope
 
-        foreach ($area in $PolicyScope.Area)
-        {
-            if ($area.PolicyAreaName -ieq 'knobs')
-            {
-                # Skip the 'knobs' area
-                continue
-            }
-
-            # Define the properties we are interested in 
-            [array]$propertyList = $area | Get-Member | Where-Object {$_.MemberType -eq 'Property'} | Select-Object -Property Name | Where-Object {$_.Name -notlike '*_LastWrite' -and $_.Name -ne 'PolicyAreaName'}
-
-
-
-            $tmpObj = [pscustomobject]@{
-                            EnrollmentId = $enrollmentID
-                            EnrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]
-                            PolicyScope  =  $PolicyScopeName
-                            PolicyScopeDisplay = if ($PolicyScopeName -eq 'Device') { $env:COMPUTERNAME } else { $userInfoHash[$PolicyScopeName] }
-                            PolicyAreaName = $area.PolicyAreaName
-                            SettingsCount = $propertyList.Count
-                            Settings = $null
-                        }
-
-            # Initialize the Settings hashtable
-            #$settingsHash = @{}
-            $settingsList = [System.Collections.Generic.List[pscustomobject]]::new()
-            foreach ($property in $propertyList)
-            {
-
-                # Adding metadata for the property
-                $metadataInfo = Get-IntunePolicyMetadata -MDMData $xmlFile -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
-                if ($area.PolicyAreaName -ieq 'knobs')
-                {
-                    $winningProvider = "Not set"
-                }
-                else 
-                {
-                    $currentPolicyInfo = Get-IntunePolicyCurrentData -PolicyScope $PolicyScopeName -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name -MDMData $xmlFile
-                    if ($null -eq $currentPolicyInfo)
-                    {
-                        $winningProvider = "Not set"    
-                    }
-                    else 
-                    {
-                        $winningProvider = $currentPolicyInfo | Select-Object -ExpandProperty "$($property.Name)_WinningProvider"
-                    }
-                }
-                
-
-                $settingsList.Add([pscustomobject][ordered]@{
-                    Name = $property.Name
-                    Value = $area.$($property.Name)
-                    WinningProvider = $winningProvider
-                    Metadata = $metadataInfo
-                })
-
-            }
-
-            $tmpObj.Settings = $settingsList
-            # Add the tmpObj to the $IntunePolicyList
-            $IntunePolicyList.Add($tmpObj)
-        }
-    }
+Get-IntuneDeviceAndUserPolicies -MDMData $xmlFile | ForEach-Object {
+    $IntunePolicyList.Add($_)
 }
 
 Get-IntuneMSIPolicies -MDMData $xmlFile | ForEach-Object {
@@ -937,10 +974,10 @@ Get-IntuneResourcePolicies -MDMData $xmlFile | ForEach-Object {
     $IntunePolicyList.Add($_)
 }
 
-
 # Convert the policies to HTML and save to the specified output path
 Convert-IntunePoliciesToHtml -OutputPath "C:\Users\Public\Documents\IntunePolicyReport.html" -Policies $IntunePolicyList -Title "Intune Policy Report"
 
+# Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList "C:\Users\Public\Documents\IntunePolicyReport.html"
 
 
