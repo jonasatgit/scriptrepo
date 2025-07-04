@@ -21,6 +21,67 @@
 
 #>
 
+[CmdletBinding()]
+param 
+(
+    [Parameter(Mandatory = $false)]
+    [string]$MDMDiagReportXmlPath
+)
+
+
+
+function Get-IntuneWin32AppPolicies
+{
+    [CmdletBinding()]
+    param 
+    ()
+
+    $Path = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\AppWorkload*.log"
+
+    # Getting all AppWorkload and sorting them by LastWriteTime
+    # This will make sure we have the latest entries at the first position in our array
+    $logFiles = Get-ChildItem -Path $Path | Sort-Object -Property LastWriteTime -Descending
+
+    $pattern = '<!\[LOG\[Get policies = \[\{(.*)\]LOG\]!>'
+
+    # Get all policies with regex pattern filter
+    $lines = $logFiles | Select-String -Pattern $pattern
+
+    Foreach ($line in $lines[0])
+    {
+        # We need to add the chars "[{" to the beginning of the line to make it a valid JSON array 
+        # since we made the not part of the regex pattern to only match policies with at least one app
+        [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json -Depth 20
+    }
+
+    return ($appList | Sort-Object -Property Name)
+}
+
+
+
+function Get-LocalUserInfo 
+{
+    $userHashTable = @{}
+
+    Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' |
+    ForEach-Object {
+        $sid = $_.PSChildName
+        try 
+        {
+            $profilePath = (Get-ItemProperty $_.PSPath).ProfileImagePath
+            $username = Split-Path -Leaf $profilePath
+            $userHashTable[$sid] = $username
+        } catch {
+            $userHashTable[$sid] = 'Unknown'
+        }
+    }
+
+    return $userHashTable
+}
+
+
+
+
 # get other resources
 #Resources
 function Get-IntuneResourcePolicies
@@ -287,6 +348,43 @@ function Get-EnrollmentIDData
 }
 
 
+function Get-EnrollmentProviderIDs
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $true)]
+        $MDMData
+    )
+    
+    $enrollmentHashTable = @{}
+    foreach($enrollment in $MDMData.MDMEnterpriseDiagnosticsReport.Enrollments.Enrollment)
+    {
+        $providerID = $enrollment.ProviderID
+        if ($enrollment.EnrollmentId -match '[a-fA-F0-9\-]{36}')
+        {
+            If([string]::IsNullOrEmpty($enrollment.ProviderID))
+            {
+                $providerID = 'Local'
+            }
+            elseif ($enrollment.ProviderID -eq 'MS DM Server')
+            {
+                $providerID = 'Intune'
+            }
+            $enrollmentHashTable[$enrollment.EnrollmentId] = $providerID
+        }
+        else 
+        {
+            # If the EnrollmentId is not in the expected format, skip it
+            continue
+        }
+    }
+
+    return $enrollmentHashTable
+}
+
+
+
 function Invoke-EscapeHtmlText 
 {
     param ([string]$Text)
@@ -295,6 +393,264 @@ function Invoke-EscapeHtmlText
                    -replace '>', '&gt;' `
                    -replace '"', '&quot;' `
                    -replace "'", '&#39;'
+}
+
+Function Get-DeviceAndUserHTMLTables
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [array]$GroupedPolicies
+    )
+
+    $htmlBody = ""
+
+    foreach ($group in $GroupedPolicies) 
+    {
+        if (($group.Name -ne 'Device') -and ($group.Name -notmatch 'S-\d+(-\d+)+')) 
+        {
+            # Skip groups that are not 'Device' or do not match the SID pattern
+            # We will add them later
+            continue
+        }
+
+        $areaTitleString = if ($group.Name -eq 'Device') 
+        { 
+            if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
+            {
+                '💻 Device - Unknown'
+            }
+            else 
+            {
+                '💻 Device - {0}' -f $group.group[0].PolicyScopeDisplay
+            }
+        } 
+        else 
+        { 
+            if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
+            {
+                '👤 {0} - Unknown' -f $group.Name
+            }
+            else 
+            {
+                '👤 {0} - {1}' -f $group.Name, $group.group[0].PolicyScopeDisplay
+            }
+        }
+
+        $htmlBody += "<div class='group-container'>"
+        $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+        $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+        $htmlBody += "<div class='collapsible-content'>"
+
+        $i = 0
+        foreach ($policy in ($group.Group | Sort-Object -Property PolicyAreaName)) 
+        {
+            if ($i -gt 0) 
+            {
+                $htmlBody += "<br><br>"
+            }
+
+            $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
+            #$htmlBody += "<div class='settings-container'>"
+            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+            $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 200px;'></td></tr>"
+            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th class='setting-col'>Setting 🛠️</th><th>Value</th><th style='width: 200px;'>WinningProvider</th></tr>"
+
+            foreach ($settings in $policy.Settings) 
+            {
+                $global:Test1 = $settings
+                $settingspath = 'Path or DLL of the setting: "{0}"' -f $settings.Metadata
+
+                if ($settings.WinningProvider -eq 'Not set' -or [string]::IsNullOrEmpty($settings.WinningProvider)) 
+                {
+                    $winningProviderString = $policy.EnrollmentProvider
+                } 
+                else 
+                {
+                    $tmpValue = $script:enrollmentProviderIDs[$settings.WinningProvider]
+                    if ($tmpValue) 
+                    {
+                        $winningProviderString = $tmpValue
+                    }
+                    else 
+                    {
+                        $winningProviderString = $settings.WinningProvider
+                    }
+                }
+
+                if ($winningProviderString.Trim() -ne $policy.EnrollmentProvider.Trim()) 
+                {
+                    $winningProviderString = "ℹ️ $winningProviderString"
+                } 
+
+                #$value = Format-StringToXml -XmlString $settings.Value
+                $value = Invoke-EscapeHtmlText -Text ($settings.Value)
+                $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td><td style='width: 200px;'>$winningProviderString</td></tr>"
+            }
+
+            $htmlBody += "</table>"
+            #$htmlBody += "</div>"  # Close settings-container div
+            $i++
+        }
+        $htmlBody += "</div>"  # Close collapsible-content
+        $htmlBody += "</div>"  # Close group-container
+    }
+
+    return $htmlBody
+}
+
+
+function Get-EnterpriseApplicationHTMLTables 
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [array]$GroupedPolicies
+    )
+
+    $htmlBody = ""
+
+    $enterpriseAppGroup = $GroupedPolicies.Where({ $_.Name -eq 'EnterpriseDesktopAppManagement' })
+
+    $areaTitleString = '📦 EnterpriseDesktopAppManagement'
+
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    foreach ($app in $enterpriseAppGroup.Group)
+    {
+        $possibleAppName = ($app.CurrentDownloadUrl | Split-Path -Leaf)
+
+        $htmlBody += "<h2 class='policy-area-title'>App: $($possibleAppName)</h2>"
+        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
+
+        # Let's exclude some properties that are not relevant for the report
+        $excludedProperties = @('ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+
+        foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name))
+        {
+            if ($property.Name -in $excludedProperties) 
+            {
+                continue
+            }
+
+            $value = Invoke-EscapeHtmlText -Text ($property.Value)
+            $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>$($property.Name)</td><td>$value</td></tr>"
+        }
+        
+        $htmlBody += "</table>"
+        $htmlBody += "<br>"
+    }
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
+    return $htmlBody
+}
+
+
+Function Get-ResourceHTMLTables
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [array]$GroupedPolicies
+    )
+
+    $userInfoHash = Get-LocalUserInfo
+
+    $resourcePolicies = $GroupedPolicies.Where({ $_.Name -eq 'Resource' }) 
+    $groupedResources = $resourcePolicies.group | Group-Object -Property EnrollmentId, ResourceTarget
+    
+    $areaTitleString = '🌐 Resource Policies'
+
+    $htmlBody = ""
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    foreach ($resourceEntry in $groupedResources) 
+    {
+        # Split the EnrollmentId and ResourceTarget from a single string
+        # The format is "EnrollmentId, ResourceTarget"
+        $tmpSplitVar = $resourceEntry.Name -split ','
+
+        $resourceTargetString = if($tmpSplitVar[1].ToString().Trim() -ieq 'Device') 
+        { 
+
+            '💻 Device - {0}' -f $env:COMPUTERNAME
+        } 
+        else 
+        { 
+            $userName = $userInfoHash[$tmpSplitVar[1].ToString().Trim()]
+            if ([string]::IsNullOrEmpty($userName))
+            {
+                '👤 {0} - Unknown' -f ($tmpSplitVar[1].ToString().Trim())
+            }
+            else
+            {
+                '👤 {0} - {1}' -f ($tmpSplitVar[1].ToString().Trim()), $userName
+            }
+        }
+
+        $enrollmentIdString = '{0} ➡️ {1}' -f ($tmpSplitVar[0].ToString().Trim()), $resourceEntry.Group[0].ProviderID
+
+        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
+        $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td  style='font-weight: bold;'>$($enrollmentIdString)</td></tr>"
+        $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>ResourceTarget</td><td  style='font-weight: bold;'>$($resourceTargetString)</td></tr>"
+
+        ### Formatting wrong here: -> $htmlBody += "<tr><td class='resource-col' >     </td><td style='font-weight: bold;'>Resource</td></tr>"
+
+
+        foreach ($resource in $resourceEntry.Group)  
+        {
+            $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
+            $htmlBody += "<tr><td></td><td>$resourceName</td></tr>"
+        }
+
+        $htmlBody += "</table>"
+        $htmlBody += "<br>"
+    }
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
+    return $htmlBody
+}
+#enregion
+
+
+#region Get-IntuneWin32AppTables
+Function Get-IntuneWin32AppTables
+{
+    $win32Apps = Get-IntuneWin32AppPolicies
+
+    $htmlBody = ""
+
+    $areaTitleString = '🪟 Win32App Policies'
+
+    $htmlBody = ""
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    $excludedProperties = @('DetectionRule', 'ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+
+    foreach ($app in $win32Apps) {
+        $htmlBody += "<h2 class='policy-area-title'>Win32App: $($app.Name)</h2>"
+        $htmlBody += "<table>"
+        foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name | Where-Object { $_.Name -notin $excludedProperties })) 
+        {
+            # Escape HTML characters in the property value
+            
+            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($property.Value)</td></tr>"
+        }
+        $htmlBody += "</table>"
+        $htmlBody += "<br>"
+    }
+    return $htmlBody
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
 }
 
 
@@ -318,8 +674,8 @@ $htmlHeader = @"
     <title>$Title</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 14px; }
-        h1 { color: #2E6DA4; }
-        h2 { color: #444; margin-top: 10px; }
+        h1 { font-size: 24px; color: #2E6DA4; }
+        h2 { font-size: 18px; color: #444; margin-top: 10px; }
 
         .toggle-button {
             background-color: #007BFF;
@@ -351,6 +707,7 @@ $htmlHeader = @"
             margin-bottom: 20px;
             table-layout: fixed;
             border: 3px solid #ddd;
+            font-size: 13px; 
         }
 
         th, td {
@@ -358,13 +715,14 @@ $htmlHeader = @"
             padding: 8px;
             word-wrap: break-word;
             text-align: left;
+            font-size: 13px; 
         }
 
-        th.setting-col, td.setting-col { width: 450px; }
+        th.setting-col, td.setting-col { width: 150px; }
         th { background-color: #f2f2f2; text-align: left; }
         tr:nth-child(even) { background-color: #f9f9f9; }
 
-        th.resource-col, td.resource-col { width: 150px; }
+        th.resource-col, td.resource-col { width: 100px; }
         th { background-color: #f2f2f2; text-align: left; }
         tr:nth-child(even) { background-color: #f9f9f9; }
 
@@ -413,127 +771,21 @@ $htmlHeader = @"
     <button class='toggle-button' onclick='toggleAll()' id='toggleAllBtn'>Collapse All</button>
 "@
 
-
-
     $htmlFooter = "</body></html>"
     $htmlBody = ""
  
     $grouped = $Policies | Group-Object -Property PolicyScope
 
-    foreach ($group in $grouped) 
-    {
-        if (($group.Name -ne 'Device') -and ($group.Name -notmatch 'S-\d+(-\d+)+')) 
-        {
-            # Skip groups that are not 'Device' or do not match the SID pattern
-            # We will add them later
-            continue
-        }
+    $htmlBody += Get-DeviceAndUserHTMLTables -GroupedPolicies $grouped
 
-        $htmlBody += "<div class='group-container'>"
-        $htmlBody += "<h2>PolicyScope: <span class='p olicy-area-title'>$(if ($group.Name -eq 'Device') { '💻 Device' } else { '👤 ' + $group.Name })</span></h2>"
-        $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
-        $htmlBody += "<div class='collapsible-content'>"
+    $htmlBody += Get-EnterpriseApplicationHTMLTables -GroupedPolicies $grouped
 
-        $i = 0
-        foreach ($policy in ($group.Group | Sort-Object -Property PolicyAreaName)) 
-        {
-            if ($i -gt 0) 
-            {
-                $htmlBody += "<br><br>"
-            }
+    $htmlBody += Get-ResourceHTMLTables -GroupedPolicies $grouped
 
-            $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
-            #$htmlBody += "<div class='settings-container'>"
-            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
-            $htmlBody += "<tr><td style='font-weight: bold; width: 450px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td></tr>"
-            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th class='setting-col'>Setting 🛠️</th><th>Value</th></tr>"
-
-            foreach ($settings in $policy.Settings) 
-            {
-                $settingspath = 'Path or DLL of the setting: "{0}"' -f $settings.Metadata
-
-                #$value = Format-StringToXml -XmlString $settings.Value
-                $value = Invoke-EscapeHtmlText -Text ($settings.Value)
-                $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td></tr>"
-            }
-
-            $htmlBody += "</table>"
-            #$htmlBody += "</div>"  # Close settings-container div
-            $i++
-        }
-        $htmlBody += "</div>"  # Close collapsible-content
-        $htmlBody += "</div>"  # Close group-container
-    }
-
-    # lets now add the enterprise desktop app management policies
-    [array]$enterpriseDesktopPolicies = $Policies | Where-Object { $_.PolicyScope -eq 'EnterpriseDesktopAppManagement' }
-
-    $htmlBody += "<div class='group-container'>"
-    $htmlBody += "<h2>PolicyScope: <span class='p olicy-area-title'>📦 EnterpriseDesktopAppManagement</span></h2>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
-    $htmlBody += "<div class='collapsible-content'>"
-
-    foreach ($app in $enterpriseDesktopPolicies)
-    {
-        $possibleAppName = ($app.CurrentDownloadUrl | Split-Path -Leaf)
-
-        $htmlBody += "<h2 class='policy-area-title'>App: $($possibleAppName)</h2>"
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
-
-        $excludedProperties = @('ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
-
-        foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name))
-        {
-            if ($property.Name -in $excludedProperties) 
-            {
-                continue
-            }
-
-            $value = Invoke-EscapeHtmlText -Text ($property.Value)
-            $htmlBody += "<tr><td style='font-weight: bold; width: 450px;'>$($property.Name)</td><td>$value</td></tr>"
-        }
-        
-        $htmlBody += "</table>"
-        $htmlBody += "<br>"
-    }
-    $htmlBody += "</div>"  # Close collapsible-content
-    $htmlBody += "</div>"  # Close group-container
-
-
-    # lets now add the resource policies
-    $groupedResources = $Policies | Where-Object { $_.PolicyScope -eq 'Resource' } | Group-Object -Property EnrollmentId, ResourceTarget
-
-    $htmlBody += "<div class='group-container'>"
-    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>🌐 Resource Policies</span></h2>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
-    $htmlBody += "<div class='collapsible-content'>"
-
-    foreach ($resourceEntry in $groupedResources) 
-    {
-
-        $tmpSplitVar = $resourceEntry.Name -split ','
-
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
-        $htmlBody += "<tr><td style='font-weight: bold; width: 150px;'>EnrollmentId</td><td  style='font-weight: bold;'>$($($tmpSplitVar[0])) ➡️ $($resourceEntry.Group[0].ProviderID)</td></tr>"
-        $htmlBody += "<tr><td style='font-weight: bold; width: 150px;'>ResourceTarget</td><td  style='font-weight: bold;'>$(if($tmpSplitVar[1].ToString().Trim() -ieq 'Device') { '💻 Device' } else { '👤 ' + $tmpSplitVar[1].ToString().Trim() })</td></tr>"
-        
-        ### Formatting wrong here: -> $htmlBody += "<tr><td class='resource-col' >     </td><td style='font-weight: bold;'>Resource</td></tr>"
-
-
-        foreach ($resource in $resourceEntry.Group)  
-        {
-            $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
-            $htmlBody += "<tr><td></td><td>$resourceName</td></tr>"
-        }
-
-        $htmlBody += "</table>"
-        $htmlBody += "<br>"
-    }
-    $htmlBody += "</div>"  # Close collapsible-content
-    $htmlBody += "</div>"  # Close group-container
-
+    $htmlBody += Get-IntuneWin32AppTables
 
     $fullHtml = $htmlHeader + $htmlBody + $htmlFooter
+
     Set-Content -Path $OutputPath -Value $fullHtml -Encoding UTF8
 }
 #enregion
@@ -568,29 +820,45 @@ function Format-StringToXml
 
     return "<pre>$formattedXml</pre>"
 }
+#endregion
 
 
- 
 
-$MDMDiagFolder = "$env:PUBLIC\Documents\MDMDiagnostics\$(Get-date -Format 'yyyy-MM-dd_HH-mm-ss')"
-
-if (-NOT (Test-Path -Path $MDMDiagFolder)) 
+#region MAIN SCRIPT EXECUTION
+if ([string]::IsNullOrEmpty($MDMDiagReportXmlPath)) 
 {
-    New-Item -Path $MDMDiagFolder -ItemType Directory | Out-Null
+    $MDMDiagFolder = "$env:PUBLIC\Documents\MDMDiagnostics\$(Get-date -Format 'yyyy-MM-dd_HH-mm-ss')"
+
+    if (-NOT (Test-Path -Path $MDMDiagFolder)) 
+    {
+        New-Item -Path $MDMDiagFolder -ItemType Directory | Out-Null
+    }
+
+    $reportFullName = '{0}\MDMDiagReport.xml' -f $MDMDiagFolder
+
+    Start-Process MdmDiagnosticsTool.exe -Wait -ArgumentList "-out `"$MDMDiagFolder`"" -NoNewWindow -ErrorAction Stop
+
+    [xml]$xmlFile = Get-Content -Path $reportFullName -Raw -ErrorAction Stop
+}
+else 
+{
+    if (-Not (Test-Path -Path $MDMDiagReportXmlPath)) 
+    {
+        Write-Error "The specified MDM Diagnostics Report XML file does not exist: `"$MDMDiagReportXmlPath`""
+        return
+    }
+    
+    [xml]$xmlFile = Get-Content -Path $MDMDiagReportXmlPath -Raw -ErrorAction Stop
 }
 
-$reportFullName = '{0}\MDMDiagReport.xml' -f $MDMDiagFolder
-
-Start-Process MdmDiagnosticsTool.exe -Wait -ArgumentList "-out `"$MDMDiagFolder`"" -NoNewWindow -ErrorAction Stop
-
-[xml]$xmlFile = Get-Content -Path $reportFullName
+$userInfoHash = Get-LocalUserInfo
+$script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $xmlFile
 
 $IntunePolicyList = [System.Collections.Generic.List[pscustomobject]]::new()
 # Iterate through each ConfigSource item in the XML
 foreach ($item in $xmlFile.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSource)
 {
     $enrollmentID = $item.EnrollmentId
-    $enrollmentData = Get-EnrollmentIDData -EnrollmentId $enrollmentID -MDMData $xmlFile
     
     foreach ($PolicyScope in $item.PolicyScope)
     {
@@ -611,8 +879,9 @@ foreach ($item in $xmlFile.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSo
 
             $tmpObj = [pscustomobject]@{
                             EnrollmentId = $enrollmentID
-                            EnrollmentProvider = $enrollmentData.ProviderID
+                            EnrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]
                             PolicyScope  =  $PolicyScopeName
+                            PolicyScopeDisplay = if ($PolicyScopeName -eq 'Device') { $env:COMPUTERNAME } else { $userInfoHash[$PolicyScopeName] }
                             PolicyAreaName = $area.PolicyAreaName
                             SettingsCount = $propertyList.Count
                             Settings = $null
@@ -673,6 +942,7 @@ Get-IntuneResourcePolicies -MDMData $xmlFile | ForEach-Object {
 Convert-IntunePoliciesToHtml -OutputPath "C:\Users\Public\Documents\IntunePolicyReport.html" -Policies $IntunePolicyList -Title "Intune Policy Report"
 
 Start-Process "msedge.exe" -ArgumentList "C:\Users\Public\Documents\IntunePolicyReport.html"
+
 
 
 
