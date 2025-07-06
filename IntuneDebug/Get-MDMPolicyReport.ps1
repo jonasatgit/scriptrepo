@@ -29,6 +29,165 @@ param
 )
 
 
+Function Get-IntunePolicyDataFromXML
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $false)]
+        [string]$MDMDiagReportXmlPath
+    )
+
+    # If no path is provided, generate a new report
+    if ([string]::IsNullOrEmpty($MDMDiagReportXmlPath)) 
+    {
+        $MDMDiagFolder = "$env:PUBLIC\Documents\MDMDiagnostics\$(Get-date -Format 'yyyy-MM-dd_HH-mm-ss')"
+
+        if (-NOT (Test-Path -Path $MDMDiagFolder)) 
+        {
+            New-Item -Path $MDMDiagFolder -ItemType Directory | Out-Null
+        }
+
+        $MDMDiagReportXmlPath = '{0}\MDMDiagReport.xml' -f $MDMDiagFolder
+
+        Start-Process MdmDiagnosticsTool.exe -Wait -ArgumentList "-out `"$MDMDiagFolder`"" -NoNewWindow -ErrorAction Stop
+
+        [xml]$xmlFile = Get-Content -Path $MDMDiagReportXmlPath -Raw -ErrorAction Stop
+    }
+    else 
+    {
+        if (-Not (Test-Path -Path $MDMDiagReportXmlPath)) 
+        {
+            Write-Error "The specified MDM Diagnostics Report XML file does not exist: `"$MDMDiagReportXmlPath`""
+            return
+        }
+        
+        [xml]$xmlFile = Get-Content -Path $MDMDiagReportXmlPath -Raw -ErrorAction Stop
+    }
+
+    $outObj = [pscustomobject]@{
+        XMlFileData = $xmlFile
+        FileFullName = $MDMDiagReportXmlPath
+    }
+    return $outObj
+}
+#endregion
+
+
+#region Get-IntunePolicySystemInfo
+# Extract system information from the MDM Diagnostics Report
+Function Get-IntunePolicySystemInfo
+{
+    [CmdletBinding()]
+    param 
+    (
+        [string]$HtmlReportPath
+    )
+
+    $htmlFile = Get-Content -Path $HtmlReportPath -Raw -ErrorAction SilentlyContinue
+
+    # Extract only the DeviceInfoTable content
+    $tablePattern = '<table[^>]*id="DeviceInfoTable"[^>]*>(.*?)<\/table>'
+    $tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
+
+    if ($tableMatch.Success) 
+    {
+        $tableContent = $tableMatch.Groups[1].Value
+
+        # Extract label-value pairs
+        $rowPattern = '<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>'
+        $properties = [ordered]@{}
+
+        [regex]::Matches($tableContent, $rowPattern) | ForEach-Object {
+            $label = ($_.Groups[1].Value -replace '<.*?>', '').Trim()
+            $value = ($_.Groups[2].Value -replace '<.*?>', '').Trim()
+
+            # Normalize label to a valid property name
+            $propertyName = ($label -replace '[^a-zA-Z0-9]', '') -replace '^(.+)$', { $_.Groups[1].Value }
+            $properties[$propertyName] = $value
+        }
+
+        <#
+        # Create a single object with all properties
+        $SystemInfo = [PSCustomObject]$properties
+
+        # make sure windows 10 and 11 are correctly identified
+        # Everything below build number 19045 is Windows 10, everything above is Windows 11
+        if ($SystemInfo.OSBuild -gt 10.0.19045) 
+        {
+            $SystemInfo.Edition = $SystemInfo.Edition -replace 'Windows 10', 'Windows 11'
+        }
+
+        # lets remove the word unknown from the systemtype if it is present
+        $SystemInfo.SystemType = ($SystemInfo.SystemType -replace 'Unknown', '').TrimStart()
+
+        # lets add an identifier to be able to distinguish between the different system info objects
+        $SystemInfo | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'DeviceInfo'
+        #>
+
+    } 
+    else 
+    {
+        Write-Host "DeviceInfoTable in file `"$HtmlReportPath`" not found."
+        return $null
+    }
+    #return $SystemInfo
+
+    # lets do the same for the "ConnectionInfoTable" and add those properties to the SystemInfo object
+    # Extract only the ConnectionInfoTable content
+    $tablePattern = '<table[^>]*id="ConnectionInfoTable"[^>]*>(.*?)<\/table>'
+    $tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
+
+    if ($tableMatch.Success) 
+    {
+        $tableContent = $tableMatch.Groups[1].Value
+
+        # Extract label-value pairs
+        $rowPattern = '<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>'
+
+        [regex]::Matches($tableContent, $rowPattern) | ForEach-Object {
+            $label = ($_.Groups[1].Value -replace '<.*?>', '').Trim()
+            $value = ($_.Groups[2].Value -replace '<.*?>', '').Trim()
+
+            # Normalize label to a valid property name
+            $propertyName = ($label -replace '[^a-zA-Z0-9]', '') -replace '^(.+)$', { $_.Groups[1].Value }
+            $properties[$propertyName] = $value
+        }
+    }
+    else 
+    {
+        Write-Host "ConnectionInfoTable in file `"$HtmlReportPath`" not found."
+        #return $null
+    }
+
+    # Create a single object with all properties
+    $SystemInfo = [PSCustomObject]$properties
+
+    # make sure windows 10 and 11 are correctly identified
+    # Everything below build number 19045 is Windows 10, everything above is Windows 11
+    if ($SystemInfo.OSBuild -gt 10.0.19045) 
+    {
+        $SystemInfo.Edition = $SystemInfo.Edition -replace 'Windows 10', 'Windows 11'
+    }
+
+    # lets remove the word unknown from the systemtype if it is present
+    $SystemInfo.SystemType = ($SystemInfo.SystemType -replace 'Unknown', '').TrimStart()
+
+    # lets add an identifier to be able to distinguish between the different system info objects
+    $SystemInfo | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'DeviceInfo'
+   
+    # If the SystemInfo object is empty, return null
+    if ($SystemInfo.PSObject.Properties.Count -eq 0) 
+    {
+        Write-Host "No system information found in file `"$HtmlReportPath`"."
+        return $null
+    }
+
+    return $SystemInfo
+
+}
+#endregion
+
 
 #region Function Get-IntuneDeviceAndUserPolicies
 Function Get-IntuneDeviceAndUserPolicies
@@ -756,6 +915,65 @@ Function Get-IntuneWin32AppTables
 }
 #endregion
 
+#region Get-DeviceInfoHTMLTables
+Function Get-DeviceInfoHTMLTables
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$GroupedPolicies
+    )
+
+    $htmlBody = ""
+
+    $deviceInfoData = $GroupedPolicies.Where({ $_.Name -eq 'DeviceInfo' }) 
+
+    $areaTitleString = 'ℹ️ Device Info'
+
+    $htmlBody = ""
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<h2><span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    $deviceInfoObject = $deviceInfoData.group | Select-Object -Property `
+        'PolicyScope',
+        'Lastsync',
+        'PCName',
+        'Edition',
+        'OSBuild',
+        'Processor',
+        'InstalledRAM',
+        'SystemType',
+        'Organization',
+        'ActiveAccount',
+        'ActiveSID',
+        'Managedby',
+        'Managementserveraddress',
+        'ExchangeID',
+        'UserToken'
+
+    foreach ($device in $deviceInfoObject) 
+    {
+        $htmlBody += "<h2 class='policy-area-title'>Device: $($device.PCName)</h2>"
+        $htmlBody += "<table>"
+        foreach ($property in ($device.PSObject.Properties)) 
+        {
+            #skip properties that are not relevant for the report
+            if ($property.Name -in @('PolicyScope', 'PCName')) 
+            {
+                continue
+            }
+            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($property.Value)</td></tr>"
+        }
+        $htmlBody += "</table>"
+        $htmlBody += "<br>"
+    }
+
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
+    return $htmlBody
+}
+
 
 #region Convert-IntunePoliciesToHtml
 function Convert-IntunePoliciesToHtml {
@@ -879,6 +1097,8 @@ $htmlHeader = @"
  
     $grouped = $Policies | Group-Object -Property PolicyScope
 
+    $htmlBody += Get-DeviceInfoHTMLTables -GroupedPolicies $grouped
+
     $htmlBody += Get-DeviceAndUserHTMLTables -GroupedPolicies $grouped
 
     $htmlBody += Get-EnterpriseApplicationHTMLTables -GroupedPolicies $grouped
@@ -930,47 +1150,28 @@ function Format-StringToXml
 
 
 #region MAIN SCRIPT EXECUTION
-if ([string]::IsNullOrEmpty($MDMDiagReportXmlPath)) 
-{
-    $MDMDiagFolder = "$env:PUBLIC\Documents\MDMDiagnostics\$(Get-date -Format 'yyyy-MM-dd_HH-mm-ss')"
+#$userInfoHash = Get-LocalUserInfo
+#$script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $xmlFile
 
-    if (-NOT (Test-Path -Path $MDMDiagFolder)) 
-    {
-        New-Item -Path $MDMDiagFolder -ItemType Directory | Out-Null
-    }
-
-    $reportFullName = '{0}\MDMDiagReport.xml' -f $MDMDiagFolder
-
-    Start-Process MdmDiagnosticsTool.exe -Wait -ArgumentList "-out `"$MDMDiagFolder`"" -NoNewWindow -ErrorAction Stop
-
-    [xml]$xmlFile = Get-Content -Path $reportFullName -Raw -ErrorAction Stop
-}
-else 
-{
-    if (-Not (Test-Path -Path $MDMDiagReportXmlPath)) 
-    {
-        Write-Error "The specified MDM Diagnostics Report XML file does not exist: `"$MDMDiagReportXmlPath`""
-        return
-    }
-    
-    [xml]$xmlFile = Get-Content -Path $MDMDiagReportXmlPath -Raw -ErrorAction Stop
-}
-
-$userInfoHash = Get-LocalUserInfo
-$script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $xmlFile
+$MDMDiagReportXml = Get-IntunePolicyDataFromXML -MDMDiagReportXmlPath $MDMDiagReportXmlPath
+$MDMDiagReportHTMLPath = $MDMDiagReportXml.FileFullName -replace '.xml', '.html'
 
 # Initialize a list to hold all Intune policies
 $IntunePolicyList = [System.Collections.Generic.List[pscustomobject]]::new()
 
-Get-IntuneDeviceAndUserPolicies -MDMData $xmlFile | ForEach-Object {
+Get-IntunePolicySystemInfo -HtmlReportPath $MDMDiagReportHTMLPath | ForEach-Object {
     $IntunePolicyList.Add($_)
 }
 
-Get-IntuneMSIPolicies -MDMData $xmlFile | ForEach-Object {
+Get-IntuneDeviceAndUserPolicies -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object {
     $IntunePolicyList.Add($_)
 }
 
-Get-IntuneResourcePolicies -MDMData $xmlFile | ForEach-Object {
+Get-IntuneMSIPolicies -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object {
+    $IntunePolicyList.Add($_)
+}
+
+Get-IntuneResourcePolicies -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object {
     $IntunePolicyList.Add($_)
 }
 
@@ -979,9 +1180,6 @@ Convert-IntunePoliciesToHtml -OutputPath "C:\Users\Public\Documents\IntunePolicy
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList "C:\Users\Public\Documents\IntunePolicyReport.html"
-
-
-
 
 
 
