@@ -28,7 +28,56 @@ param
     [string]$MDMDiagReportPath
 )
 
+#region function Get-IntuneWin32AppStatusReports
+function Get-IntuneWin32AppStatusReports
+{
+    # admin permission required
+    $win32AppStatusServiceReports = Get-ChildItem -Path "HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\SideCarPolicies\StatusServiceReports"
 
+    foreach ($report in $win32AppStatusServiceReports)
+    {
+
+        $reportData = Get-ChildItem -Path $report.PSPath
+
+        $reportData
+    }
+}
+#endregion
+
+#region function get-MSIProductCodesWithNames
+function Get-MSIProductCodesWithNames {
+    $results = @()
+
+    $registryPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+
+    foreach ($path in $registryPaths) {
+        if (Test-Path $path) {
+            Get-ChildItem -Path $path | ForEach-Object {
+                $key = $_
+                $productCode = $key.PSChildName
+
+                if ($productCode -match '^\{[0-9A-F\-]{36}\}$') 
+                {
+                    $props = Get-ItemProperty -Path $key.PSPath -ErrorAction SilentlyContinue
+                    $displayName = $props.DisplayName
+
+                    $results += [PSCustomObject]@{
+                        ProductCode = $productCode
+                        Name        = $displayName
+                    }
+
+                }
+            }
+        }
+    }
+    return $results
+}
+#region
+
+#region Get-IntunePolicyDataFromXML
 Function Get-IntunePolicyDataFromXML
 {
     [CmdletBinding()]
@@ -90,12 +139,18 @@ Function Get-IntunePolicySystemInfo
     (
         [string]$HtmlReportPath
     )
+
+    if (-not (Test-Path -Path $HtmlReportPath)) 
+    {
+        # Lets thest for a different file name
+        # This might be the case if the report was generated with the settings app or the MDM Diagnostics Tool with differnt parameters
+        # MDMDiagHTMLReport.html
+        $HtmlReportPath = $HtmlReportPath -replace 'MDMDiagReport\.html', 'MDMDiagHTMLReport.html'
+    }
+
     $htmlFile = Get-Content -Path $HtmlReportPath -Raw -ErrorAction SilentlyContinue
 
-    # Extract only the DeviceInfoTable content
-    #$tablePattern = '<table[^>]*id="DeviceInfoTable"[^>]*>(.*?)<\/table>'
     $tablePattern = '<table[^>]*id="(?:DeviceInfoTable|ConnectionInfoTable)"[^>]*>(.*?)<\/table>'
-    #$tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
     $tableMatches = [regex]::Matches($htmlFile, $tablePattern, 'Singleline')
 
     $properties = @{} 
@@ -175,6 +230,8 @@ Function Get-IntuneDeviceAndUserPolicies
         [Parameter(Mandatory = $true)]
         $MDMData
     )
+
+    $userInfoHash = Get-LocalUserInfo
 
     $outObj = [System.Collections.Generic.List[pscustomobject]]::new()
     # Iterate through each ConfigSource item in the XML
@@ -271,24 +328,40 @@ function Get-IntuneWin32AppPolicies
 {
     [CmdletBinding()]
     param 
-    ()
+    (
+        [Parameter(Mandatory = $false)]
+        [string]$LogPath
+    )
 
-    $Path = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\AppWorkload*.log"
+    if ([string]::IsNullOrEmpty($LogPath))
+    {
+        # Default log path for Win32 App Management logs
+        $LogPath = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\AppWorkload*.log"
+    }       
 
     # Getting all AppWorkload and sorting them by LastWriteTime
-    # This will make sure we have the latest entries at the first position in our array
-    $logFiles = Get-ChildItem -Path $Path | Sort-Object -Property LastWriteTime -Descending
+    # This will make sure we have the latest entries at the first position in our array by sorting files descending
+    $logFiles = Get-ChildItem -Path $LogPath | Sort-Object -Property LastWriteTime -Descending
 
+    # win32app policy string pattern
     $pattern = '<!\[LOG\[Get policies = \[\{(.*)\]LOG\]!>'
 
     # Get all policies with regex pattern filter
     $lines = $logFiles | Select-String -Pattern $pattern
 
-    Foreach ($line in $lines[0])
+    if ($lines)
     {
-        # We need to add the chars "[{" to the beginning of the line to make it a valid JSON array 
-        # since we made the not part of the regex pattern to only match policies with at least one app
-        [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json
+        $appList = @()
+        Foreach ($line in $lines[0])
+        {
+            # We need to add the chars "[{" to the beginning of the line to make it a valid JSON array 
+            # since we made the not part of the regex pattern to only match policies with at least one app
+            [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json
+        }
+    }
+    else 
+    {
+        return @()
     }
 
     return ($appList | Sort-Object -Property Name)
@@ -371,15 +444,16 @@ function Convert-FileTimeToDateTime
         [UInt64]$FileTime
     )
 
-    # Convert to seconds (FILETIME is in 100-nanosecond intervals)
     $seconds = $FileTime / 10000000
 
     # FILETIME epoch starts at January 1, 1601 (UTC)
-    $epoch = Get-Date -Date "1601-01-01 00:00:00Z" -AsUTC
+    # PowerShell 5.1 doesn't support -AsUTC, so use DateTime with Kind set to UTC
+    $epoch = [DateTime]::SpecifyKind([DateTime]::Parse("1601-01-01T00:00:00"), [DateTimeKind]::Utc)
 
     # Add the seconds to the epoch
     $datetime = $epoch.AddSeconds($seconds)
 
+    # Format the output
     return $datetime.ToString("yyyy-MM-dd HH:mm:ss")
 }
 #endregion
@@ -403,35 +477,50 @@ Function Get-IntuneMSIPolicies
         {
             foreach ($packageDetail in $package.Details)
             {  
+
+                if ([string]::IsNullOrEmpty($packageDetail.CurrentDownloadUrl))
+                {
+                    $possibleAppName = 'Unknown'    
+                }
+                else 
+                {
+                    $possibleAppName = ($packageDetail.CurrentDownloadUrl | Split-Path -Leaf -ErrorAction SilentlyContinue)
+                }
+
                 $outObj = $null
                 $propsList = $packageDetail | Get-Member | Where-Object {$_.MemberType -eq 'Property'}
                 $outObj = $packageDetail | Select-Object -Property $propsList.Name
                 $outObj | Add-Member NoteProperty 'AssignmentIdentity' -Value $assignmentIdentity
                 $outObj | Add-Member NoteProperty 'PackageType' -Value $package.Type
                 $outObj | Add-Member NoteProperty 'PolicyScope' -Value 'EnterpriseDesktopAppManagement'
+                $outObj | Add-Member NoteProperty 'PossibleAppName' -Value $possibleAppName
 
                 try 
                 {
                     $tmpCreationTime = Convert-FileTimeToDateTime -FileTime $outObj.CreationTime   
                     $outObj.CreationTime = $tmpCreationTime
                 }
-                catch {}
+                catch {
+                    Write-Host "Failed to convert CreationTime for package: $($outObj.PackageId). Error: $_"
+                }
 
                 try 
                 {
                     $tmpEnforcementStartTime = Convert-FileTimeToDateTime -FileTime $outObj.EnforcementStartTime   
                     $outObj.EnforcementStartTime = $tmpEnforcementStartTime
                 }
-                catch {}
-                
-
+                catch {
+                    Write-Host "Failed to convert EnforcementStartTime for package: $($outObj.PackageId). Error: $_"
+                }
 
                 $outList.Add($outObj)
             }
         }      
     }
 
-    return $outList
+    $outListSorted = $outList | Sort-Object -Property PossibleAppName, CreationTime -Descending
+
+    return $outListSorted
 }
 #endregion
 
@@ -654,27 +743,10 @@ Function Get-DeviceAndUserHTMLTables
     $userSelection = $GroupedPolicies.Where({ $_.Name -match 'S-\d+(-\d+)+' })
     foreach ($group in $selection) 
     {
-        <#
-        if (($group.Name -ne 'Device') -and ($group.Name -notmatch 'S-\d+(-\d+)+')) 
-        {
-            # Skip groups that are not 'Device' or do not match the SID pattern
-            # We will add them later
-            continue
-        }
-            #>
-
         if ($group.Name -eq 'Device') 
         { 
             $statString = "TotalPolicyAreas: {0}<br>TotalSettings: {1}" -f $deviceSelection.group.count, $deviceSelection.group.Settings.count
-
-            if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
-            {
-                $areaTitleString = '💻 Device: Unknown'
-            }
-            else 
-            {
-                $areaTitleString = '💻 Device: {0}' -f $group.group[0].PolicyScopeDisplay
-            }
+            $areaTitleString = '💻 Device'
         } 
         else 
         { 
@@ -705,14 +777,12 @@ Function Get-DeviceAndUserHTMLTables
             }
 
             $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
-            #$htmlBody += "<div class='settings-container'>"
             $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 200px;'></td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th class='setting-col'>Setting 🛠️</th><th>Value</th><th style='width: 200px;'>WinningProvider</th></tr>"
 
             foreach ($settings in $policy.Settings) 
             {
-                $global:Test1 = $settings
                 $settingspath = 'Path or DLL of the setting: "{0}"' -f $settings.Metadata
 
                 if ($settings.WinningProvider -eq 'Not set' -or [string]::IsNullOrEmpty($settings.WinningProvider)) 
@@ -738,6 +808,7 @@ Function Get-DeviceAndUserHTMLTables
                 } 
 
                 #$value = Format-StringToXml -XmlString $settings.Value
+                # Escape HTML characters in the value to prevent out html from breaking
                 $value = Invoke-EscapeHtmlText -Text ($settings.Value)
                 $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td><td style='width: 200px;'>$winningProviderString</td></tr>"
             }
@@ -768,25 +839,18 @@ function Get-EnterpriseApplicationHTMLTables
     $enterpriseAppGroup = $GroupedPolicies.Where({ $_.Name -eq 'EnterpriseDesktopAppManagement' })
 
     $areaTitleString = '📦 EnterpriseDesktopAppManagement'
+    $statString = "TotalAppPolicies: {0}" -f $enterpriseAppGroup.Group.Count
 
     $htmlBody += "<div class='group-container'>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
     foreach ($app in $enterpriseAppGroup.Group)
     {
-        if ([string]::IsNullOrEmpty($app.CurrentDownloadUrl))
-        {
-            $possibleAppName = 'Unknown'    
-        }
-        else 
-        {
-            $possibleAppName = ($app.CurrentDownloadUrl | Split-Path -Leaf -ErrorAction SilentlyContinue)
-        }
-        
 
-        $htmlBody += "<h2 class='policy-area-title'>App: $($possibleAppName)</h2>"
+        $htmlBody += "<h2 class='policy-area-title'>App: $($app.possibleAppName)</h2>"
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
 
         # Let's exclude some properties that are not relevant for the report
@@ -869,6 +933,7 @@ Function Get-ResourceHTMLTables
 
         foreach ($resource in $resourceEntry.Group)  
         {
+            # we need to escape the resource name to prevent the resource name from breaking our HTML
             $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
             $htmlBody += "<tr><td></td><td>$resourceName</td></tr>"
         }
@@ -886,19 +951,22 @@ Function Get-ResourceHTMLTables
 #region Get-IntuneWin32AppTables
 Function Get-IntuneWin32AppTables
 {
-    $win32Apps = Get-IntuneWin32AppPolicies
+    $win32Apps = Get-IntuneWin32AppPolicies -LogPath $script:MDMDiagReportPathVariable
 
     $htmlBody = ""
 
     $areaTitleString = '🪟 Win32App Policies'
+    $statString = "TotalWin32AppPolicies: {0}" -f $win32Apps.Count
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
-    $excludedProperties = @('DetectionRule', 'ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+    #$excludedProperties = @('DetectionRule', 'ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+    $excludedProperties = @('ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
 
     foreach ($app in $win32Apps) {
         $htmlBody += "<h2 class='policy-area-title'>Win32App: $($app.Name)</h2>"
@@ -930,7 +998,16 @@ Function Get-DeviceInfoHTMLTables
 
     $deviceInfoData = $GroupedPolicies.Where({ $_.Name -eq 'DeviceInfo' }) 
 
-    $areaTitleString = 'ℹ️ Device Info'
+    # Set the area title string based on the DeviceName
+    # If the DeviceName is empty or null, set it to 'Unknown'
+    if ([string]::IsNullOrEmpty($deviceInfoData.group[0].DeviceName)) 
+    {
+        $areaTitleString = 'ℹ️ Device Info: Unknown'
+    }
+    else 
+    {
+        $areaTitleString = 'ℹ️ Device Info: {0}' -f $deviceInfoData.group[0].DeviceName
+    }
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
@@ -938,28 +1015,9 @@ Function Get-DeviceInfoHTMLTables
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
-    <#
-    $deviceInfoObject = $deviceInfoData.group | Select-Object -Property `
-        'PolicyScope',
-        'Lastsync',
-        'PCName',
-        'Edition',
-        'OSBuild',
-        'Processor',
-        'InstalledRAM',
-        'SystemType',
-        'Organization',
-        'ActiveAccount',
-        'ActiveSID',
-        'Managedby',
-        'Managementserveraddress',
-        'ExchangeID',
-        'UserToken'
-    #>
-    #foreach ($device in $deviceInfoObject) 
     foreach ($device in $deviceInfoData.group) 
     {
-        $htmlBody += "<h2 class='policy-area-title'>Device: $($device.DeviceName)</h2>"
+        # $($device.DeviceName)</h2>"
         $htmlBody += "<table>"
         foreach ($property in ($device.PSObject.Properties)) 
         {
@@ -1157,6 +1215,9 @@ function Format-StringToXml
 #region MAIN SCRIPT EXECUTION
 #$userInfoHash = Get-LocalUserInfo
 
+# Making the MDMDiagReportPath a script variable to be used in other functions
+$script:MDMDiagReportPathVariable = $MDMDiagReportPath
+
 $MDMDiagReportXml = Get-IntunePolicyDataFromXML -MDMDiagReportPath $MDMDiagReportPath
 $MDMDiagReportHTMLPath = $MDMDiagReportXml.FileFullName -replace '.xml', '.html'
 
@@ -1189,4 +1250,6 @@ Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -T
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
+
+
 
