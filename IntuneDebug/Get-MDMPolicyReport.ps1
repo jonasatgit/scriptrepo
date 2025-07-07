@@ -288,7 +288,7 @@ function Get-IntuneWin32AppPolicies
     {
         # We need to add the chars "[{" to the beginning of the line to make it a valid JSON array 
         # since we made the not part of the regex pattern to only match policies with at least one app
-        [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json -Depth 20
+        [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json
     }
 
     return ($appList | Sort-Object -Property Name)
