@@ -468,6 +468,22 @@ Function Get-IntuneMSIPolicies
         $MDMData
     )
 
+
+    $StatusCodes = @{
+        10 = "⚙️ Initialized"
+        20 = "⬇️ Download In Progress"
+        25 = "🔁 Pending Download Retry"
+        30 = "❌ Download Failed"
+        40 = "✅ Download Completed"
+        48 = "🧑‍💻 Pending User Session"
+        50 = "⚙️ Enforcement In Progress"
+        55 = "🔁 Pending Enforcement Retry"
+        60 = "🚫 Enforcement Failed"
+        70 = "✅ Enforcement Completed"
+    }
+
+
+
     $outList = [System.Collections.Generic.List[pscustomobject]]::new()
     Foreach ($user in $MDMData.MDMEnterpriseDiagnosticsReport.EnterpriseDesktopAppManagementinfo.MsiInstallations.TargetedUser)
     {
@@ -487,13 +503,35 @@ Function Get-IntuneMSIPolicies
                     $possibleAppName = ($packageDetail.CurrentDownloadUrl | Split-Path -Leaf -ErrorAction SilentlyContinue)
                 }
 
-                $outObj = $null
-                $propsList = $packageDetail | Get-Member | Where-Object {$_.MemberType -eq 'Property'}
-                $outObj = $packageDetail | Select-Object -Property $propsList.Name
-                $outObj | Add-Member NoteProperty 'AssignmentIdentity' -Value $assignmentIdentity
-                $outObj | Add-Member NoteProperty 'PackageType' -Value $package.Type
-                $outObj | Add-Member NoteProperty 'PolicyScope' -Value 'EnterpriseDesktopAppManagement'
-                $outObj | Add-Member NoteProperty 'PossibleAppName' -Value $possibleAppName
+                # A specifc order helps to keep the output consistent and easier to find information
+                $outObj = [PSCustomObject][ordered]@{
+                    PossibleAppName = $possibleAppName
+                    AssignmentIdentity = $assignmentIdentity
+                    Status = $packageDetail.Status
+                    LastError = $packageDetail.LastError
+                    ProductVersion = $packageDetail.ProductVersion
+                    ProductCode = $packageDetail.ProductCode
+                    CreationTime = $packageDetail.CreationTime
+                    EnforcementStartTime = $packageDetail.EnforcementStartTime
+                    CurrentDownloadUrl = $packageDetail.CurrentDownloadUrl
+                    CommandLine = $packageDetail.CommandLine
+                    DownloadLocation = $packageDetail.DownloadLocation
+                    DownloadInstall = $packageDetail.DownloadInstall
+                    EnforcementRetryCount = $packageDetail.EnforcementRetryCount
+                    EnforcementRetryIndex = $packageDetail.EnforcementRetryIndex
+                    EnforcementRetryInterval = $packageDetail.EnforcementRetryInterval
+                    EnforcementTimeout = $packageDetail.EnforcementTimeout
+                    FileHash = $packageDetail.FileHash
+                    LocURI = $packageDetail.LocURI
+                    ActionType = $packageDetail.ActionType
+                    AssignmentType = $packageDetail.AssignmentType
+                    BITSJobId = $packageDetail.BITSJobId
+                    JobStatusReport = $packageDetail.JobStatusReport
+                    ServerAccountID = $packageDetail.ServerAccountID
+                    PackageId = $packageDetail.PackageId
+                    PackageType = 'MSI'
+                    PolicyScope = 'EnterpriseDesktopAppManagement'                    
+                }
 
                 try 
                 {
@@ -512,6 +550,13 @@ Function Get-IntuneMSIPolicies
                 catch {
                     Write-Host "Failed to convert EnforcementStartTime for package: $($outObj.PackageId). Error: $_"
                 }
+                # Convert the status code to a human-readable string
+                try
+                {
+                    $tmpStatus = $StatusCodes[[int]($outObj.Status)]
+                    $outObj.Status = $tmpStatus
+                }catch{}
+                 
 
                 $outList.Add($outObj)
             }
@@ -854,9 +899,9 @@ function Get-EnterpriseApplicationHTMLTables
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
 
         # Let's exclude some properties that are not relevant for the report
-        $excludedProperties = @('ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+        $excludedProperties = @('PossibleAppName','ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
 
-        foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name))
+        foreach ($property in ($app.PSObject.Properties))
         {
             if ($property.Name -in $excludedProperties) 
             {
@@ -892,7 +937,7 @@ Function Get-ResourceHTMLTables
     $resourcePolicies = $GroupedPolicies.Where({ $_.Name -eq 'Resource' }) 
     $groupedResources = $resourcePolicies.group | Group-Object -Property EnrollmentId, ResourceTarget
     
-    $areaTitleString = '🌐 Resource Policies'
+    $areaTitleString = '🌐 Resources'
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
@@ -955,7 +1000,7 @@ Function Get-IntuneWin32AppTables
 
     $htmlBody = ""
 
-    $areaTitleString = '🪟 Win32App Policies'
+    $areaTitleString = '🪟 Win32Apps'
     $statString = "TotalWin32AppPolicies: {0}" -f $win32Apps.Count
 
     $htmlBody = ""
