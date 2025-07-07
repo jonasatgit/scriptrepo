@@ -90,108 +90,78 @@ Function Get-IntunePolicySystemInfo
     (
         [string]$HtmlReportPath
     )
-
     $htmlFile = Get-Content -Path $HtmlReportPath -Raw -ErrorAction SilentlyContinue
 
     # Extract only the DeviceInfoTable content
-    $tablePattern = '<table[^>]*id="DeviceInfoTable"[^>]*>(.*?)<\/table>'
-    $tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
+    #$tablePattern = '<table[^>]*id="DeviceInfoTable"[^>]*>(.*?)<\/table>'
+    $tablePattern = '<table[^>]*id="(?:DeviceInfoTable|ConnectionInfoTable)"[^>]*>(.*?)<\/table>'
+    #$tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
+    $tableMatches = [regex]::Matches($htmlFile, $tablePattern, 'Singleline')
 
-    if ($tableMatch.Success) 
+    $properties = @{} 
+    
+    $outObj = [pscustomobject][ordered]@{
+                    DeviceName = $null
+                    Organization = $null
+                    Edition = $null
+                    OSBuild = $null
+                    Processor = $null
+                    InstalledRAM = $null
+                    SystemType = $null
+                    ManagedBy = $null
+                    LastSync = $null
+                    ManagementServerAddress = $null
+                    ExchangeID = $null
+                    ActiveSID = $null
+                    ActiveAccount = $null
+                    UserToken = $null
+                    PolicyScope = 'DeviceInfo'
+                }
+
+    foreach($tableMatch in $tableMatches)
     {
-        $tableContent = $tableMatch.Groups[1].Value
+        $rowPattern = '"LabelColumn">(?<Label>.*?)</td><td.*?>(?<Value>.*?)</td>'
+        $valueResults = [regex]::Matches($tableMatch, $rowPattern)
 
-        # Extract label-value pairs
-        $rowPattern = '<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>'
-        $properties = [ordered]@{}
-
-        [regex]::Matches($tableContent, $rowPattern) | ForEach-Object {
-            $label = ($_.Groups[1].Value -replace '<.*?>', '').Trim()
-            $value = ($_.Groups[2].Value -replace '<.*?>', '').Trim()
-
-            # Normalize label to a valid property name
-            $propertyName = ($label -replace '[^a-zA-Z0-9]', '') -replace '^(.+)$', { $_.Groups[1].Value }
-            $properties[$propertyName] = $value
-        }
-
-        <#
-        # Create a single object with all properties
-        $SystemInfo = [PSCustomObject]$properties
-
-        # make sure windows 10 and 11 are correctly identified
-        # Everything below build number 19045 is Windows 10, everything above is Windows 11
-        if ($SystemInfo.OSBuild -gt 10.0.19045) 
+        
+        foreach($item in $valueResults)
         {
-            $SystemInfo.Edition = $SystemInfo.Edition -replace 'Windows 10', 'Windows 11'
+            $labelObj = $item.Groups | Where-Object -Property Name -eq 'Label'
+            $valueObj = $item.Groups | Where-Object -Property Name -eq 'Value'
+
+            $properties[$labelObj.Value] = $valueObj.Value
+        }
+    }
+
+    $tmpObj = [PSCustomObject]$properties
+    try 
+    {
+        $outObj.DeviceName = $tmpObj.'PC name'
+        $outObj.Organization = $tmpObj.'Organization'
+        $outObj.Edition = $tmpObj.'Edition'
+        $outObj.OSBuild = $tmpObj.'OS Build'
+        $outObj.Processor = $tmpObj.'Processor'
+        $outObj.InstalledRAM = $tmpObj.'Installed RAM'
+        $outObj.SystemType = $tmpObj.'System Type'
+        $outObj.ManagedBy = $tmpObj.'Managed By'
+        $outObj.LastSync = $tmpObj.'Last Sync'
+        $outObj.ManagementServerAddress = $tmpObj.'Management Server Address'
+        $outObj.ExchangeID = $tmpObj.'Exchange ID'
+        $outObj.ActiveSID = $tmpObj.'Active SID'
+        $outObj.ActiveAccount = $tmpObj.'Active Account'
+        $outObj.UserToken = $tmpObj.'User Token'
+
+        if ($outObj.OSBuild -gt 10.0.19045) 
+        {
+            $outObj.Edition = $outObj.Edition -replace 'Windows 10', 'Windows 11'
         }
 
         # lets remove the word unknown from the systemtype if it is present
-        $SystemInfo.SystemType = ($SystemInfo.SystemType -replace 'Unknown', '').TrimStart()
-
-        # lets add an identifier to be able to distinguish between the different system info objects
-        $SystemInfo | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'DeviceInfo'
-        #>
-
-    } 
-    else 
-    {
-        Write-Host "DeviceInfoTable in file `"$HtmlReportPath`" not found."
-        return $null
+        $outObj.SystemType = ($outObj.SystemType -replace 'Unknown', '') -replace '^\s+',''     
     }
-    #return $SystemInfo
+    catch {}
 
-    # lets do the same for the "ConnectionInfoTable" and add those properties to the SystemInfo object
-    # Extract only the ConnectionInfoTable content
-    $tablePattern = '<table[^>]*id="ConnectionInfoTable"[^>]*>(.*?)<\/table>'
-    $tableMatch = [regex]::Match($htmlFile, $tablePattern, 'Singleline')
-
-    if ($tableMatch.Success) 
-    {
-        $tableContent = $tableMatch.Groups[1].Value
-
-        # Extract label-value pairs
-        $rowPattern = '<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>'
-
-        [regex]::Matches($tableContent, $rowPattern) | ForEach-Object {
-            $label = ($_.Groups[1].Value -replace '<.*?>', '').Trim()
-            $value = ($_.Groups[2].Value -replace '<.*?>', '').Trim()
-
-            # Normalize label to a valid property name
-            $propertyName = ($label -replace '[^a-zA-Z0-9]', '') -replace '^(.+)$', { $_.Groups[1].Value }
-            $properties[$propertyName] = $value
-        }
-    }
-    else 
-    {
-        Write-Host "ConnectionInfoTable in file `"$HtmlReportPath`" not found."
-        #return $null
-    }
-
-    # Create a single object with all properties
-    $SystemInfo = [PSCustomObject]$properties
-
-    # make sure windows 10 and 11 are correctly identified
-    # Everything below build number 19045 is Windows 10, everything above is Windows 11
-    if ($SystemInfo.OSBuild -gt 10.0.19045) 
-    {
-        $SystemInfo.Edition = $SystemInfo.Edition -replace 'Windows 10', 'Windows 11'
-    }
-
-    # lets remove the word unknown from the systemtype if it is present
-    $SystemInfo.SystemType = ($SystemInfo.SystemType -replace 'Unknown', '').TrimStart()
-
-    # lets add an identifier to be able to distinguish between the different system info objects
-    $SystemInfo | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'DeviceInfo'
-   
-    # If the SystemInfo object is empty, return null
-    if ($SystemInfo.PSObject.Properties.Count -eq 0) 
-    {
-        Write-Host "No system information found in file `"$HtmlReportPath`"."
-        return $null
-    }
-
-    return $SystemInfo
-
+    return $outObj
 }
 #endregion
 
@@ -968,6 +938,7 @@ Function Get-DeviceInfoHTMLTables
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
+    <#
     $deviceInfoObject = $deviceInfoData.group | Select-Object -Property `
         'PolicyScope',
         'Lastsync',
@@ -984,15 +955,16 @@ Function Get-DeviceInfoHTMLTables
         'Managementserveraddress',
         'ExchangeID',
         'UserToken'
-
-    foreach ($device in $deviceInfoObject) 
+    #>
+    #foreach ($device in $deviceInfoObject) 
+    foreach ($device in $deviceInfoData.group) 
     {
-        $htmlBody += "<h2 class='policy-area-title'>Device: $($device.PCName)</h2>"
+        $htmlBody += "<h2 class='policy-area-title'>Device: $($device.DeviceName)</h2>"
         $htmlBody += "<table>"
         foreach ($property in ($device.PSObject.Properties)) 
         {
             #skip properties that are not relevant for the report
-            if ($property.Name -in @('PolicyScope', 'PCName')) 
+            if ($property.Name -in @('PolicyScope', 'DeviceName')) 
             {
                 continue
             }
