@@ -19,6 +19,30 @@
     #
     #************************************************************************************************************
 
+
+    NOTES:
+        --- Default value
+
+        <PolicyMetadata>
+        <PolicyName>AllowFullScanOnMappedNetworkDrives</PolicyName>
+        <Behavior>73761</Behavior>
+        <GPBlockingRegKeyPath>Software\Policies\Microsoft\Windows Defender\Scan</GPBlockingRegKeyPath>
+        <GPBlockingRegValueName>DisableScanningMappedNetworkDrivesForFullScan</GPBlockingRegValueName>
+        <highrange>1</highrange>
+        <lowrange>0</lowrange>
+        <mergealgorithm>2</mergealgorithm>
+        <policytype>4</policytype>
+        <RegKeyPathRedirect>Software\Policies\Microsoft\Windows Defender\Policy Manager</RegKeyPathRedirect>
+        <RegValueNameRedirect>AllowFullScanOnMappedNetworkDrives</RegValueNameRedirect>
+        <value>0</value> <------
+        <wnfStateName1>-1547898763</wnfStateName1>
+        <wnfStateName2>328335400</wnfStateName2>
+        </PolicyMetadata>
+
+        --- Cleanup task
+
+        --- Win32 app reporting status
+
 #>
 
 [CmdletBinding()]
@@ -899,7 +923,7 @@ function Get-EnterpriseApplicationHTMLTables
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
 
         # Let's exclude some properties that are not relevant for the report
-        $excludedProperties = @('PossibleAppName','ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+        $excludedProperties = @('PossibleAppName','ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId', 'LocURI', 'PackageType')
 
         foreach ($property in ($app.PSObject.Properties))
         {
@@ -1295,6 +1319,4 @@ Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -T
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
-
-
 
