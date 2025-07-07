@@ -25,7 +25,7 @@
 param 
 (
     [Parameter(Mandatory = $false)]
-    [string]$MDMDiagReportXmlPath
+    [string]$MDMDiagReportPath
 )
 
 
@@ -35,11 +35,11 @@ Function Get-IntunePolicyDataFromXML
     param 
     (
         [Parameter(Mandatory = $false)]
-        [string]$MDMDiagReportXmlPath
+        [string]$MDMDiagReportPath
     )
 
     # If no path is provided, generate a new report
-    if ([string]::IsNullOrEmpty($MDMDiagReportXmlPath)) 
+    if ([string]::IsNullOrEmpty($MDMDiagReportPath)) 
     {
         $MDMDiagFolder = "$env:PUBLIC\Documents\MDMDiagnostics\$(Get-date -Format 'yyyy-MM-dd_HH-mm-ss')"
 
@@ -56,12 +56,19 @@ Function Get-IntunePolicyDataFromXML
     }
     else 
     {
-        if (-Not (Test-Path -Path $MDMDiagReportXmlPath)) 
+        if (-Not (Test-Path -Path $MDMDiagReportPath)) 
+        {
+            Write-Error "The specified MDM Diagnostics path does not exist: `"$MDMDiagReportPath`""
+            return
+        }
+
+        $MDMDiagReportXmlPath = '{0}\MDMDiagReport.xml' -f $MDMDiagReportPath
+
+        if (-Not (Test-Path -Path $MDMDiagReportXmlPath))
         {
             Write-Error "The specified MDM Diagnostics Report XML file does not exist: `"$MDMDiagReportXmlPath`""
             return
         }
-        
         [xml]$xmlFile = Get-Content -Path $MDMDiagReportXmlPath -Raw -ErrorAction Stop
     }
 
@@ -203,6 +210,8 @@ Function Get-IntuneDeviceAndUserPolicies
     # Iterate through each ConfigSource item in the XML
     foreach ($item in $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSource)
     {
+        $global:test = $item
+
         $enrollmentID = $item.EnrollmentId
         
         foreach ($PolicyScope in $item.PolicyScope)
@@ -220,14 +229,28 @@ Function Get-IntuneDeviceAndUserPolicies
                 # Define the properties we are interested in 
                 [array]$propertyList = $area | Get-Member | Where-Object {$_.MemberType -eq 'Property'} | Select-Object -Property Name | Where-Object {$_.Name -notlike '*_LastWrite' -and $_.Name -ne 'PolicyAreaName'}
 
+
+                try{$enrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]}catch{}
+                if([string]::IsNullOrEmpty($enrollmentProvider))
+                {
+                    $enrollmentProvider = 'Unknown'
+                }
+
+
+                try{$userName = $userInfoHash[$PolicyScopeName]}catch{}
+                if([string]::IsNullOrEmpty($userName))
+                {
+                    $userName = 'Unknown'
+                }
+
                 $tmpObj = [pscustomobject]@{
                                 EnrollmentId = $enrollmentID
-                                EnrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]
+                                EnrollmentProvider = $enrollmentProvider
                                 PolicyScope  =  $PolicyScopeName
-                                PolicyScopeDisplay = if ($PolicyScopeName -eq 'Device') { $env:COMPUTERNAME } else { $userInfoHash[$PolicyScopeName] }
+                                PolicyScopeDisplay = if ($PolicyScopeName -eq 'Device') { $PolicyScopeName } else { $userName }
                                 PolicyAreaName = $area.PolicyAreaName
                                 SettingsCount = $propertyList.Count
-                                Settings = $null
+                                Settings = ""
                             }
 
                 $settingsList = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -235,14 +258,14 @@ Function Get-IntuneDeviceAndUserPolicies
                 {
 
                     # Adding metadata for the property
-                    $metadataInfo = Get-IntunePolicyMetadata -MDMData $xmlFile -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
+                    $metadataInfo = Get-IntunePolicyMetadata -MDMData  $MDMData -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
                     if ($area.PolicyAreaName -ieq 'knobs')
                     {
                         $winningProvider = "Not set"
                     }
                     else 
                     {
-                        $currentPolicyInfo = Get-IntunePolicyCurrentData -PolicyScope $PolicyScopeName -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name -MDMData $xmlFile
+                        $currentPolicyInfo = Get-IntunePolicyCurrentData -PolicyScope $PolicyScopeName -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name -MDMData $MDMData
                         if ($null -eq $currentPolicyInfo)
                         {
                             $winningProvider = "Not set"    
@@ -259,10 +282,10 @@ Function Get-IntuneDeviceAndUserPolicies
                         WinningProvider = $winningProvider
                         Metadata = $metadataInfo
                     })
-
                 }
 
-                $tmpObj.Settings = $settingsList
+                $tmpObj.Settings = $settingsList   
+                
                 # Add the tmpObj to the $outObj
                 $outObj.Add($tmpObj)
             }
@@ -783,7 +806,15 @@ function Get-EnterpriseApplicationHTMLTables
 
     foreach ($app in $enterpriseAppGroup.Group)
     {
-        $possibleAppName = ($app.CurrentDownloadUrl | Split-Path -Leaf)
+        if ([string]::IsNullOrEmpty($app.CurrentDownloadUrl))
+        {
+            $possibleAppName = 'Unknown'    
+        }
+        else 
+        {
+            $possibleAppName = ($app.CurrentDownloadUrl | Split-Path -Leaf -ErrorAction SilentlyContinue)
+        }
+        
 
         $htmlBody += "<h2 class='policy-area-title'>App: $($possibleAppName)</h2>"
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
@@ -820,6 +851,8 @@ Function Get-ResourceHTMLTables
         [array]$GroupedPolicies
     )
 
+    # Does not make sense when we use XML data from a different system. 
+    # But does also not harm, because the report will simply not be able to match a SID to a username.
     $userInfoHash = Get-LocalUserInfo
 
     $resourcePolicies = $GroupedPolicies.Where({ $_.Name -eq 'Resource' }) 
@@ -843,7 +876,7 @@ Function Get-ResourceHTMLTables
         $resourceTargetString = if($tmpSplitVar[1].ToString().Trim() -ieq 'Device') 
         { 
 
-            '💻 Device - {0}' -f $env:COMPUTERNAME
+            '💻 Device'
         } 
         else 
         { 
@@ -978,10 +1011,10 @@ Function Get-DeviceInfoHTMLTables
 #region Convert-IntunePoliciesToHtml
 function Convert-IntunePoliciesToHtml {
     param (
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory=$false)]
         [string]$OutputPath,
 
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory=$false)]
         [array]$Policies,
 
         [string]$Title = "Intune Policy Report"
@@ -1151,10 +1184,11 @@ function Format-StringToXml
 
 #region MAIN SCRIPT EXECUTION
 #$userInfoHash = Get-LocalUserInfo
-#$script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $xmlFile
 
-$MDMDiagReportXml = Get-IntunePolicyDataFromXML -MDMDiagReportXmlPath $MDMDiagReportXmlPath
+$MDMDiagReportXml = Get-IntunePolicyDataFromXML -MDMDiagReportPath $MDMDiagReportPath
 $MDMDiagReportHTMLPath = $MDMDiagReportXml.FileFullName -replace '.xml', '.html'
+
+$script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $MDMDiagReportXml.XMlFileData
 
 # Initialize a list to hold all Intune policies
 $IntunePolicyList = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -1175,15 +1209,12 @@ Get-IntuneResourcePolicies -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Obje
     $IntunePolicyList.Add($_)
 }
 
+
+$outFile = '{0}\IntunePolicyReport.html' -f (Split-Path -Path $MDMDiagReportHTMLPath -Parent)
+
 # Convert the policies to HTML and save to the specified output path
-Convert-IntunePoliciesToHtml -OutputPath "C:\Users\Public\Documents\IntunePolicyReport.html" -Policies $IntunePolicyList -Title "Intune Policy Report"
+Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report"
 
 # Open the generated HTML report in Microsoft Edge
-Start-Process "msedge.exe" -ArgumentList "C:\Users\Public\Documents\IntunePolicyReport.html"
-
-
-
-
-
-
+Start-Process "msedge.exe" -ArgumentList $outFile
 
