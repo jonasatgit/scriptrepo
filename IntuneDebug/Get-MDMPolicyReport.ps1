@@ -21,23 +21,6 @@
 
 
     NOTES:
-        --- Default value
-
-        <PolicyMetadata>
-        <PolicyName>AllowFullScanOnMappedNetworkDrives</PolicyName>
-        <Behavior>73761</Behavior>
-        <GPBlockingRegKeyPath>Software\Policies\Microsoft\Windows Defender\Scan</GPBlockingRegKeyPath>
-        <GPBlockingRegValueName>DisableScanningMappedNetworkDrivesForFullScan</GPBlockingRegValueName>
-        <highrange>1</highrange>
-        <lowrange>0</lowrange>
-        <mergealgorithm>2</mergealgorithm>
-        <policytype>4</policytype>
-        <RegKeyPathRedirect>Software\Policies\Microsoft\Windows Defender\Policy Manager</RegKeyPathRedirect>
-        <RegValueNameRedirect>AllowFullScanOnMappedNetworkDrives</RegValueNameRedirect>
-        <value>0</value> <------
-        <wnfStateName1>-1547898763</wnfStateName1>
-        <wnfStateName2>328335400</wnfStateName2>
-        </PolicyMetadata>
 
         --- Cleanup task
 
@@ -635,57 +618,65 @@ function Get-IntunePolicyMetadata
         $MDMData
     )
 
+    $outObj = [pscustomobject]@{
+        RedirectionPath = "Redirection path not set"
+        DefaultValue = "No default value set"
+    }
+
     # PolicymetaData is a collection of metadata for each policy 
     # We are interested in the regpah or translationDllPath for the specific policy
     $policyMetaData = $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManagerMeta.AreaMetadata | Where-Object { $_.PolicyAreaName -eq $PolicyAreaName }
     if (-not $policyMetaData) 
     {
-        return $null
+        return $outObj
     }
     else 
     {
         $policy = $policyMetaData.PolicyMetadata | Where-Object { $_.PolicyName -eq $PolicyName } 
         if (-not $policy) 
         {
-            return $null
+            return $outObj
         }
         else 
         {
+            if (-NOT ([string]::IsNullOrEmpty($policy.value))) 
+            {
+                # If the policy has a value, return it as the default value
+                $outObj.DefaultValue = $policy.value
+            }
+
             # If the policy has a RegKeyPathRedirect, return it
             if (-NOT ([string]::IsNullOrEmpty($policy.RegKeyPathRedirect))) 
             {
-                return 'RegKeyPathRedirect: {0}' -f $policy.RegKeyPathRedirect
+                $outObj.RedirectionPath = 'RegKeyPathRedirect: {0}' -f $policy.RegKeyPathRedirect
             }
 
             # If the policy has a translationDllPath, return it
             if(-not ([string]::IsNullOrEmpty($policy.translationDllPath)))
             {
-                return 'TranslationDllPath: {0}' -f $policy.translationDllPath
+                $outObj.RedirectionPath = 'TranslationDllPath: {0}' -f $policy.translationDllPath
             }
 
             # If the policy has a grouppolicyPath, return it
             if(-not ([string]::IsNullOrEmpty($policy.grouppolicyPath)))
             {
-                return 'GroupPolicyPath: {0}' -f $policy.grouppolicyPath
+                $outObj.RedirectionPath = 'GroupPolicyPath: {0}' -f $policy.grouppolicyPath
             }   
 
             # precheckDllPath
             if(-not ([string]::IsNullOrEmpty($policy.precheckDllPath)))
             {
-                return 'PrecheckDllPath: {0}' -f $policy.precheckDllPath
+                $outObj.RedirectionPath = 'PrecheckDllPath: {0}' -f $policy.precheckDllPath
             }
 
             # GPBlockingRegKeyPath
             if(-not ([string]::IsNullOrEmpty($policy.GPBlockingRegKeyPath)))
             {
-                return 'GPBlockingRegKeyPath: {0}' -f $policy.GPBlockingRegKeyPath
+                $outObj.RedirectionPath = 'GPBlockingRegKeyPath: {0}' -f $policy.GPBlockingRegKeyPath
             }
-
-            # If no metadata is found, return null
-            return 'Unknown'
         }
     }
-    return $null
+    return $outObj
 }
 #endregion
 
@@ -847,12 +838,12 @@ Function Get-DeviceAndUserHTMLTables
 
             $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
             $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
-            $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 200px;'></td></tr>"
-            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th class='setting-col'>Setting 🛠️</th><th>Value</th><th style='width: 200px;'>WinningProvider</th></tr>"
+            $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 150px;'></td><td style='width: 200px;'></td></tr>"
+            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 400px;'>Setting ⚙️</th><th>Value</th><th style='width: 150px;'>DefaultValue</th><th style='width: 200px;'>WinningProvider</th></tr>"
 
             foreach ($settings in $policy.Settings) 
             {
-                $settingspath = 'Path or DLL of the setting: "{0}"' -f $settings.Metadata
+                $settingspath = 'Path or DLL of the setting: "{0}"' -f $settings.Metadata.RedirectionPath
 
                 if ($settings.WinningProvider -eq 'Not set' -or [string]::IsNullOrEmpty($settings.WinningProvider)) 
                 {
@@ -879,7 +870,8 @@ Function Get-DeviceAndUserHTMLTables
                 #$value = Format-StringToXml -XmlString $settings.Value
                 # Escape HTML characters in the value to prevent out html from breaking
                 $value = Invoke-EscapeHtmlText -Text ($settings.Value)
-                $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td><td style='width: 200px;'>$winningProviderString</td></tr>"
+                $defaultValue = $settings.Metadata.DefaultValue
+                $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td><td style='width: 150px;'>$defaultValue</td><td style='width: 200px;'>$winningProviderString</td></tr>"
             }
 
             $htmlBody += "</table>"
@@ -1071,16 +1063,16 @@ Function Get-DeviceInfoHTMLTables
     # If the DeviceName is empty or null, set it to 'Unknown'
     if ([string]::IsNullOrEmpty($deviceInfoData.group[0].DeviceName)) 
     {
-        $areaTitleString = 'ℹ️ Device Info: Unknown'
+        $areaTitleString = 'Unknown'
     }
     else 
     {
-        $areaTitleString = 'ℹ️ Device Info: {0}' -f $deviceInfoData.group[0].DeviceName
+        $areaTitleString = $deviceInfoData.group[0].DeviceName
     }
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
-    $htmlBody += "<h2><span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<h2>ℹ️ DeviceName: <span class='policy-area-title'>$areaTitleString</span></h2>"
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
@@ -1170,8 +1162,7 @@ $htmlHeader = @"
             text-align: left;
             font-size: 13px; 
         }
-
-        th.setting-col, td.setting-col { width: 150px; }
+       
         th { background-color: #f2f2f2; text-align: left; }
         tr:nth-child(even) { background-color: #f9f9f9; }
 
@@ -1319,4 +1310,7 @@ Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -T
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
+
+
+
 
