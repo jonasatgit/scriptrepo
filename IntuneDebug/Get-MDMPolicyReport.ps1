@@ -54,28 +54,62 @@ Function Get-IntunePoliyLAPSData
     param 
     (
         [Parameter(Mandatory = $true)]
-        [string]$HtmlReportPath
+        $MDMData
     )
 
-    if (-not (Test-Path -Path $HtmlReportPath)) 
+    $LAPSData = $MDMData.MDMEnterpriseDiagnosticsReport.LAPS
+
+    if ([string]::IsNullOrEmpty($LAPSData.Laps_CSP_Policy)) 
     {
-        # Lets thest for a different file name
-        # This might be the case if the report was generated with the settings app or the MDM Diagnostics Tool with differnt parameters
-        # MDMDiagHTMLReport.html
-        $HtmlReportPath = $HtmlReportPath -replace 'MDMDiagReport\.html', 'MDMDiagHTMLReport.html'
+        Write-Host "No LAPS data found in the report." -ForegroundColor Yellow
     }
+    else 
+    {
 
-    $htmlFile = Get-Content -Path $HtmlReportPath -Raw -ErrorAction SilentlyContinue
+        $selectedLapsData = $LAPSData.Laps_CSP_Policy | Select-Object -Property `
+            BackupDirectory, PasswordAgeDays, AutomaticAccountManagementEnabled, `
+            AutomaticAccountManagementNameOrPrefix, AutomaticAccountManagementEnableAccount, `
+            AutomaticAccountManagementTarget, AutomaticAccountManagementRandomizeName, `
+            PasswordComplexity, PostAuthenticationActions, PasswordLength, PostAuthenticationResetDelay
+        
+        $selectedLapsData | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'LAPS' -Force
 
-    $tablePattern = '<table aria-label="Local Administrator Password Solution.*?<\/table>'
 
-    $tableMatches = [regex]::Matches($htmlFile, $tablePattern, 'Singleline')
+        if (-NOT [string]::IsNullOrEmpty($LAPSData.Laps_Local_State)) 
+        {
 
-    return $tableMatches.Value
+            $lapsLocalState = $LAPSData.Laps_Local_State | Select-Object -Property `
+                LastAccountRidUpdated, DSRMMode, LastManagedAccountRid, `
+                LastManagedAccountNameOrPrefix, LastManagedAccountRandomizeName, `
+                LastPasswordUpdateTime, AzurePasswordExpiryTime, PostAuthResetDeadline, `
+                PostAuthResetAuthenticationTime, PostAuthResetAccountSid, PostAuthResetRetryCount, PostAuthActions
 
+            foreach ($property in $lapsLocalState.PSObject.Properties) 
+            {
+                $propertyValue = $property.Value
+                if ($property.Name -in ('LastPasswordUpdateTime', 'AzurePasswordExpiryTime', 'PostAuthResetDeadline', 'PostAuthResetAuthenticationTime')) 
+                {
+                    # Convert the FileTime to a DateTime object
+                    try 
+                    {
+                        $propertyValue = Convert-FileTimeToDateTime -FileTime $property.Value
+                    }
+                    catch 
+                    {
+                        Write-Host "Failed to convert $($property.Name) for LAPS Local State. Error: $_"
+                    }
+                }
+
+                # Add the PolicyScope property to the lapsLocalState object
+                $selectedLapsData | Add-Member -MemberType NoteProperty -Name $property.Name -Value $propertyValue -Force
+            }
+            
+        }
+
+        return $selectedLapsData        
+    }
 }
 #endregion
-
 
 
 #region Function ConvertTo-HTMLTableFromArray 
@@ -1302,6 +1336,8 @@ Function Get-DeviceInfoHTMLTables
     {
         # $($device.DeviceName)</h2>"
         $htmlBody += "<table>"
+        $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 300px;'>Property ⚙️</th><th>Value</th></tr>"
+
         foreach ($property in ($device.PSObject.Properties)) 
         {
             #skip properties that are not relevant for the report
@@ -1319,6 +1355,52 @@ Function Get-DeviceInfoHTMLTables
     $htmlBody += "</div>"  # Close group-container
     return $htmlBody
 }
+#endregion
+
+#region Get-DeviceInfoHTMLTables
+Function Get-LAPSHTMLTables
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$GroupedPolicies
+    )
+
+    $htmlBody = ""
+
+    $infoData = $GroupedPolicies.Where({ $_.Name -eq 'LAPS' }) 
+
+    # Set the area title string based on the DeviceName
+    # If the DeviceName is empty or null, set it to 'Unknown'
+    $areaTitleString = "🔑 Local Admin Password Solution (LAPS)"
+
+    $htmlBody = ""
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    foreach ($item in $infoData.group) 
+    {
+        $htmlBody += "<table>"
+        $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 300px;'>Setting ⚙️</th><th>Value</th></tr>"
+        foreach ($property in ($item.PSObject.Properties)) 
+        {
+            #skip properties that are not relevant for the report
+            if ($property.Name -in @('PolicyScope')) 
+            {
+                continue
+            }
+            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($property.Value)</td></tr>"
+        }
+        $htmlBody += "</table>"
+        $htmlBody += "<br>"
+    }
+
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
+    return $htmlBody
+}
+#endregion
 
 
 #region Convert-IntunePoliciesToHtml
@@ -1450,9 +1532,9 @@ $htmlHeader = @"
 
     $htmlBody += Get-ResourceHTMLTables -GroupedPolicies $grouped
 
-    $htmlBody += Get-IntuneWin32AppTables
+    $htmlBody += Get-LAPSHTMLTables -GroupedPolicies $grouped 
 
-    #$htmlBody += Get-IntunePoliyLAPSData -HtmlReportPath $script:MDMDiagHTMLReportPathVariable
+    $htmlBody += Get-IntuneWin32AppTables
 
     $fullHtml = $htmlHeader + $htmlBody + $htmlFooter
 
@@ -1530,6 +1612,10 @@ Get-IntuneResourcePolicies -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Obje
     $IntunePolicyList.Add($_)
 }
 
+Get-IntunePoliyLAPSData -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object {
+    $IntunePolicyList.Add($_)
+}
+
 # name of the file to save the HTML report
 $outFile = '{0}\IntunePolicyReport.html' -f (Split-Path -Path $MDMDiagReportHTMLPath -Parent)
 
@@ -1538,8 +1624,6 @@ Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -T
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
-
-
 
 
 
