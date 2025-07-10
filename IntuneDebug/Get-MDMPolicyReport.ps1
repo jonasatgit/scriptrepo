@@ -1462,6 +1462,15 @@ function Convert-IntunePoliciesToHtml {
         [string]$Title = "Intune Policy Report"
     )
 
+    if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable)) 
+    {
+        $headerSubText = "Generated locally for $($env:COMPUTERNAME) on: 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    }
+    else 
+    {
+        $headerSubText = "Generated from captured MDM Diagnostics Report on: 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    }
+
 $htmlHeader = @"
 <!DOCTYPE html>
 <html>
@@ -1561,10 +1570,11 @@ $htmlHeader = @"
 </head>
 <body>
     <h1>$Title ⚙️</h1>
-    <p>Generated on: 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+    <p>$headerSubText</p>
     <p>This report contains detailed information about Intune policies applied to devices and users.</p>
     <button class='toggle-button' onclick='toggleAll()' id='toggleAllBtn'>Collapse All</button>
 "@
+
 
     $htmlFooter = "</body></html>"
     $htmlBody = ""
