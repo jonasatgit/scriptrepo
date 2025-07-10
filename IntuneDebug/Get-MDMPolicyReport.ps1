@@ -704,12 +704,21 @@ function Get-IntuneResourcePolicies
                     continue
                 }
 
+                # Settings $matches to null to avoid issues with previous matches
+                $matches = $null
+                $tmpResourceType = 'Unknown'
+                if ($resource -match "Vendor/[^/]+/([^/]+)") 
+                {
+                    $tmpResourceType = $matches[1]
+                }
+
                 $outObj = [pscustomobject]@{
                     PolicyScope = 'Resource'
                     EnrollmentId = $enrollmentID
                     ProviderID = (Get-EnrollmentIDData -EnrollmentId $enrollmentID -MDMData $MDMData).ProviderID
                     ResourceTarget = $resourceTarget
-                    ResourceName = $resource                    
+                    ResourceName = $resource
+                    ResourceType = $tmpResourceType                
                 }
                 $outList.Add($outObj)
             }
@@ -1229,7 +1238,8 @@ Function Get-ResourceHTMLTables
     $userInfoHash = Get-LocalUserInfo
 
     $resourcePolicies = $GroupedPolicies.Where({ $_.Name -eq 'Resource' }) 
-    $groupedResources = $resourcePolicies.group | Group-Object -Property EnrollmentId, ResourceTarget
+    #$groupedResources = $resourcePolicies.group | Group-Object -Property EnrollmentId, ResourceTarget
+    $groupedResources = $resourcePolicies.group | Group-Object -Property ResourceType, EnrollmentId 
     
     $areaTitleString = '🌐 Resources'
 
@@ -1240,45 +1250,50 @@ Function Get-ResourceHTMLTables
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
     $htmlBody += "<div class='collapsible-content'>"
 
-    foreach ($resourceEntry in $groupedResources) 
+    foreach ($resourceEntry in ($groupedResources | Sort-Object -Property Name -Descending)) 
     {
-        # Split the EnrollmentId and ResourceTarget from a single string
-        # The format is "EnrollmentId, ResourceTarget"
-        $tmpSplitVar = $resourceEntry.Name -split ','
+        # Split the ResourceType, EnrollmentId from a single string
+        # The format is "EResourceType, EnrollmentId"
+        $tmpSplitVar = $resourceEntry.Name -split ',' # 0 = ResourceType, 1 = EnrollmentId
 
-        $resourceTargetString = if($tmpSplitVar[1].ToString().Trim() -ieq 'Device') 
-        { 
+        $tmpResourceType = $tmpSplitVar[0].ToString().Trim()
+        $tmpEnrollmentId = $tmpSplitVar[1].ToString().Trim()
+        $enrollmentIdString = '{0} ➡️ {1}' -f $tmpEnrollmentId, ($resourceEntry.Group[0].ProviderID)
 
-            '💻 Device'
-        } 
-        else 
-        { 
-            $userName = $userInfoHash[$tmpSplitVar[1].ToString().Trim()]
-            if ([string]::IsNullOrEmpty($userName))
-            {
-                '👤 {0} - Unknown' -f ($tmpSplitVar[1].ToString().Trim())
-            }
-            else
-            {
-                '👤 {0} - {1}' -f ($tmpSplitVar[1].ToString().Trim()), $userName
-            }
-        }
+        $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
+        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+        $htmlBody += "<tr><td style='font-weight: bold; width: 500px;'>EnrollmentId</td><td>$($enrollmentIdString)</td></tr>"
+        $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 500px;'>ResourceTarget ⚙️</th><th>Resource</th></tr>"
 
-        $enrollmentIdString = '{0} ➡️ {1}' -f ($tmpSplitVar[0].ToString().Trim()), $resourceEntry.Group[0].ProviderID
-
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
-        $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td  style='font-weight: bold;'>$($enrollmentIdString)</td></tr>"
-        $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>ResourceTarget</td><td  style='font-weight: bold;'>$($resourceTargetString)</td></tr>"
-
-        foreach ($resource in $resourceEntry.Group)  
+        foreach ($resource in $resourceEntry.Group) 
         {
-            # we need to escape the resource name to prevent the resource name from breaking our HTML
-            $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
-            $htmlBody += "<tr><td></td><td>$resourceName</td></tr>"
-        }
+            
+            if ($resource.ResourceTarget -eq 'Device') 
+            {
+                $resourceTargetString = '💻 Device'
+            } 
+            else 
+            {
+                $userName = $userInfoHash[$resource.ResourceTarget]
+                if ([string]::IsNullOrEmpty($userName))
+                {
+                    $resourceTargetString = '👤 {0} - Unknown' -f ($resource.ResourceTarget)
+                }
+                else
+                {
+                    $resourceTargetString = '👤 {0} - {1}' -f ($resource.ResourceTarget), $userName
+                }
+            }
 
+            # Escape the resource name to prevent the resource name from breaking our HTML
+            $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
+            #$htmlBody += "<h2 class='policy-area-title'>Resource: $($tmpResourceType)</h2>"
+            $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td><td>$resourceName</td></tr>"
+        }
+        
         $htmlBody += "</table>"
         $htmlBody += "<br>"
+
     }
     $htmlBody += "</div>"  # Close collapsible-content
     $htmlBody += "</div>"  # Close group-container
