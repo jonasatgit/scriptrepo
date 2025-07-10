@@ -688,6 +688,7 @@ function Get-IntuneResourcePolicies
         $MDMData
     )
 
+
     $outList = [System.Collections.Generic.List[pscustomobject]]::new()
     foreach ($enrollment in $MDMData.MDMEnterpriseDiagnosticsReport.Resources.Enrollment)
     {
@@ -710,6 +711,45 @@ function Get-IntuneResourcePolicies
                 if ($resource -match "Vendor/[^/]+/([^/]+)") 
                 {
                     $tmpResourceType = $matches[1]
+                }
+
+                # running locally?
+                $tmpSubject = ''
+                if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable)) 
+                {
+                    
+                    switch -Regex ($resource) {
+                        '^\.\/device\/' { $tmpPathType = 'LocalMachine'; break }
+                        '^\.\/user\/'   { $tmpPathType = 'CurrentUser'; break }
+                        default         { $tmpPathType = 'LocalMachine' }
+                    }
+
+
+                    switch -Regex ($resource) 
+                    {
+                        'RootCATrustedCertificates\/Root' 
+                        {
+                            $certPath = "Cert:\$tmpPathType\Root"
+                        }
+
+                        'RootCATrustedCertificates\/CA'
+                        {
+                            $certPath = "Cert:\$tmpPathType\CA"
+                        }
+                        # TrustedPublisher
+                        'RootCATrustedCertificates\/TrustedPublisher' 
+                        {
+                            $certPath = "Cert:\$tmpPathType\TrustedPublisher"
+                        }
+                    }
+
+
+                    $tmpThumbprint = $resource | Split-Path -Leaf -ErrorAction SilentlyContinue
+                    [array]$cert = Get-Item -Path "$certPath\$tmpThumbprint" -ErrorAction SilentlyContinue 
+                    if ($cert) 
+                    {
+                        $resource = '{0} ➡️ {1}' -f $resource,  ($cert.Subject -replace '^.*CN=([^,]+),.*$', '$1' -replace '^CN=')
+                    }
                 }
 
                 $outObj = [pscustomobject]@{
@@ -1110,11 +1150,13 @@ Function Get-DeviceAndUserHTMLTables
         }
         
         $htmlBody += "<div class='group-container'>"
+        $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+        $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
         $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
-        $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
-        $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+        $htmlBody += "</div>"
+        $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
         $htmlBody += "<div class='collapsible-content'>"
-
+        
         $i = 0
         foreach ($policy in ($group.Group | Sort-Object -Property PolicyAreaName)) 
         {
@@ -1164,6 +1206,7 @@ Function Get-DeviceAndUserHTMLTables
             $htmlBody += "</table>"
             #$htmlBody += "</div>"  # Close settings-container div
             $i++
+            
         }
         $htmlBody += "</div>"  # Close collapsible-content
         $htmlBody += "</div>"  # Close group-container
@@ -1189,10 +1232,13 @@ function Get-EnterpriseApplicationHTMLTables
     $areaTitleString = '📦 EnterpriseDesktopAppManagement'
     $statString = "TotalAppPolicies: {0}" -f $enterpriseAppGroup.Group.Count
 
+    $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
-    $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "</div>"
+    $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
     foreach ($app in $enterpriseAppGroup.Group)
@@ -1242,12 +1288,15 @@ Function Get-ResourceHTMLTables
     $groupedResources = $resourcePolicies.group | Group-Object -Property ResourceType, EnrollmentId 
     
     $areaTitleString = '🌐 Resources'
+    $statString = "TotalResources: {0}" -f $groupedResources.Group.Count
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
-    $htmlBody += "<p Style='font-size: 13px;'>TotalResources: {0}</p>" -f $groupedResources.group.Count
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "</div>"
+    $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
     foreach ($resourceEntry in ($groupedResources | Sort-Object -Property Name -Descending)) 
@@ -1287,7 +1336,6 @@ Function Get-ResourceHTMLTables
 
             # Escape the resource name to prevent the resource name from breaking our HTML
             $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
-            #$htmlBody += "<h2 class='policy-area-title'>Resource: $($tmpResourceType)</h2>"
             $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td><td>$resourceName</td></tr>"
         }
         
@@ -1314,9 +1362,11 @@ Function Get-IntuneWin32AppTables
 
     $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
-    $htmlBody += "<p Style='font-size: 13px;'>$statString</p>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "</div>"
+    $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
     #$excludedProperties = @('DetectionRule', 'ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
@@ -1388,15 +1438,16 @@ Function Get-DeviceInfoHTMLTables
         $areaTitleString = "💻 $($deviceInfoData.group[0].DeviceName)"
     }
 
-    $htmlBody = ""
     $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>DeviceInfo: <span class='policy-area-title'>$areaTitleString</span></h2>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "</div>"
+    #$htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
     foreach ($device in $deviceInfoData.group) 
     {
-        # $($device.DeviceName)</h2>"
         $htmlBody += "<table>"
         $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 300px;'>Property ⚙️</th><th>Value</th></tr>"
 
@@ -1427,19 +1478,28 @@ Function Get-LAPSHTMLTables
         [array]$GroupedPolicies
     )
 
-    $htmlBody = ""
-
     $infoData = $GroupedPolicies.Where({ $_.Name -eq 'LAPS' }) 
 
-    # Set the area title string based on the DeviceName
-    # If the DeviceName is empty or null, set it to 'Unknown'
     $areaTitleString = "🔑 Local Admin Password Solution (LAPS)"
 
-    $htmlBody = ""
+    if ($infoData) 
+    {
+        $statString = "LAPS policy: 1"
+    }
+    else 
+    {
+        $statString = "LAPS policy: 0"
+    }
+    
+    $htmlBody = "" 
     $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
-    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide Details</button>"
+    $htmlBody += "</div>"
+    $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
+    
 
     foreach ($item in $infoData.group) 
     {
@@ -1505,6 +1565,9 @@ $htmlHeader = @"
             margin-bottom: 10px;
             cursor: pointer;
             border-radius: 4px;
+            width: 90px;           /* Fixed width for consistent size */
+            text-align: center;     /* Center the text */
+            box-sizing: border-box; /* Ensure padding is included in width */
         }
 
         .collapsible-content {
@@ -1550,31 +1613,35 @@ $htmlHeader = @"
         }
     </style>
     <script>
+        
         function toggleContent(button) {
-            const content = button.nextElementSibling;
+            // Find the closest .group-container
+            const groupContainer = button.closest('.group-container');
+            // Find the .collapsible-content inside this container
+            const content = groupContainer.querySelector('.collapsible-content');
             const isVisible = window.getComputedStyle(content).display !== "none";
 
             if (isVisible) {
                 content.style.display = "none";
-                button.textContent = "Show Details";
+                button.textContent = "Show";
             } else {
                 content.style.display = "block";
-                button.textContent = "Hide Details";
+                button.textContent = "Hide";
             }
         }
 
 
         function toggleAll() {
-        const contents = document.querySelectorAll('.collapsible-content');
-        const buttons = document.querySelectorAll('.toggle-button:not(#toggleAllBtn)');
-        const toggleAllBtn = document.getElementById('toggleAllBtn');
-        const shouldCollapse = toggleAllBtn.textContent === 'Collapse All';
+            const contents = document.querySelectorAll('.collapsible-content');
+            const buttons = document.querySelectorAll('.toggle-button:not(#toggleAllBtn)');
+            const toggleAllBtn = document.getElementById('toggleAllBtn');
+            const shouldCollapse = toggleAllBtn.textContent === 'Collapse All';
 
-        contents.forEach((content, index) => {
-                content.style.display = shouldCollapse ? 'none' : 'block';
-            if (buttons[index]) {
-            buttons[index].textContent = shouldCollapse ? 'Show Details' : 'Hide Details';
-        }
+            contents.forEach((content, index) => {
+                    content.style.display = shouldCollapse ? 'none' : 'block';
+                if (buttons[index]) {
+                buttons[index].textContent = shouldCollapse ? 'Show' : 'Hide';
+            }
         });
 
         toggleAllBtn.textContent = shouldCollapse ? 'Expand All' : 'Collapse All';
