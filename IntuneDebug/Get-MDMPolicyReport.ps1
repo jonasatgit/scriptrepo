@@ -1464,7 +1464,7 @@ function Convert-IntunePoliciesToHtml {
 
     if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable)) 
     {
-        $headerSubText = "Generated locally for $($env:COMPUTERNAME) on: 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        $headerSubText = "Generated locally running on $($env:COMPUTERNAME) on: 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     }
     else 
     {
