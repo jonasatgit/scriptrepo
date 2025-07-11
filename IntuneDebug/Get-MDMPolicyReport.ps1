@@ -108,7 +108,7 @@ Function Get-IntunePoliyLAPSData
 
     if ([string]::IsNullOrEmpty($LAPSData.Laps_CSP_Policy)) 
     {
-        Write-Host "No LAPS data found in the report." -ForegroundColor Yellow
+        #Write-Host "No LAPS data found in the report." -ForegroundColor Yellow
     }
     else 
     {
@@ -557,7 +557,11 @@ function Get-IntuneWin32AppPolicies
     # check if the script is running with administrative privileges
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
     {
-        Write-Host "Run the script as administrator locally to get a more detailed Win32App report" -ForegroundColor Yellow
+        if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable))
+        {
+            # The message does only makes sense if the script is run locally without the MDMDiagReportPath parameter
+            Write-Host "To get a more detailed Win32App report run the script with administrative permissions" -ForegroundColor Yellow
+        }
     }
     else
     {
@@ -700,12 +704,14 @@ function Get-IntuneResourcePolicies
             #$scope.ChildNodes.'#Text'
             foreach ($resource in $scope.Resources.ChildNodes.'#Text')
             {
+                # Setting $matches to null to avoid issues with previous matches
+                $matches = $null
                 if (($resource -match '^\d+$') -or ($resource -match '^default$'))
                 {
                     continue
                 }
 
-                # Settings $matches to null to avoid issues with previous matches
+                # Setting $matches to null to avoid issues with previous matches
                 $matches = $null
                 $tmpResourceType = 'Unknown'
                 if ($resource -match "Vendor/[^/]+/([^/]+)") 
@@ -713,52 +719,96 @@ function Get-IntuneResourcePolicies
                     $tmpResourceType = $matches[1]
                 }
 
+                $tmpCertObj = [pscustomobject]@{
+                    CertStore = $null
+                    Issuer = $null
+                    IssuedTo = $null
+                    Thumbprint = $null
+                    ValidFrom = $null
+                    ValidTo = $null
+                    ExpireDays = $null
+                }
+
                 # running locally?
                 $tmpSubject = ''
-                if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable)) 
+ 
+                $boolCertResource = $false
+                switch -Regex ($resource) 
                 {
-                    
-                    switch -Regex ($resource) {
+                    'RootCATrustedCertificates\/Root' 
+                    {
+                        $certPath = "Cert:\{0}\Root\{1}"
+                        $certStoreName = 'Root CA'
+                        $boolCertResource = $true
+                    }
+
+                    'RootCATrustedCertificates\/CA'
+                    {
+                        $certPath = "Cert:\{0}\CA\{1}"
+                        $certStoreName = 'Intermediate CA'
+                        $boolCertResource = $true
+                    }
+                    'RootCATrustedCertificates\/TrustedPublisher' 
+                    {
+                        $certPath = "Cert:\{0}\TrustedPublisher\{1}"
+                        $certStoreName = 'Trusted Publisher'
+                        $boolCertResource = $true
+                    }
+                }
+
+                if($boolCertResource)
+                {
+                    # Determine the certificate store type based on the resource path
+                    switch -Regex ($resource) 
+                    {
                         '^\.\/device\/' { $tmpPathType = 'LocalMachine'; break }
                         '^\.\/user\/'   { $tmpPathType = 'CurrentUser'; break }
                         default         { $tmpPathType = 'LocalMachine' }
                     }
-
-
-                    switch -Regex ($resource) 
-                    {
-                        'RootCATrustedCertificates\/Root' 
-                        {
-                            $certPath = "Cert:\$tmpPathType\Root"
-                        }
-
-                        'RootCATrustedCertificates\/CA'
-                        {
-                            $certPath = "Cert:\$tmpPathType\CA"
-                        }
-                        # TrustedPublisher
-                        'RootCATrustedCertificates\/TrustedPublisher' 
-                        {
-                            $certPath = "Cert:\$tmpPathType\TrustedPublisher"
-                        }
-                    }
-
-
+                
+                    # Lets get the certificate details by thumbprint
                     $tmpThumbprint = $resource | Split-Path -Leaf -ErrorAction SilentlyContinue
-                    [array]$cert = Get-Item -Path "$certPath\$tmpThumbprint" -ErrorAction SilentlyContinue 
+                    # Addind the middle part to the path string at the thumbprint at the end
+                    $certPath = $certPath -f $tmpPathType, $tmpThumbprint
+
+                    if (Test-Path $certPath) 
+                    {
+                        # Looking for a cert locally
+                        [array]$cert = Get-Item -Path "$certPath" -ErrorAction SilentlyContinue
+                    }
                     if ($cert) 
                     {
                         $resource = '{0} ➡️ {1}' -f $resource,  ($cert.Subject -replace '^.*CN=([^,]+),.*$', '$1' -replace '^CN=')
+                        $tmpCertObj.CertStore = $certStoreName
+                        $tmpCertObj.IssuedTo = ($cert.Subject -replace '^.*CN=([^,]+),.*$', '$1' -replace '^CN=')
+                        $tmpCertObj.Issuer = $cert.Issuer -replace '^CN='
+                        $tmpCertObj.Thumbprint = $tmpThumbprint
+                        $tmpCertObj.ValidFrom = $cert.NotBefore.ToString("yyyy-MM-dd HH:mm:ss")
+                        $tmpCertObj.ValidTo = $cert.NotAfter.ToString("yyyy-MM-dd HH:mm:ss")
+                        $tmpCertObj.ExpireDays = try{[math]::Round(($cert.NotAfter - (Get-Date)).TotalDays, 2)} catch { 'N/A' }
+                    }
+                    else 
+                    {
+                        $resource = '{0} ➡️ {1}' -f $resource,  ($cert.Subject -replace '^.*CN=([^,]+),.*$', '$1' -replace '^CN=')
+                        $tmpCertObj.CertStore = $certStoreName
+                        $tmpCertObj.IssuedTo = $null
+                        $tmpCertObj.Issuer = $null
+                        $tmpCertObj.Thumbprint = $tmpThumbprint
+                        $tmpCertObj.ValidFrom = $null
+                        $tmpCertObj.ValidTo = $null
+                        $tmpCertObj.ExpireDays = $null                  
                     }
                 }
-
+                
+                # Putting it all together
                 $outObj = [pscustomobject]@{
                     PolicyScope = 'Resource'
                     EnrollmentId = $enrollmentID
                     ProviderID = (Get-EnrollmentIDData -EnrollmentId $enrollmentID -MDMData $MDMData).ProviderID
                     ResourceTarget = $resourceTarget
                     ResourceName = $resource
-                    ResourceType = $tmpResourceType                
+                    ResourceType = $tmpResourceType    
+                    ResourceData = if($boolCertResource){$tmpCertObj}else{$null}
                 }
                 $outList.Add($outObj)
             }
@@ -1284,7 +1334,6 @@ Function Get-ResourceHTMLTables
     $userInfoHash = Get-LocalUserInfo
 
     $resourcePolicies = $GroupedPolicies.Where({ $_.Name -eq 'Resource' }) 
-    #$groupedResources = $resourcePolicies.group | Group-Object -Property EnrollmentId, ResourceTarget
     $groupedResources = $resourcePolicies.group | Group-Object -Property ResourceType, EnrollmentId 
     
     $areaTitleString = '🌐 Resources'
@@ -1308,11 +1357,20 @@ Function Get-ResourceHTMLTables
         $tmpResourceType = $tmpSplitVar[0].ToString().Trim()
         $tmpEnrollmentId = $tmpSplitVar[1].ToString().Trim()
         $enrollmentIdString = '{0} ➡️ {1}' -f $tmpEnrollmentId, ($resourceEntry.Group[0].ProviderID)
-
-        $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
-        $htmlBody += "<tr><td style='font-weight: bold; width: 500px;'>EnrollmentId</td><td>$($enrollmentIdString)</td></tr>"
-        $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 500px;'>ResourceTarget ⚙️</th><th>Resource</th></tr>"
+        if ($tmpResourceType -eq 'RootCATrustedCertificates')
+        {
+            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
+            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+            $htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='5'>$($enrollmentIdString)</td></tr>"
+            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold;'>ResourceTarget ⚙️</th><th>CertStore</th><th>Thumbprint</th><th>IssuedTo</th><th>Issuer</th><th>ExpiresIn</th></tr>"
+        }
+        else 
+        {
+            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
+            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+            $htmlBody += "<tr><td style='font-weight: bold; width: 500px;'>EnrollmentId</td><td>$($enrollmentIdString)</td></tr>"
+            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 500px;'>ResourceTarget ⚙️</th><th>Resource</th></tr>"
+        }
 
         foreach ($resource in $resourceEntry.Group) 
         {
@@ -1334,9 +1392,24 @@ Function Get-ResourceHTMLTables
                 }
             }
 
-            # Escape the resource name to prevent the resource name from breaking our HTML
-            $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
-            $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td><td>$resourceName</td></tr>"
+            # If the resource is a certificate, we need to display the certificate details
+            if ($tmpResourceType -eq 'RootCATrustedCertificates')
+            {
+                $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td>"
+                $htmlBody += "<td>$($resource.ResourceData.CertStore)</td>"
+                $htmlBody += "<td>$($resource.ResourceData.Thumbprint)</td>"
+                $htmlBody += "<td>$($resource.ResourceData.IssuedTo)</td>"
+                $htmlBody += "<td>$($resource.ResourceData.Issuer)</td>"
+                $htmlBody += "<td>$($resource.ResourceData.ExpireDays)</td>"
+                $htmlBody += "</tr>"
+
+            }
+            else 
+            {
+                # Escape the resource name to prevent the resource name from breaking our HTML
+                $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
+                $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td><td>$resourceName</td></tr>"
+            }
         }
         
         $htmlBody += "</table>"
@@ -1396,7 +1469,6 @@ Function Get-IntuneWin32AppTables
                         $propertyValue = $property.Value
                     }
                 }
-
             }
             else 
             {
@@ -1763,5 +1835,4 @@ Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -T
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
-
 
