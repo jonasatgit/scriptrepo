@@ -93,6 +93,7 @@ function Get-CertificateDetailsByThumbprint
 }
 #endregion
 
+
 #region Function Get-IntunePoliyLAPSData
 Function Get-IntunePoliyLAPSData
 {
@@ -293,7 +294,8 @@ function Get-MSIProductCodesWithNames {
     }
     return $results
 }
-#region
+#endregion
+
 
 #region Get-IntunePolicyDataFromXML
 Function Get-IntunePolicyDataFromXML
@@ -542,6 +544,7 @@ Function Get-IntuneDeviceAndUserPolicies
 }
 #endregion
 
+
 #region Get-IntuneWin32AppPolicies
 function Get-IntuneWin32AppPolicies
 {
@@ -681,7 +684,6 @@ function Get-LocalUserInfo
 #endregion
 
 
-
 #region Get-IntuneResourcePolicies
 function Get-IntuneResourcePolicies
 {
@@ -819,6 +821,7 @@ function Get-IntuneResourcePolicies
 }
 #endregion
 
+
 #region Convert-FileTimeToDateTime 
 function Convert-FileTimeToDateTime 
 {
@@ -841,6 +844,7 @@ function Convert-FileTimeToDateTime
     return $datetime.ToString("yyyy-MM-dd HH:mm:ss")
 }
 #endregion
+
 
 #region Get-IntuneMSIPolicies
 Function Get-IntuneMSIPolicies
@@ -953,6 +957,7 @@ Function Get-IntuneMSIPolicies
 }
 #endregion
 
+
 #region Get-IntunePolicyCurrentData
 Function Get-IntunePolicyCurrentData
 {
@@ -979,7 +984,8 @@ Function Get-IntunePolicyCurrentData
 
     return $resultObj
 }
-#edregion
+#endregion
+
 
 #region Get-IntunePolicyMetadata
 function Get-IntunePolicyMetadata
@@ -1057,6 +1063,7 @@ function Get-IntunePolicyMetadata
 }
 #endregion
 
+
 #region Get-EnrollmentIDData
 function Get-EnrollmentIDData
 {
@@ -1116,6 +1123,7 @@ function Get-EnrollmentIDData
 }
 #endregion
 
+
 #region Get-EnrollmentProviderIDs
 function Get-EnrollmentProviderIDs
 {
@@ -1153,6 +1161,7 @@ function Get-EnrollmentProviderIDs
 }
 #endregion
 
+
 #region Invoke-EscapeHtmlText
 function Invoke-EscapeHtmlText 
 {
@@ -1164,6 +1173,7 @@ function Invoke-EscapeHtmlText
                    -replace "'", '&#39;'
 }
 #endregion
+
 
 #region Get-DeviceAndUserHTMLTables
 Function Get-DeviceAndUserHTMLTables
@@ -1266,6 +1276,7 @@ Function Get-DeviceAndUserHTMLTables
 }
 #endregion
 
+
 #region Get-EnterpriseApplicationHTMLTables
 function Get-EnterpriseApplicationHTMLTables 
 {
@@ -1319,6 +1330,7 @@ function Get-EnterpriseApplicationHTMLTables
     return $htmlBody
 }
 #endregion
+
 
 #region Get-ResourceHTMLTables
 Function Get-ResourceHTMLTables
@@ -1420,7 +1432,7 @@ Function Get-ResourceHTMLTables
     $htmlBody += "</div>"  # Close group-container
     return $htmlBody
 }
-#enregion
+#endregion
 
 
 #region Get-IntuneWin32AppTables
@@ -1487,6 +1499,7 @@ Function Get-IntuneWin32AppTables
 }
 #endregion
 
+
 #region Get-DeviceInfoHTMLTables
 Function Get-DeviceInfoHTMLTables
 {
@@ -1541,6 +1554,7 @@ Function Get-DeviceInfoHTMLTables
     return $htmlBody
 }
 #endregion
+
 
 #region Get-DeviceInfoHTMLTables
 Function Get-LAPSHTMLTables
