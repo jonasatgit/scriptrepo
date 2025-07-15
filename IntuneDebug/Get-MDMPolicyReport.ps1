@@ -35,7 +35,7 @@
 
 #>
 
-[CmdletBinding()]
+#[CmdletBinding()]
 param 
 (
     [Parameter(Mandatory = $false)]
@@ -94,7 +94,7 @@ function Get-CertificateDetailsByThumbprint
 #endregion
 
 
-#region Function Get-IntunePoliyLAPSData
+#region Get-IntunePoliyLAPSData
 Function Get-IntunePoliyLAPSData
 {
 
@@ -160,7 +160,7 @@ Function Get-IntunePoliyLAPSData
 #endregion
 
 
-#region Function ConvertTo-HTMLTableFromArray 
+#region ConvertTo-HTMLTableFromArray 
 Function ConvertTo-HTMLTableFromArray 
 {
     [CmdletBinding()]
@@ -263,7 +263,7 @@ Function Invoke-IntuneReportDataCleanup
 #endregion
 
 
-#region function get-MSIProductCodesWithNames
+#region Get-MSIProductCodesWithNames
 function Get-MSIProductCodesWithNames {
     $results = @()
 
@@ -442,7 +442,7 @@ Function Get-IntunePolicySystemInfo
 #endregion
 
 
-#region Function Get-IntuneDeviceAndUserPolicies
+#region Get-IntuneDeviceAndUserPolicies
 Function Get-IntuneDeviceAndUserPolicies
 {
     [CmdletBinding()]
@@ -1407,12 +1407,24 @@ Function Get-ResourceHTMLTables
             # If the resource is a certificate, we need to display the certificate details
             if ($tmpResourceType -eq 'RootCATrustedCertificates')
             {
+
+                $tmpExpireDays = $resource.ResourceData.ExpireDays
+                try 
+                {
+                    if ([int]$resource.ResourceData.ExpireDays -le 0)
+                    {
+                        $tmpExpireDays = '⚠️ {0}' -f $resource.ResourceData.ExpireDays   
+                    }
+                }
+                catch {}
+
+
                 $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.CertStore)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.Thumbprint)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.IssuedTo)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.Issuer)</td>"
-                $htmlBody += "<td>$($resource.ResourceData.ExpireDays)</td>"
+                $htmlBody += "<td>$($tmpExpireDays)</td>"
                 $htmlBody += "</tr>"
 
             }
