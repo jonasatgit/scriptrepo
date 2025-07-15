@@ -46,6 +46,37 @@ param
 )
 
 
+#region Get-MDMFirewallSetting
+Function Get-MDMFirewallSetting
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$Topic,
+        [Parameter(Mandatory = $true)]
+        [string]$SettingName
+    )
+
+    $basePath = "HKLM:SYSTEM\ControlSet001\Services\SharedAccess\Parameters\FirewallPolicy\Mdm"
+    $topicPath = Join-Path -Path $basePath -ChildPath $Topic
+
+    $propertyValue = $null
+    if (-Not (Test-Path -Path $topicPath)) 
+    {
+        #Write-Error "The specified topic path does not exist: $topicPath"
+        return $null
+    }
+    else 
+    {
+        try{$propertyValue = Get-ItemPropertyValue -Path $topicPath -Name $SettingName -ErrorAction SilentlyContinue }catch{}
+    }
+
+    return $propertyValue
+}
+#endregion
+
+
 #region Get-CertificateDetailsByThumbprint
 function Get-CertificateDetailsByThumbprint 
 {
@@ -1369,12 +1400,20 @@ Function Get-ResourceHTMLTables
         $tmpResourceType = $tmpSplitVar[0].ToString().Trim()
         $tmpEnrollmentId = $tmpSplitVar[1].ToString().Trim()
         $enrollmentIdString = '{0} ➡️ {1}' -f $tmpEnrollmentId, ($resourceEntry.Group[0].ProviderID)
+        
         if ($tmpResourceType -eq 'RootCATrustedCertificates')
         {
             $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
             $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='5'>$($enrollmentIdString)</td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold;'>ResourceTarget ⚙️</th><th>CertStore</th><th>Thumbprint</th><th>IssuedTo</th><th>Issuer</th><th>ExpiresIn</th></tr>"
+        }
+        elseif ($tmpResourceType -eq 'Firewall') 
+        {
+            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
+            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+            $htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='3'>$($enrollmentIdString)</td></tr>"
+            $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold;'>ResourceTarget ⚙️</th><th>Resource</th><th>Name</th><th>Value</th></tr>"
         }
         else 
         {
@@ -1418,7 +1457,6 @@ Function Get-ResourceHTMLTables
                 }
                 catch {}
 
-
                 $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.CertStore)</td>"
                 $htmlBody += "<td>$($resource.ResourceData.Thumbprint)</td>"
@@ -1427,6 +1465,39 @@ Function Get-ResourceHTMLTables
                 $htmlBody += "<td>$($tmpExpireDays)</td>"
                 $htmlBody += "</tr>"
 
+            }
+            elseif ($tmpResourceType -eq 'Firewall') 
+            {
+                $tmpName = ''
+                $tmpFirewallSetting = ''
+
+                $tmpSplit = $resource.ResourceName -split '\/'
+                try 
+                {
+                    $tmpFirewallSetting = Get-MDMFirewallSetting -Topic ($tmpSplit[-2]) -SettingName ($tmpSplit[-1])
+                }
+                catch 
+                {
+                    $tmpFirewallSetting = $resource.ResourceName
+                }
+                 
+                if ($resource.ResourceName -match 'FirewallRules')
+                {
+                    $tmpName = $tmpFirewallSetting -replace '.*\|Name=([^|]+)\|.*', '$1'
+                }
+                else 
+                {
+                    $tmpName = ($tmpSplit[-1])
+                }
+
+                $tmpResourceName = '{0}\{1}' -f ($tmpSplit[-2]), ($tmpSplit[-1])
+
+                $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td>"
+                $htmlBody += "<td>$($tmpResourceName)</td>"
+                $htmlBody += "<td>$($tmpName)</td>"
+                $htmlBody += "<td>$($tmpFirewallSetting)</td>"
+                $htmlBody += "</tr>"
+                            #Get-MDMFirewallSetting
             }
             else 
             {
