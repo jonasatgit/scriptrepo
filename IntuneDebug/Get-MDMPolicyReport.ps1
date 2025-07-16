@@ -433,7 +433,7 @@ Function Get-IntunePolicySystemInfo
                     Processor = $null
                     #InstalledRAM = $null
                     SystemType = $null
-                    ManagedBy = $null
+                    #ManagedBy = $null
                     LastSync = $null
                     ManagementServerAddress = $null
                     ExchangeID = $null
@@ -468,7 +468,7 @@ Function Get-IntunePolicySystemInfo
         $outObj.Processor = $tmpObj.'Processor'
         #$outObj.InstalledRAM = $tmpObj.'Installed RAM'
         $outObj.SystemType = $tmpObj.'System Type'
-        $outObj.ManagedBy = $tmpObj.'Managed By'
+        #$outObj.ManagedBy = $tmpObj.'Managed By'
         $outObj.LastSync = $tmpObj.'Last Sync'
         $outObj.ManagementServerAddress = $tmpObj.'Management Server Address'
         $outObj.ExchangeID = $tmpObj.'Exchange ID'
