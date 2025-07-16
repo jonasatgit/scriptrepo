@@ -431,7 +431,7 @@ Function Get-IntunePolicySystemInfo
                     Edition = $null
                     OSBuild = $null
                     Processor = $null
-                    InstalledRAM = $null
+                    #InstalledRAM = $null
                     SystemType = $null
                     ManagedBy = $null
                     LastSync = $null
@@ -466,7 +466,7 @@ Function Get-IntunePolicySystemInfo
         $outObj.Edition = $tmpObj.'Edition'
         $outObj.OSBuild = $tmpObj.'OS Build'
         $outObj.Processor = $tmpObj.'Processor'
-        $outObj.InstalledRAM = $tmpObj.'Installed RAM'
+        #$outObj.InstalledRAM = $tmpObj.'Installed RAM'
         $outObj.SystemType = $tmpObj.'System Type'
         $outObj.ManagedBy = $tmpObj.'Managed By'
         $outObj.LastSync = $tmpObj.'Last Sync'
@@ -1236,7 +1236,7 @@ Function Get-DeviceAndUserHTMLTables
     $htmlBody = ""
     $selection = $GroupedPolicies.Where({($_.Name -eq 'Device') -or ($_.Name -match 'S-\d+(-\d+)+')})
     $deviceSelection = $GroupedPolicies.Where({ $_.Name -eq 'Device' })
-    $userSelection = $GroupedPolicies.Where({ $_.Name -match 'S-\d+(-\d+)+' })
+    #$userSelection = $GroupedPolicies.Where({ $_.Name -match 'S-\d+(-\d+)+' })
     foreach ($group in $selection) 
     {
         if ($group.Name -eq 'Device') 
@@ -1246,7 +1246,14 @@ Function Get-DeviceAndUserHTMLTables
         } 
         else 
         { 
-            $statString = "TotalPolicyAreas: {0}<br>TotalSettings: {1}" -f $userSelection.group.count, $userSelection.group.Settings.count
+            # We need to get the right numbers per user, not for all users together
+            [array]$tmpUserStatsSelection = $GroupedPolicies.Where({ $_.Name -eq $group.Name})
+            $tmpTotalAreas = 0
+            $tmpTotalAreas = try{($tmpUserStatsSelection | Select-Object -Property Count).Count}catch{}
+            $tmpTotalSettings = 0
+            $tmpTotalSettings = $tmpUserStatsSelection.group.Settings.count
+
+            $statString = "TotalPolicyAreas: {0}<br>TotalSettings: {1}" -f $tmpTotalAreas, $tmpTotalSettings
 
             if ([string]::IsNullOrEmpty($group.group[0].PolicyScopeDisplay)) 
             {
