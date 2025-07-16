@@ -46,6 +46,24 @@ param
 )
 
 
+#region Get-IntuneOfficeInstallParams
+Function Get-IntuneOfficeInstallParams
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$ID
+    )
+
+    $basePath = "HKLM:SOFTWARE\Microsoft\OfficeCSP\$ID"
+
+    try{$propertyValue = Get-ItemPropertyValue -Path $basePath -Name '(Default)' -ErrorAction SilentlyContinue }catch{}
+
+    return $propertyValue
+}
+#endregion
+
 #region Get-MDMFirewallSetting
 Function Get-MDMFirewallSetting
 {
@@ -1446,7 +1464,7 @@ Function Get-ResourceHTMLTables
             # If the resource is a certificate, we need to display the certificate details
             if ($tmpResourceType -eq 'RootCATrustedCertificates')
             {
-
+                # If the resource is a certificate, we can display the certificate details
                 $tmpExpireDays = $resource.ResourceData.ExpireDays
                 try 
                 {
@@ -1468,6 +1486,7 @@ Function Get-ResourceHTMLTables
             }
             elseif ($tmpResourceType -eq 'Firewall') 
             {
+                # If the resource is a firewall setting, we can try to display the firewall setting details
                 $tmpName = ''
                 $tmpFirewallSetting = ''
 
@@ -1497,12 +1516,34 @@ Function Get-ResourceHTMLTables
                 $htmlBody += "<td>$($tmpName)</td>"
                 $htmlBody += "<td>$($tmpFirewallSetting)</td>"
                 $htmlBody += "</tr>"
-                            #Get-MDMFirewallSetting
             }
             else 
             {
-                # Escape the resource name to prevent the resource name from breaking our HTML
-                $resourceName = Invoke-EscapeHtmlText -Text ($resource.ResourceName)
+                # If the is an Office installation, we can get the install parameters from registry to display them in the report
+                $tmpResourceName = $resource.ResourceName
+                
+                if ($tmpResourceName -match 'MSFT/Office/Installation')
+                {
+                    $officeResult = try{Get-IntuneOfficeInstallParams -ID ($tmpResourceName | Split-Path -Leaf)}catch{}
+                    if ($officeResult)
+                    {
+                        # Escape the resource name to prevent the resource name from breaking our HTML
+                        $officeResultEscaped = Invoke-EscapeHtmlText -Text ($officeResult)  
+                        # We want to display the resource name and the office result in a single cell
+                        $resourceName = '{0}<br><br>{1}' -f $tmpResourceName, $officeResultEscaped
+                    }
+                    else 
+                    {
+                        # Escape the resource name to prevent the resource name from breaking our HTML
+                        $resourceName = Invoke-EscapeHtmlText -Text ($tmpResourceName)
+                    }
+                }
+                else
+                {
+                    # Escape the resource name to prevent the resource name from breaking our HTML
+                    $resourceName = Invoke-EscapeHtmlText -Text ($tmpResourceName)
+                }
+
                 $htmlBody += "<tr><td class='setting-col'>$($resourceTargetString)</td><td>$resourceName</td></tr>"
             }
         }
