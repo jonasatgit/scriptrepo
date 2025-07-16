@@ -154,56 +154,107 @@ Function Get-IntunePoliyLAPSData
         $MDMData
     )
 
+    # https://learn.microsoft.com/en-us/windows/client-management/mdm/laps-csp
+    $BackupDirectoryMap = @{
+        0 = "0 - Disabled (password won't be backed up)" # Default
+        1 = "1 - Backup the password to Microsoft Entra ID only"
+        2 = "2 - Backup the password to Active Directory only"
+    }
+
+    $PasswordComplexityMap = @{
+        1 = "1 - Large letters."
+        2 = "2 - Large letters + small letters."
+        3 = "3 - Large letters + small letters + numbers."
+        4 = "4 - Large letters + small letters + numbers + special characters." # Default
+        5 = "5 - Large letters + small letters + numbers + special characters (improved readability)."
+        6 = "6 - Passphrase (long words)."
+        7 = "7 - Passphrase (short words)."
+        8 = "8 - Passphrase (short words with unique prefixes)."
+    }
+
+    $PostAuthenticationActionMap = @{
+        1  = "1 - Reset password: upon expiry of the grace period, the managed account password will be reset."
+        3  = "3 - Reset the password and logoff the managed account: upon expiry of the grace period, the managed account password will be reset and any interactive logon sessions using the managed account will be terminated." # Default
+        5  = "5 - Reset the password and reboot: upon expiry of the grace period, the managed account password will be reset and the managed device will be immediately rebooted."
+        11 = "11 - Reset the password, logoff the managed account, and terminate any remaining processes: upon expiration of the grace period, the managed account password is reset, any interactive logon sessions using the managed account are logged off, and any remaining processes are terminated."
+    }
+
+    $AutomaticAccountManagementTargetMap = @{
+        0 = "0 - Automatically manage the built-in Administrator account"
+        1 = "1 - Automatically manage a new custom account"
+    }
+
+    $AutomaticAccountManagementEnableAccountMap = @{
+        0 = "0 - Disable the automatically managed account"
+        1 = "1 - Enable the automatically managed account"
+    }
+
+    $AutomaticAccountManagementRandomizeNameMap = @{
+        0 = "0 - Don't randomize the name of the automatically managed account"
+        1 = "1 - Randomize the name of the automatically managed account"
+    }
+
+    # Initialize the output object
+    $lapsOutObj = [pscustomobject][ordered]@{
+        PolicyScope = 'LAPS'
+        BackupDirectory = $null
+        PasswordAgeDays = $null
+        AutomaticAccountManagementEnabled = $null
+        AutomaticAccountManagementNameOrPrefix = $null
+        AutomaticAccountManagementEnableAccount = $null
+        AutomaticAccountManagementTarget = $null
+        AutomaticAccountManagementRandomizeName = $null
+        PasswordComplexity = $null
+        PostAuthenticationActions = $null
+        PasswordLength = $null
+        PostAuthenticationResetDelay = $null
+        Local_LastAccountRidUpdated = $null
+        Local_DSRMMode = $null
+        Local_LastManagedAccountRid = $null
+        Local_LastManagedAccountNameOrPrefix = $null
+        Local_LastManagedAccountRandomizeName = $null
+        Local_LastPasswordUpdateTime = $null
+        Local_AzurePasswordExpiryTime = $null
+        Local_PostAuthResetDeadline = $null
+        Local_PostAuthResetAuthenticationTime = $null
+        Local_PostAuthResetAccountSid = $null
+        Local_PostAuthResetRetryCount = $null
+        Local_PostAuthActions = $null
+    }
+
     $LAPSData = $MDMData.MDMEnterpriseDiagnosticsReport.LAPS
 
-    if ([string]::IsNullOrEmpty($LAPSData.Laps_CSP_Policy)) 
+    if (-NOT [string]::IsNullOrEmpty($LAPSData.Laps_CSP_Policy)) 
     {
-        #Write-Host "No LAPS data found in the report." -ForegroundColor Yellow
-    }
-    else 
-    {
-
-        $selectedLapsData = $LAPSData.Laps_CSP_Policy | Select-Object -Property `
-            BackupDirectory, PasswordAgeDays, AutomaticAccountManagementEnabled, `
-            AutomaticAccountManagementNameOrPrefix, AutomaticAccountManagementEnableAccount, `
-            AutomaticAccountManagementTarget, AutomaticAccountManagementRandomizeName, `
-            PasswordComplexity, PostAuthenticationActions, PasswordLength, PostAuthenticationResetDelay
-        
-        $selectedLapsData | Add-Member -MemberType NoteProperty -Name 'PolicyScope' -Value 'LAPS' -Force
-
-
+        $lapsOutObj.BackupDirectory = try{$BackupDirectoryMap[[int]$LAPSData.Laps_CSP_Policy.BackupDirectory]}catch {$LAPSData.Laps_CSP_Policy.BackupDirectory}
+        $lapsOutObj.PasswordAgeDays = $LAPSData.Laps_CSP_Policy.PasswordAgeDays
+        $lapsOutObj.AutomaticAccountManagementEnabled = if($LAPSData.Laps_CSP_Policy.AutomaticAccountManagementEnabled -eq 1){"True"}else{"False"}
+        $lapsOutObj.AutomaticAccountManagementNameOrPrefix = $LAPSData.Laps_CSP_Policy.AutomaticAccountManagementNameOrPrefix
+        $lapsOutObj.AutomaticAccountManagementEnableAccount = try{$AutomaticAccountManagementEnableAccountMap[[int]$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementEnableAccount]}catch {$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementEnableAccount}
+        $lapsOutObj.AutomaticAccountManagementTarget = try{$AutomaticAccountManagementTargetMap[[int]$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementTarget]}catch {$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementTarget}
+        $lapsOutObj.AutomaticAccountManagementRandomizeName = try{$AutomaticAccountManagementRandomizeNameMap[[int]$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementRandomizeName]}catch {$LAPSData.Laps_CSP_Policy.AutomaticAccountManagementRandomizeName}
+        $lapsOutObj.PasswordComplexity = try{$PasswordComplexityMap[[int]$LAPSData.Laps_CSP_Policy.PasswordComplexity]}catch {$LAPSData.Laps_CSP_Policy.PasswordComplexity}
+        $lapsOutObj.PostAuthenticationActions = try{$PostAuthenticationActionMap[[int]$LAPSData.Laps_CSP_Policy.PostAuthenticationActions]}catch {$LAPSData.Laps_CSP_Policy.PostAuthenticationActions}
+        $lapsOutObj.PasswordLength = $LAPSData.Laps_CSP_Policy.PasswordLength
+        $lapsOutObj.PostAuthenticationResetDelay = $LAPSData.Laps_CSP_Policy.PostAuthenticationResetDelay
+       
         if (-NOT [string]::IsNullOrEmpty($LAPSData.Laps_Local_State)) 
         {
-
-            $lapsLocalState = $LAPSData.Laps_Local_State | Select-Object -Property `
-                LastAccountRidUpdated, DSRMMode, LastManagedAccountRid, `
-                LastManagedAccountNameOrPrefix, LastManagedAccountRandomizeName, `
-                LastPasswordUpdateTime, AzurePasswordExpiryTime, PostAuthResetDeadline, `
-                PostAuthResetAuthenticationTime, PostAuthResetAccountSid, PostAuthResetRetryCount, PostAuthActions
-
-            foreach ($property in $lapsLocalState.PSObject.Properties) 
-            {
-                $propertyValue = $property.Value
-                if ($property.Name -in ('LastPasswordUpdateTime', 'AzurePasswordExpiryTime', 'PostAuthResetDeadline', 'PostAuthResetAuthenticationTime')) 
-                {
-                    # Convert the FileTime to a DateTime object
-                    try 
-                    {
-                        $propertyValue = Convert-FileTimeToDateTime -FileTime $property.Value
-                    }
-                    catch 
-                    {
-                        Write-Host "Failed to convert $($property.Name) for LAPS Local State. Error: $_"
-                    }
-                }
-
-                # Add the PolicyScope property to the lapsLocalState object
-                $selectedLapsData | Add-Member -MemberType NoteProperty -Name $property.Name -Value $propertyValue -Force
-            }
-            
+            $lapsOutObj.Local_LastAccountRidUpdated = $LAPSData.Laps_Local_State.LastAccountRidUpdated
+            $lapsOutObj.Local_DSRMMode = $LAPSData.Laps_Local_State.DSRMMode
+            $lapsOutObj.Local_LastManagedAccountRid = $LAPSData.Laps_Local_State.LastManagedAccountRid
+            $lapsOutObj.Local_LastManagedAccountNameOrPrefix = $LAPSData.Laps_Local_State.LastManagedAccountNameOrPrefix
+            $lapsOutObj.Local_LastManagedAccountRandomizeName = $LAPSData.Laps_Local_State.LastManagedAccountRandomizeName
+            $lapsOutObj.Local_LastPasswordUpdateTime = try{Convert-FileTimeToDateTime -FileTime $LAPSData.Laps_Local_State.LastPasswordUpdateTime} catch {$LAPSData.Laps_Local_State.LastPasswordUpdateTime}
+            $lapsOutObj.Local_AzurePasswordExpiryTime = try{Convert-FileTimeToDateTime -FileTime $LAPSData.Laps_Local_State.AzurePasswordExpiryTime} catch {$LAPSData.Laps_Local_State.AzurePasswordExpiryTime}
+            $lapsOutObj.Local_PostAuthResetDeadline = try{Convert-FileTimeToDateTime -FileTime $LAPSData.Laps_Local_State.PostAuthResetDeadline} catch {$LAPSData.Laps_Local_State.PostAuthResetDeadline}
+            $lapsOutObj.Local_PostAuthResetAuthenticationTime = try{Convert-FileTimeToDateTime -FileTime $LAPSData.Laps_Local_State.PostAuthResetAuthenticationTime} catch {$LAPSData.Laps_Local_State.PostAuthResetAuthenticationTime}
+            $lapsOutObj.Local_PostAuthResetAccountSid = $LAPSData.Laps_Local_State.PostAuthResetAccountSid
+            $lapsOutObj.Local_PostAuthResetRetryCount = $LAPSData.Laps_Local_State.PostAuthResetRetryCount
+            $lapsOutObj.Local_PostAuthActions = $LAPSData.Laps_Local_State.PostAuthActions
         }
 
-        return $selectedLapsData        
+        return $lapsOutObj   
     }
 }
 #endregion
