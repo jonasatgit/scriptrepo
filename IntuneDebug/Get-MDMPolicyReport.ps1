@@ -22,7 +22,6 @@
     This script generates an HTML report of Intune policies from the MDM Diagnostics Report XML, HTML and AppWorkload.log files
 
 
-
 .PARAMETER MDMDiagReportPath
     Path to the MDM Diagnostics export folder. 
     The folder should contain the MDMDiagReport.xml file, the MDMDiagReport.html file, and the IntuneManagementExtension AppWorkload.log files.
@@ -44,6 +43,76 @@ param
     [Parameter(Mandatory = $false)]
     [int]$CleanUpDays = 1
 )
+
+#region ConvertFrom-ObjectToCustomHtmlTable
+function ConvertFrom-ObjectToCustomHtmlTable 
+{
+    [CmdletBinding()]
+    param 
+    (
+        [object]$InputObjectList
+    )
+
+
+    foreach ($InputObject in $InputObjectList)
+    {
+        if ($null -eq $InputObject) 
+        {
+            return ''
+        }
+
+        if ($InputObject -is [System.Collections.IEnumerable] -and !$InputObject -is [string]) 
+        {
+            $items = @($InputObject)
+            if ($items.Count -eq 0) 
+            {
+                return $null 
+            }
+
+            $headers = $items[0].PSObject.Properties.Name
+            $rows = foreach ($item in $items) 
+            {
+
+                "<tr>" + ($headers | ForEach-Object { 
+                    "<td>$(ConvertFrom-ObjectToCustomHtmlTable -InputObject $item.$_)</td>" 
+                }) -join '' + "</tr>"
+            }
+
+            return "<table class='nested-table'><tr>" + ($headers | ForEach-Object { "<td>$_</td>" }) -join '' + "</tr>" + ($rows -join '') + "</table>"
+        }
+        elseif ($InputObject -is [psobject]) 
+        {
+            $rows = foreach ($prop in $InputObject.PSObject.Properties) 
+            {
+                "<tr><td>$($prop.Name)</td><td>$(ConvertFrom-ObjectToCustomHtmlTable -InputObject $prop.Value)</td></tr>"
+            }
+
+            return "<table class='nested-table'>" + ($rows -join '') + "</table>"
+        }
+        else 
+        {
+            # If we have a base 64 string, we will try to decode it
+            if ($InputObject -match '^[A-Za-z0-9+/]*={0,2}$')
+            {
+                try 
+                {
+                    $decodedBytes = [System.Convert]::FromBase64String($InputObject)
+                    $decodedString = [System.Text.Encoding]::UTF8.GetString($decodedBytes)
+                    return "<pre>$decodedString</pre>"
+                } 
+                catch 
+                {
+                    return Invoke-EscapeHtmlText -Text ($InputObject.ToString())
+                }
+            }
+            else 
+            {
+                return Invoke-EscapeHtmlText -Text ($InputObject.ToString())
+            }        
+        }
+    }
+}
+#endregion
 
 
 #region Get-IntuneOfficeInstallParams
@@ -98,10 +167,12 @@ Function Get-MDMFirewallSetting
 #region Get-CertificateDetailsByThumbprint
 function Get-CertificateDetailsByThumbprint 
 {
-    param (
+    param 
+    (
         [Parameter(Mandatory = $true)]
         [string[]]$Thumbprints
     )
+
     [array]$certList = Get-ChildItem Cert:\LocalMachine -Recurse 
 
     $outList = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -146,7 +217,6 @@ function Get-CertificateDetailsByThumbprint
 #region Get-IntunePoliyLAPSData
 Function Get-IntunePoliyLAPSData
 {
-
     [CmdletBinding()]
     param 
     (
@@ -318,7 +388,6 @@ Function ConvertTo-HTMLListFromArray
     }
 
     return $outString
-
 }
 #endregion
 
@@ -364,7 +433,8 @@ Function Invoke-IntuneReportDataCleanup
 
 
 #region Get-MSIProductCodesWithNames
-function Get-MSIProductCodesWithNames {
+function Get-MSIProductCodesWithNames 
+{
     $results = @()
 
     $registryPaths = @(
@@ -372,7 +442,8 @@ function Get-MSIProductCodesWithNames {
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
     )
 
-    foreach ($path in $registryPaths) {
+    foreach ($path in $registryPaths) 
+    {
         if (Test-Path $path) {
             Get-ChildItem -Path $path | ForEach-Object {
                 $key = $_
@@ -583,7 +654,6 @@ Function Get-IntuneDeviceAndUserPolicies
                 {
                     $enrollmentProvider = 'Unknown'
                 }
-
 
                 try{$userName = $userInfoHash[$PolicyScopeName]}catch{}
                 if([string]::IsNullOrEmpty($userName))
@@ -1265,12 +1335,23 @@ function Get-EnrollmentProviderIDs
 #region Invoke-EscapeHtmlText
 function Invoke-EscapeHtmlText 
 {
-    param ([string]$Text)
-    return $Text -replace '&', '&amp;' `
-                   -replace '<', '&lt;' `
-                   -replace '>', '&gt;' `
-                   -replace '"', '&quot;' `
-                   -replace "'", '&#39;'
+    param 
+    (
+        [string]$Text
+    )
+
+    try 
+    {
+        return [System.Web.HttpUtility]::HtmlEncode($Text)  
+    }
+    catch 
+    {
+        return $Text -replace '&', '&amp;' `
+                    -replace '<', '&lt;' `
+                    -replace '>', '&gt;' `
+                    -replace '"', '&quot;' `
+                    -replace "'", '&#39;'
+    }
 }
 #endregion
 
@@ -1332,7 +1413,11 @@ Function Get-DeviceAndUserHTMLTables
                 $htmlBody += "<br><br>"
             }
 
+            $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>" 
+            $htmlBody += "<button class='toggle-button-inner' onclick='toggleContent(this)'>Hide</button>" 
             $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
+            $htmlBody += "</div>" 
+            $htmlBody += "<div class='collapsible-content'>" 
             $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 150px;'></td><td style='width: 200px;'></td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 400px;'>Setting ⚙️</th><th>Value</th><th style='width: 150px;'>DefaultValue</th><th style='width: 200px;'>WinningProvider</th></tr>"
@@ -1363,17 +1448,14 @@ Function Get-DeviceAndUserHTMLTables
                     $winningProviderString = "ℹ️ $winningProviderString"
                 } 
 
-                #$value = Format-StringToXml -XmlString $settings.Value
-                # Escape HTML characters in the value to prevent out html from breaking
-                $value = Invoke-EscapeHtmlText -Text ($settings.Value)
+                $value = Invoke-EscapeHtmlText -Text ($settings.Value -replace '&quot;', '"')
                 $defaultValue = $settings.Metadata.DefaultValue
                 $htmlBody += "<tr><td class='setting-col'>$($settings.Name)</td><td title='$($settingspath)'>$value</td><td style='width: 150px;'>$defaultValue</td><td style='width: 200px;'>$winningProviderString</td></tr>"
             }
 
             $htmlBody += "</table>"
-            #$htmlBody += "</div>"  # Close settings-container div
+            $htmlBody += "</div>"  # Close collapsible-content
             $i++
-            
         }
         $htmlBody += "</div>"  # Close collapsible-content
         $htmlBody += "</div>"  # Close group-container
@@ -1412,7 +1494,11 @@ function Get-EnterpriseApplicationHTMLTables
     foreach ($app in $enterpriseAppGroup.Group)
     {
 
+        $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>" 
+        $htmlBody += "<button class='toggle-button-inner' onclick='toggleContent(this)'>Hide</button>" 
         $htmlBody += "<h2 class='policy-area-title'>App: $($app.possibleAppName)</h2>"
+        $htmlBody += "</div>" 
+        $htmlBody += "<div class='collapsible-content'>" 
         $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
 
         # Let's exclude some properties that are not relevant for the report
@@ -1430,6 +1516,7 @@ function Get-EnterpriseApplicationHTMLTables
         }
         
         $htmlBody += "</table>"
+        $htmlBody += "</div>"  # Close collapsible-content
         $htmlBody += "<br>"
     }
     $htmlBody += "</div>"  # Close collapsible-content
@@ -1476,25 +1563,27 @@ Function Get-ResourceHTMLTables
         $tmpResourceType = $tmpSplitVar[0].ToString().Trim()
         $tmpEnrollmentId = $tmpSplitVar[1].ToString().Trim()
         $enrollmentIdString = '{0} ➡️ {1}' -f $tmpEnrollmentId, ($resourceEntry.Group[0].ProviderID)
-        
+
+        $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>" 
+        $htmlBody += "<button class='toggle-button-inner' onclick='toggleContent(this)'>Hide</button>" 
+        $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
+        $htmlBody += "</div>" 
+        $htmlBody += "<div class='collapsible-content'>" 
+        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+        #$htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='5'>$($enrollmentIdString)</td></tr>"
+
         if ($tmpResourceType -eq 'RootCATrustedCertificates')
         {
-            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
-            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='5'>$($enrollmentIdString)</td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold;'>ResourceTarget ⚙️</th><th>CertStore</th><th>Thumbprint</th><th>IssuedTo</th><th>Issuer</th><th>ExpiresIn</th></tr>"
         }
         elseif ($tmpResourceType -eq 'Firewall') 
         {
-            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
-            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='3'>$($enrollmentIdString)</td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold;'>ResourceTarget ⚙️</th><th>Resource</th><th>Name</th><th>Value</th></tr>"
         }
         else 
         {
-            $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
-            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
             $htmlBody += "<tr><td style='font-weight: bold; width: 500px;'>EnrollmentId</td><td>$($enrollmentIdString)</td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 500px;'>ResourceTarget ⚙️</th><th>Resource</th></tr>"
         }
@@ -1586,7 +1675,7 @@ Function Get-ResourceHTMLTables
                     if ($officeResult)
                     {
                         # Escape the resource name to prevent the resource name from breaking our HTML
-                        $officeResultEscaped = Invoke-EscapeHtmlText -Text ($officeResult)  
+                        $officeResultEscaped = Invoke-EscapeHtmlText -Text ($officeResult)   
                         # We want to display the resource name and the office result in a single cell
                         $resourceName = '{0}<br><br>{1}' -f $tmpResourceName, $officeResultEscaped
                     }
@@ -1607,6 +1696,7 @@ Function Get-ResourceHTMLTables
         }
         
         $htmlBody += "</table>"
+        $htmlBody += "</div>"
         $htmlBody += "<br>"
 
     }
@@ -1636,42 +1726,133 @@ Function Get-IntuneWin32AppTables
     $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
-    #$excludedProperties = @('DetectionRule', 'ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
-    $excludedProperties = @('ExtendedRequirementRules', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId')
+    $excludedProperties = @('PolicyScope', 'ServerAccountID', 'PackageId')
 
     foreach ($app in $win32Apps) 
     {
+        $htmlBody += "<div class='app-container'>"
+        $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>" 
+        $htmlBody += "<button class='toggle-button-inner' onclick='toggleContent(this)'>Hide</button>" 
         $htmlBody += "<h2 class='policy-area-title'>Win32App: $($app.Name)</h2>"
+        $htmlBody += "</div>" 
+        $htmlBody += "<div class='collapsible-content'>" 
         $htmlBody += "<table>"
         foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name | Where-Object { $_.Name -notin $excludedProperties })) 
         {
             # Lets format the AppState property to be a list in html
             $propertyValue = ''
-            if ($property.Name -eq 'AppState')
-            {
 
-                if ([string]::IsNullOrEmpty($property.Value))
-                {
-                    $propertyValue = "No app state found"
-                }
-                else 
-                {
-                    $propertyValue = ConvertTo-HTMLTableFromArray -InputList ($property.Value) -ErrorAction SilentlyContinue
-                    if ([string]::IsNullOrEmpty($propertyValue)) 
+            # Properties we will use some special formatting for to make the easier to read.
+            switch ($property.Name) 
+            {
+                'AppState' 
+                {  
+                    if ([string]::IsNullOrEmpty($property.Value))
                     {
-                        # Fallback to the original value if the conversion fails or is empty
+                        $propertyValue = "No app state found"
+                    }
+                    else 
+                    {
+                        $propertyValue = ConvertTo-HTMLTableFromArray -InputList ($property.Value) -ErrorAction SilentlyContinue
+                        if ([string]::IsNullOrEmpty($propertyValue)) 
+                        {
+                            # Fallback to the original value if the conversion fails or is empty
+                            $propertyValue = $property.Value
+                        }
+                    }                   
+                }
+
+                'DetectionRule'
+                {
+                    try 
+                    {
+                        [array]$tmpJsonString = $property.Value | ConvertFrom-Json -ErrorAction Stop
+                        Foreach($item in $tmpJsonString)
+                        {
+                            $item.DetectionText = $item.DetectionText | ConvertFrom-Json # could be done with -depth parameter, but not in posh 5.1 
+                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item.DetectionText  
+                        }
+                    }
+                    catch 
+                    {
+                        # In case of an error we will just use the original string
+                        $propertyValue = $property.Value
+                    }                    
+                }
+
+                'RequirementRules'
+                {
+                    try 
+                    {
+                        [array]$tmpJsonString = $property.Value | ConvertFrom-Json -ErrorAction Stop
+                        Foreach($item in $tmpJsonString)
+                        {
+                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item
+                        }
+                    }
+                    catch 
+                    {
+                        # In case of an error we will just use the original string
+                        $propertyValue = $property.Value
+                    }                   
+                }
+
+                'ExtendedRequirementRules'
+                {
+                    try 
+                    {
+                        [array]$tmpJsonString = $property.Value | ConvertFrom-Json -ErrorAction Stop
+                        Foreach($item in $tmpJsonString)
+                        {
+                            $item.RequirementText = $item.RequirementText | ConvertFrom-Json # could be done with -depth parameter, but not in posh 5.1 
+                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item.RequirementText
+                        }
+                    }
+                    catch 
+                    {
+                        # In case of an error we will just use the original string
+                        $propertyValue = $property.Value
+                    }                   
+                }
+
+                # script block detection to account for multiple properties
+                { $_ -in @('InstallEx','ReturnCodes','InstallerData')}
+                {
+                    # Some properties we should be able to convert to json and make them easier to read in that format
+                    try 
+                    {
+                        # Converstion from unformatted json to object and from object to formatted json
+                        $propertyValue = '<pre>{0}</pre>' -f ($property.Value | ConvertFrom-Json -ErrorAction Stop | ConvertTo-Json -ErrorAction Stop )    
+                    }
+                    catch 
+                    {
+                        $propertyValue = $property.Value
+                    }                    
+                }
+
+                # script block detection to account for multiple properties
+                { $_ -in @('RebootEx','StartDeadlineEx')}
+                {
+                    try 
+                    {
+                        # Conversion from unformatted object to formatted json
+                        $propertyValue = '<pre>{0}</pre>' -f ($property.Value | ConvertTo-Json -ErrorAction Stop )
+                    }
+                    catch 
+                    {
                         $propertyValue = $property.Value
                     }
                 }
-            }
-            else 
-            {
-                $propertyValue = $property.Value
+                Default 
+                {
+                    $propertyValue = $property.Value               
+                }
             }
             
             $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($propertyValue)</td></tr>"
         }
         $htmlBody += "</table>"
+        $htmlBody += "</div>"  # Close collapsible-content
         $htmlBody += "<br>"
     }
     
@@ -1685,7 +1866,8 @@ Function Get-IntuneWin32AppTables
 #region Get-DeviceInfoHTMLTables
 Function Get-DeviceInfoHTMLTables
 {
-    param(
+    param
+    (
         [Parameter(Mandatory = $true)]
         [array]$GroupedPolicies
     )
@@ -1710,7 +1892,6 @@ Function Get-DeviceInfoHTMLTables
     $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
     $htmlBody += "<h2>DeviceInfo: <span class='policy-area-title'>$areaTitleString</span></h2>"
     $htmlBody += "</div>"
-    #$htmlBody += "<p style='font-size: 13px;'>$statString</p>"
     $htmlBody += "<div class='collapsible-content'>"
 
     foreach ($device in $deviceInfoData.group) 
@@ -1741,7 +1922,8 @@ Function Get-DeviceInfoHTMLTables
 #region Get-DeviceInfoHTMLTables
 Function Get-LAPSHTMLTables
 {
-    param(
+    param
+    (
         [Parameter(Mandatory = $true)]
         [array]$GroupedPolicies
     )
@@ -1794,8 +1976,10 @@ Function Get-LAPSHTMLTables
 
 
 #region Convert-IntunePoliciesToHtml
-function Convert-IntunePoliciesToHtml {
-    param (
+function Convert-IntunePoliciesToHtml 
+{
+    param 
+    (
         [Parameter(Mandatory=$false)]
         [string]$OutputPath,
 
@@ -1838,6 +2022,19 @@ $htmlHeader = @"
             box-sizing: border-box; /* Ensure padding is included in width */
         }
 
+        .toggle-button-inner {
+            background-color: #525e6bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            width: 70px;           /* Fixed width for consistent size */
+            text-align: center;     /* Center the text */
+            box-sizing: border-box; /* Ensure padding is included in width */
+        }
+
         .collapsible-content {
             display: block;
             margin-top: 10px;
@@ -1866,6 +2063,7 @@ $htmlHeader = @"
             padding: 8px;
             word-wrap: break-word;
             text-align: left;
+            vertical-align: top;
             font-size: 13px; 
         }
        
@@ -1879,25 +2077,48 @@ $htmlHeader = @"
         .policy-area-title {
             color: #2E6DA4;
         }
+        
+        .nested-table {
+            border: none !important;
+            border-collapse: collapse;
+            width: 100%;
+            table-layout: fixed;
+            font-size: 13px;
+        }
+
+        .nested-table th, .nested-table td {
+            outline: 1px solid #ddd;
+            border: none;
+            padding: 8px;
+            word-wrap: break-word;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .nested-table td:first-child {
+            width: 200px;
+        }
+
+
     </style>
     <script>
         
         function toggleContent(button) {
-            // Find the closest .group-container
-            const groupContainer = button.closest('.group-container');
-            // Find the .collapsible-content inside this container
-            const content = groupContainer.querySelector('.collapsible-content');
-            const isVisible = window.getComputedStyle(content).display !== "none";
+            // Try to find the next sibling collapsible content
+            let content = button.parentElement.nextElementSibling;
 
-            if (isVisible) {
-                content.style.display = "none";
-                button.textContent = "Show";
-            } else {
-                content.style.display = "block";
-                button.textContent = "Hide";
+            // If not found, fall back to the closest .group-container's .collapsible-content
+            if (!content || !content.classList.contains('collapsible-content')) {
+                const groupContainer = button.closest('.group-container');
+                content = groupContainer ? groupContainer.querySelector('.collapsible-content') : null;
             }
-        }
 
+            if (!content) return;
+
+            const isVisible = window.getComputedStyle(content).display !== "none";
+            content.style.display = isVisible ? "none" : "block";
+            button.textContent = isVisible ? "Show" : "Hide";
+        }
 
         function toggleAll() {
             const contents = document.querySelectorAll('.collapsible-content');
@@ -1953,7 +2174,8 @@ $htmlHeader = @"
 #region Format-StringToXml
 function Format-StringToXml 
 {
-    param (
+    param 
+    (
         [string]$XmlString
     )
 
