@@ -44,6 +44,132 @@ param
     [int]$CleanUpDays = 1
 )
 
+
+#region Get-IntuneScriptPolicies
+Function Get-IntuneScriptPolicies
+{
+
+    param
+    (
+        [string]$LogPath
+    )
+
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
+    {
+        if ([string]::IsNullOrEmpty($LogPath))
+        {
+            # The message does only makes sense if the script is run locally without the MDMDiagReportPath parameter
+            # NOT YET
+            #Write-Host "To get more Intune script details run the script with administrative permissions" -ForegroundColor Yellow 
+        }
+    }
+    else 
+    {
+        if ([string]::IsNullOrEmpty($LogPath))
+        {
+            # Status per user ID
+            # Many more entries due to older polices. Admin permissions required
+            #'HKLM:\SOFTWARE\Microsoft\IntuneManagementExtension\SideCarPolicies\Scripts'
+        }
+    }
+
+    if ([string]::IsNullOrEmpty($LogPath))
+    {
+        # Default log path for intune script logs
+        $LogPath = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\HealthScripts*.log"
+    } 
+    
+    # creating hash with script id and shedule from log file
+    $pattern = '\[HS\] inspect daily schedule for policy (?<policyID>.*?), (?<policyScheduleUTC>.*?), (?<policyScheduleInterval>.*?), (?<policyScheduleTime>.*?)(?=\]LOG\])'
+
+    $scriptSSchedulePolicyResult = Get-ChildItem $LogPath | Sort-Object -Property LastWriteTime -Descending | select-string -Pattern $pattern
+
+    $policyScheduleHash = @{}
+    foreach ($scriptPolicy in $scriptSSchedulePolicyResult)
+    {
+        # Files sortted by LastWriteTime, so we can take the first one and have the latest policy schedule and skip the duplicates
+        $policyID = $scriptPolicy.Matches.groups[1].value
+        # Check if the policyID already exists in the hash
+        if ($policyScheduleHash.ContainsKey($policyID)) 
+        {
+            # If it exists, skip to the next iteration
+            continue
+        }
+        
+        $policyScheduleUTC = ($scriptPolicy.Matches.groups[2].value) -replace 'UTC = ', ''
+        $policyScheduleInterval = ($scriptPolicy.Matches.groups[3].value) -replace 'Interval = ', ''
+        $policyScheduleTime = ($scriptPolicy.Matches.groups[4].value) -replace 'Time = ', ''
+
+        # check if the policyID already exists in the hash and in the settings are identical
+        $policyScheduleHash[$policyID] = [pscustomobject][ordered]@{
+            #PolicyID = $policyID
+            ScheduleUTC = $policyScheduleUTC
+            ScheduleInterval = $policyScheduleInterval
+            ScheduleTime = $policyScheduleTime
+        }
+    }
+
+    # Getting script policies 
+    $pattern = '\[HS\] new result = (?<policyString>\{"PolicyId.*?\})(?=\]LOG\])'
+    $scriptPolicyResult = Get-ChildItem -Path $LogPath | Sort-Object -Property LastWriteTime -Descending | select-string -Pattern $pattern
+
+    $outList = [System.Collections.Generic.List[pscustomobject]]::new()
+    $policyCheckHash = @{}
+    foreach ($scriptPolicy in $scriptPolicyResult)
+    {
+        # Files sortted by LastWriteTime, so we can take the first one and have the latest policy schedule and skip the duplicates
+        $policyString = $scriptPolicy.Matches.groups[1].value
+
+        # Convert the JSON string to a PowerShell object
+        $policyData = $policyString | ConvertFrom-Json -ErrorAction SilentlyContinue
+
+        if ($null -eq $policyData) 
+        {
+            Write-Verbose "Failed to convert policy data from JSON: $policyString"
+            continue
+        }
+
+        if ($policyCheckHash.ContainsKey($policyData.PolicyId)) 
+        {
+            # If the policy ID already exists in the hash, skip to the next iteration
+            continue
+        }
+
+        # Check if the policyID already exists in the hash
+        if ($policyScheduleHash.ContainsKey($policyData.PolicyId)) 
+        {
+            # If it exists, add the schedule data to the policy data
+            $policyData | Add-Member -MemberType NoteProperty -Name 'Schedule' -Value ($policyScheduleHash[$policyData.PolicyId])
+        }
+        else 
+        {
+            # If it does not exist, create a new property for the schedule with null values
+            $policyData | Add-Member -MemberType NoteProperty -Name 'Schedule' -Value ([pscustomobject]@{
+                PolicyID = $null
+                ScheduleUTC = $null
+                ScheduleInterval = $null
+                ScheduleTime = $null
+            })
+        }
+
+        # Convert the RunAsAccount value to a more readable format
+        Switch($policyData.RunAsAccount) 
+        {
+            1 { $policyData.RunAsAccount = '1 = System' }
+            2 { $policyData.RunAsAccount = '2 = User' }
+            Default { $policyData.RunAsAccount = "$($policyData.RunAsAccount) = Unknown" }
+        }
+
+        $policyCheckHash[$policyData.PolicyId] = $true
+        # Output the policy data
+        $outList.Add($policyData)
+    }
+
+    return $outList
+}
+#endregion
+
+
 #region ConvertFrom-ObjectToCustomHtmlTable
 function ConvertFrom-ObjectToCustomHtmlTable 
 {
@@ -52,7 +178,6 @@ function ConvertFrom-ObjectToCustomHtmlTable
     (
         [object]$InputObjectList
     )
-
 
     foreach ($InputObject in $InputObjectList)
     {
@@ -72,7 +197,7 @@ function ConvertFrom-ObjectToCustomHtmlTable
             $headers = $items[0].PSObject.Properties.Name
             $rows = foreach ($item in $items) 
             {
-
+                Write-host "4" -ForegroundColor Green
                 "<tr>" + ($headers | ForEach-Object { 
                     "<td>$(ConvertFrom-ObjectToCustomHtmlTable -InputObject $item.$_)</td>" 
                 }) -join '' + "</tr>"
@@ -92,8 +217,9 @@ function ConvertFrom-ObjectToCustomHtmlTable
         else 
         {
             # If we have a base 64 string, we will try to decode it
-            if ($InputObject -match '^[A-Za-z0-9+/]*={0,2}$')
-            {
+            #if ($InputObject.ToString() -match '^[A-Za-z0-9+/]*={0,2}$')
+            if (Test-IfStringIsValidBase64 -Text $InputObject.ToString())
+            {                
                 try 
                 {
                     $decodedBytes = [System.Convert]::FromBase64String($InputObject)
@@ -110,6 +236,41 @@ function ConvertFrom-ObjectToCustomHtmlTable
                 return Invoke-EscapeHtmlText -Text ($InputObject.ToString())
             }        
         }
+    }
+}
+#endregion
+
+#region Test-IfStringIsValidBase64 
+function Test-IfStringIsValidBase64 
+{
+    param([string]$Text)
+
+    # Check format: only valid Base64 characters and optional padding
+    if ($Text -notmatch '^[A-Za-z0-9+/]*={0,2}$') 
+    {
+        return $false
+    }
+
+    # Length must be a multiple of 4
+    if ($Text.Length % 4 -ne 0) 
+    {
+        return $false
+    }
+
+    # Length must be at least 16 cahrs long
+    if ($Text.Length -lt 16) 
+    {
+        return $false
+    }
+
+    try 
+    {
+        [Convert]::FromBase64String($Text) | Out-Null
+        return $true
+    } 
+    catch 
+    {
+        return $false
     }
 }
 #endregion
@@ -1854,6 +2015,7 @@ Function Get-IntuneWin32AppTables
         $htmlBody += "</table>"
         $htmlBody += "</div>"  # Close collapsible-content
         $htmlBody += "<br>"
+        $htmlBody += "</div>"  # Close collapsible-content
     }
     
     $htmlBody += "</div>"  # Close collapsible-content
@@ -1974,6 +2136,62 @@ Function Get-LAPSHTMLTables
 }
 #endregion
 
+#region Get-IntuneScriptPolicyTables
+Function Get-IntuneScriptPolicyTables
+{
+    [array]$scriptPolicies = Get-IntuneScriptPolicies -LogPath $script:MDMDiagReportPathVariable
+
+    $htmlBody = ""
+
+    $areaTitleString = '📜 Intune Scripts'
+    $statString = "TotalIntuneScriptPolicies: {0}" -f $scriptPolicies.Count
+
+    $htmlBody = ""
+    $htmlBody += "<div class='group-container'>"
+    $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>"
+    $htmlBody += "<button class='toggle-button' onclick='toggleContent(this)'>Hide</button>"
+    $htmlBody += "<h2>PolicyScope: <span class='policy-area-title'>$areaTitleString</span></h2>"
+    $htmlBody += "</div>"
+    $htmlBody += "<p style='font-size: 13px;'>$statString</p>"
+    $htmlBody += "<div class='collapsible-content'>"
+
+    foreach ($script in ($scriptPolicies | Sort-Object -Property PolicyID)) 
+    {
+        $htmlBody += "<div class='app-container'>"
+        $htmlBody += "<div style='display: flex; align-items: center; gap: 10px;'>" 
+        $htmlBody += "<button class='toggle-button-inner' onclick='toggleContent(this)'>Hide</button>" 
+        $htmlBody += "<h2 class='policy-area-title'>ScriptID: $($script.PolicyID)</h2>"
+        $htmlBody += "</div>" 
+        $htmlBody += "<div class='collapsible-content'>" 
+        $htmlBody += "<table>"
+        foreach ($property in $script.PSObject.Properties) 
+        {
+            if ($property.Name -eq 'UserId')
+            {
+                if ($property.Value -eq '00000000-0000-0000-0000-000000000000') 
+                {
+                    # this is a device script, so we can set the value to "Device" with icon
+                    $property.Value = "💻 Device"
+                } 
+                else 
+                {
+                    $property.Value = "👤 {0}" -f $property.Value
+                }
+            }
+
+            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($property.Value)</td></tr>"
+        }
+
+        $htmlBody += "</table>"
+        $htmlBody += "</div>"  # Close collapsible-content
+        $htmlBody += "<br>"
+    }
+
+    $htmlBody += "</div>"  # Close collapsible-content
+    $htmlBody += "</div>"  # Close group-container
+    return $htmlBody
+
+}
 
 #region Convert-IntunePoliciesToHtml
 function Convert-IntunePoliciesToHtml 
@@ -2163,6 +2381,8 @@ $htmlHeader = @"
     $htmlBody += Get-LAPSHTMLTables -GroupedPolicies $grouped 
 
     $htmlBody += Get-IntuneWin32AppTables
+
+    $htmlBody += Get-IntuneScriptPolicyTables
 
     $fullHtml = $htmlHeader + $htmlBody + $htmlFooter
 
