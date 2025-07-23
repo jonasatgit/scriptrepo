@@ -145,7 +145,7 @@ Function Get-IntuneScriptPolicies
         {
             # If it does not exist, create a new property for the schedule with null values
             $policyData | Add-Member -MemberType NoteProperty -Name 'Schedule' -Value ([pscustomobject]@{
-                PolicyID = $null
+                #PolicyID = $null
                 ScheduleUTC = $null
                 ScheduleInterval = $null
                 ScheduleTime = $null
@@ -169,76 +169,6 @@ Function Get-IntuneScriptPolicies
 }
 #endregion
 
-
-#region ConvertFrom-ObjectToCustomHtmlTable
-function ConvertFrom-ObjectToCustomHtmlTable 
-{
-    [CmdletBinding()]
-    param 
-    (
-        [object]$InputObjectList
-    )
-
-    foreach ($InputObject in $InputObjectList)
-    {
-        if ($null -eq $InputObject) 
-        {
-            return ''
-        }
-
-        if ($InputObject -is [System.Collections.IEnumerable] -and !$InputObject -is [string]) 
-        {
-            $items = @($InputObject)
-            if ($items.Count -eq 0) 
-            {
-                return $null 
-            }
-
-            $headers = $items[0].PSObject.Properties.Name
-            $rows = foreach ($item in $items) 
-            {
-                Write-host "4" -ForegroundColor Green
-                "<tr>" + ($headers | ForEach-Object { 
-                    "<td>$(ConvertFrom-ObjectToCustomHtmlTable -InputObject $item.$_)</td>" 
-                }) -join '' + "</tr>"
-            }
-
-            return "<table class='nested-table'><tr>" + ($headers | ForEach-Object { "<td>$_</td>" }) -join '' + "</tr>" + ($rows -join '') + "</table>"
-        }
-        elseif ($InputObject -is [psobject]) 
-        {
-            $rows = foreach ($prop in $InputObject.PSObject.Properties) 
-            {
-                "<tr><td>$($prop.Name)</td><td>$(ConvertFrom-ObjectToCustomHtmlTable -InputObject $prop.Value)</td></tr>"
-            }
-
-            return "<table class='nested-table'>" + ($rows -join '') + "</table>"
-        }
-        else 
-        {
-            # If we have a base 64 string, we will try to decode it
-            #if ($InputObject.ToString() -match '^[A-Za-z0-9+/]*={0,2}$')
-            if (Test-IfStringIsValidBase64 -Text $InputObject.ToString())
-            {                
-                try 
-                {
-                    $decodedBytes = [System.Convert]::FromBase64String($InputObject)
-                    $decodedString = [System.Text.Encoding]::UTF8.GetString($decodedBytes)
-                    return "<pre>$decodedString</pre>"
-                } 
-                catch 
-                {
-                    return Invoke-EscapeHtmlText -Text ($InputObject.ToString())
-                }
-            }
-            else 
-            {
-                return Invoke-EscapeHtmlText -Text ($InputObject.ToString())
-            }        
-        }
-    }
-}
-#endregion
 
 #region Test-IfStringIsValidBase64 
 function Test-IfStringIsValidBase64 
@@ -491,33 +421,138 @@ Function Get-IntunePoliyLAPSData
 #endregion
 
 
-#region ConvertTo-HTMLTableFromArray 
+#region ConvertTo-HTMLTableFromArray
 Function ConvertTo-HTMLTableFromArray 
 {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [array]$InputList
+        [array]$InputList,
+        [Parameter(Mandatory = $false)]
+        [string]$TableType 
     )
+
 
     $htmlOutput = ""
 
-    foreach ($item in $InputList) 
+    for ($i = 0; $i -lt $InputList.Count; $i++) 
     {
-        $htmlOutput += "<table style='border-collapse: collapse; border: none; margin-bottom: 1em;'>"
+        $item = $InputList[$i]
+        $htmlOutput += "<table class='nested-table'>"
+
         foreach ($prop in $item.PSObject.Properties) 
         {
-            $htmlOutput += "<tr style='border: none;'>"
-            $htmlOutput += "<td style='padding: 2px 8px; font-weight: bold; border: none; vertical-align: top; width: 200px;'>$($prop.Name)</td>"
-            $htmlOutput += "<td style='padding: 2px 8px; border: none;'>$($prop.Value)</td>"
-            $htmlOutput += "</tr>"
+
+            if ($TableType -eq 'ScriptBody' -and $prop.Name -eq 'ScriptBody') 
+            {
+                # If the property is ScriptBody, decode it and display it in a <pre> tag
+                # This is to handle the case where the script body is base64 encoded
+                # and we want to display it as text in the HTML report
+
+                $htmlOutput += "<tr>"
+                $htmlOutput += "<td colspan='2'>$($prop.Name)</td>"
+                $htmlOutput += "</tr>"
+
+                try 
+                {
+                    $htmlOutput += "<tr>"
+                    $decodedBytes = [System.Convert]::FromBase64String($InputList.ScriptBody)
+                    $decodedString = [System.Text.Encoding]::UTF8.GetString($decodedBytes)
+                  
+                    $htmlOutput += "<td colspan='2'>"
+                    $htmlOutput += "   <div class='script-container'>"
+                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='toggleScript(this)'>➖</button>"
+                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='copyScript(this)'>📋</button>"
+                    $htmlOutput += "        <pre class='script-body'>$decodedString</pre>"
+                    $htmlOutput += "    </div>"
+                    $htmlOutput += "</td>"
+                    $htmlOutput += "<tr>"
+                } 
+                catch 
+                {
+                    $htmlOutput += "<td>$(Invoke-EscapeHtmlText -Text ($prop.Value.ToString()))</td>"
+                }                
+            } 
+            else 
+            {
+                $htmlOutput += "<tr>"
+                $htmlOutput += "<td>$($prop.Name)</td>"
+
+                if ($prop.Value -is [System.Management.Automation.PSObject] -or $prop.Value -is [hashtable]) 
+                {
+                    # Recursively call the same function for nested objects
+                    $nestedHtml = ConvertTo-HTMLTableFromArray -InputList @($prop.Value)
+                    $htmlOutput += "<td>$nestedHtml</td>"
+                } 
+                else 
+                {
+                    $htmlOutput += "<td>$($prop.Value)</td>"
+                }
+
+                $htmlOutput += "</tr>"
+            }
         }
 
         $htmlOutput += "</table>"
-        $htmlOutput += "<br>"
+
+        # Add <hr> only if this is not the last item
+        if ($i -lt $InputList.Count - 1) 
+        {
+            $htmlOutput += "<hr style='border: 0; border-top: 1px solid #ccc; margin: 20px 0;'>"
+        }
     }
-    
+
     return $htmlOutput
+}
+#endregion
+
+# Get-HTMLTableFromData
+Function Get-HTMLTableFromData 
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory = $false)]
+        [object]$InputData,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('ScriptBody')]
+        [string]$TableType
+    )
+
+    $propertyValue = ''
+    try 
+    {
+        # lets find out what type of data we are dealing with
+        $propType = $InputData.GetType() | Select-Object -Property Name -ExpandProperty Name
+    }
+    catch 
+    {
+        $propType = 'Unknown' # Default to string if we cannot determine the type
+    }
+
+    switch ($propType) 
+    {
+        'PSCustomObject' 
+        { 
+            $propertyValue = ConvertTo-HTMLTableFromArray -InputList ($InputData) -TableType $TableType
+        }
+
+        'String'
+        {
+            # Some properties we should be able to convert to json and make them easier to read in that format
+            try 
+            {
+                $propertyValue = ConvertTo-HTMLTableFromArray -InputList ($InputData | ConvertFrom-Json -ErrorAction Stop) -TableType $TableType
+            }
+            catch 
+            {
+                $propertyValue = $InputData
+            }   
+        }
+        Default {$propertyValue = $InputData}
+    }    
+    
+    return $propertyValue
 }
 #endregion
 
@@ -790,8 +825,6 @@ Function Get-IntuneDeviceAndUserPolicies
     # Iterate through each ConfigSource item in the XML
     foreach ($item in $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManager.ConfigSource)
     {
-        $global:test = $item
-
         $enrollmentID = $item.EnrollmentId
         
         foreach ($PolicyScope in $item.PolicyScope)
@@ -906,7 +939,7 @@ function Get-IntuneWin32AppPolicies
 
             $identityID = $report.Name | Split-Path -Leaf -ErrorAction SilentlyContinue
 
-            $assignedTo = if ($identityID -eq '00000000-0000-0000-0000-000000000000'){'Device'}else{$identityID}
+            $assignedTo = if ($identityID -eq '00000000-0000-0000-0000-000000000000'){'💻 Device'}else{'👤 {0}' -f $identityID.ToString()}
             [array]$reportData = Get-ChildItem -Path $report.PSPath
 
             foreach ($dataItem in $reportData)
@@ -919,7 +952,8 @@ function Get-IntuneWin32AppPolicies
                 if ($tmpStatus -eq 'Installed'){$tmpStatus = '✅ Installed'}else{$tmpStatus = '❌ {0}' -f $tmpStatus}
 
                 $tmpObj = [pscustomobject][ordered]@{
-                    AssignedTo         = $assignedTo
+                    #AssignedTo         = $assignedTo
+                    Identity            = $assignedTo
                     AppId              = $dataItem.GetValue("AppId")
                     ApplicabilityCode  = $tmpApplicabilityCode
                     ApplicabilityCode2 = $dataItem.GetValue("ApplicabilityCode2")
@@ -979,7 +1013,8 @@ function Get-IntuneWin32AppPolicies
     {
         foreach ($app in $appList)
         {
-            [array]$appState = $statusList | Where-Object -Property 'AppID' -EQ ($app.Id) | Select-Object AssignedTo, ApplicabilityCode, Required, Status, ErrorCode
+            #[array]$appState = $statusList | Where-Object -Property 'AppID' -EQ ($app.Id) | Select-Object AssignedTo, ApplicabilityCode, Required, Status, ErrorCode
+            [array]$appState = $statusList | Where-Object -Property 'AppID' -EQ ($app.Id) | Select-Object Identity, ApplicabilityCode, Required, Status, ErrorCode
             if ($appState.count -gt 0)
             {
                 $app.AppState = $appState
@@ -1201,8 +1236,6 @@ Function Get-IntuneMSIPolicies
         70 = "✅ Enforcement Completed"
     }
 
-
-
     $outList = [System.Collections.Generic.List[pscustomobject]]::new()
     Foreach ($user in $MDMData.MDMEnterpriseDiagnosticsReport.EnterpriseDesktopAppManagementinfo.MsiInstallations.TargetedUser)
     {
@@ -1305,7 +1338,7 @@ Function Get-IntunePolicyCurrentData
     )
     
     # Define the policy scope to filter by
-    [array]$global:PolicyScopeData = $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManager.currentPolicies | Where-Object { $_.PolicyScope -eq $PolicyScope }
+    [array]$PolicyScopeData = $MDMData.MDMEnterpriseDiagnosticsReport.PolicyManager.currentPolicies | Where-Object { $_.PolicyScope -eq $PolicyScope }
 
     # Search for the specific policy area and policy name
     $PolicyObj = $PolicyScopeData.CurrentPolicyValues | Where-Object { $_.PolicyAreaName -eq $PolicyAreaName} 
@@ -1579,7 +1612,7 @@ Function Get-DeviceAndUserHTMLTables
             $htmlBody += "<h2 class='policy-area-title'>PolicyArea: $($policy.PolicyAreaName)</h2>"
             $htmlBody += "</div>" 
             $htmlBody += "<div class='collapsible-content'>" 
-            $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+            $htmlBody += "<table class='main-table'>"
             $htmlBody += "<tr><td style='font-weight: bold; width: 400px;'>EnrollmentId</td><td>$($policy.EnrollmentId) ➡️ $($policy.EnrollmentProvider)</td><td style='width: 150px;'></td><td style='width: 200px;'></td></tr>"
             $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 400px;'>Setting ⚙️</th><th>Value</th><th style='width: 150px;'>DefaultValue</th><th style='width: 200px;'>WinningProvider</th></tr>"
 
@@ -1660,7 +1693,7 @@ function Get-EnterpriseApplicationHTMLTables
         $htmlBody += "<h2 class='policy-area-title'>App: $($app.possibleAppName)</h2>"
         $htmlBody += "</div>" 
         $htmlBody += "<div class='collapsible-content'>" 
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse;'>"
+        $htmlBody += "<table class='main-table'>"
 
         # Let's exclude some properties that are not relevant for the report
         $excludedProperties = @('PossibleAppName','ActionType', 'AssignmentType', 'BITSJobId', 'JobStatusReport', 'PolicyScope', 'ServerAccountID', 'PackageId', 'LocURI', 'PackageType')
@@ -1730,7 +1763,7 @@ Function Get-ResourceHTMLTables
         $htmlBody += "<h2 class='policy-area-title'>ResourceType: $($tmpResourceType)</h2>"
         $htmlBody += "</div>" 
         $htmlBody += "<div class='collapsible-content'>" 
-        $htmlBody += "<table style='margin-bottom: 10px; width: 100%; border-collapse: collapse; table-layout: fixed;'>"
+        $htmlBody += "<table class='main-table'>"
         #$htmlBody += "<tr><td style='font-weight: bold;'>EnrollmentId</td><td colspan='5'>$($enrollmentIdString)</td></tr>"
 
         if ($tmpResourceType -eq 'RootCATrustedCertificates')
@@ -1897,7 +1930,7 @@ Function Get-IntuneWin32AppTables
         $htmlBody += "<h2 class='policy-area-title'>Win32App: $($app.Name)</h2>"
         $htmlBody += "</div>" 
         $htmlBody += "<div class='collapsible-content'>" 
-        $htmlBody += "<table>"
+        $htmlBody += "<table class='main-table'>"
         foreach ($property in ($app.PSObject.Properties | Sort-Object -Property Name | Where-Object { $_.Name -notin $excludedProperties })) 
         {
             # Lets format the AppState property to be a list in html
@@ -1931,7 +1964,7 @@ Function Get-IntuneWin32AppTables
                         Foreach($item in $tmpJsonString)
                         {
                             $item.DetectionText = $item.DetectionText | ConvertFrom-Json # could be done with -depth parameter, but not in posh 5.1 
-                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item.DetectionText  
+                            $propertyValue = Get-HTMLTableFromData -InputData $item.DetectionText -TableType 'ScriptBody'
                         }
                     }
                     catch 
@@ -1948,7 +1981,7 @@ Function Get-IntuneWin32AppTables
                         [array]$tmpJsonString = $property.Value | ConvertFrom-Json -ErrorAction Stop
                         Foreach($item in $tmpJsonString)
                         {
-                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item
+                            $propertyValue += ConvertTo-HTMLTableFromArray -InputList $item
                         }
                     }
                     catch 
@@ -1966,7 +1999,7 @@ Function Get-IntuneWin32AppTables
                         Foreach($item in $tmpJsonString)
                         {
                             $item.RequirementText = $item.RequirementText | ConvertFrom-Json # could be done with -depth parameter, but not in posh 5.1 
-                            $propertyValue += ConvertFrom-ObjectToCustomHtmlTable -InputObjectList $item.RequirementText
+                            $propertyValue += Get-HTMLTableFromData -InputData $item.RequirementText -TableType 'ScriptBody'
                         }
                     }
                     catch 
@@ -1977,37 +2010,16 @@ Function Get-IntuneWin32AppTables
                 }
 
                 # script block detection to account for multiple properties
-                { $_ -in @('InstallEx','ReturnCodes','InstallerData')}
-                {
-                    # Some properties we should be able to convert to json and make them easier to read in that format
-                    try 
-                    {
-                        # Converstion from unformatted json to object and from object to formatted json
-                        $propertyValue = '<pre>{0}</pre>' -f ($property.Value | ConvertFrom-Json -ErrorAction Stop | ConvertTo-Json -ErrorAction Stop )    
-                    }
-                    catch 
-                    {
-                        $propertyValue = $property.Value
-                    }                    
+                { $_ -in @('InstallEx','ReturnCodes','InstallerData','RebootEx','StartDeadlineEx')}
+                {     
+                    $propertyValue = Get-HTMLTableFromData -InputData $property.Value 
                 }
 
-                # script block detection to account for multiple properties
-                { $_ -in @('RebootEx','StartDeadlineEx')}
-                {
-                    try 
-                    {
-                        # Conversion from unformatted object to formatted json
-                        $propertyValue = '<pre>{0}</pre>' -f ($property.Value | ConvertTo-Json -ErrorAction Stop )
-                    }
-                    catch 
-                    {
-                        $propertyValue = $property.Value
-                    }
-                }
                 Default 
                 {
                     $propertyValue = $property.Value               
                 }
+                    
             }
             
             $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($propertyValue)</td></tr>"
@@ -2058,7 +2070,7 @@ Function Get-DeviceInfoHTMLTables
 
     foreach ($device in $deviceInfoData.group) 
     {
-        $htmlBody += "<table>"
+        $htmlBody += "<table class='main-table'>"
         $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 300px;'>Property ⚙️</th><th>Value</th></tr>"
 
         foreach ($property in ($device.PSObject.Properties)) 
@@ -2115,7 +2127,7 @@ Function Get-LAPSHTMLTables
 
     foreach ($item in $infoData.group) 
     {
-        $htmlBody += "<table>"
+        $htmlBody += "<table class='main-table'>"
         $htmlBody += "<tr style='border-top: 3px solid #ddd;'><th style='font-weight: bold; width: 300px;'>Setting ⚙️</th><th>Value</th></tr>"
         foreach ($property in ($item.PSObject.Properties)) 
         {
@@ -2163,23 +2175,51 @@ Function Get-IntuneScriptPolicyTables
         $htmlBody += "<h2 class='policy-area-title'>ScriptID: $($script.PolicyID)</h2>"
         $htmlBody += "</div>" 
         $htmlBody += "<div class='collapsible-content'>" 
-        $htmlBody += "<table>"
+        $htmlBody += "<table class='main-table'>"
         foreach ($property in $script.PSObject.Properties) 
         {
-            if ($property.Name -eq 'UserId')
+            $propertyName = $property.Name
+            Switch ($property.Name)
             {
-                if ($property.Value -eq '00000000-0000-0000-0000-000000000000') 
+                'UserId'
                 {
-                    # this is a device script, so we can set the value to "Device" with icon
-                    $property.Value = "💻 Device"
-                } 
-                else 
+                    if ($property.Value -eq '00000000-0000-0000-0000-000000000000') 
+                    {
+                        # this is a device script, so we can set the value to "Device" with icon
+                        $property.Value = "💻 Device"
+                    } 
+                    else 
+                    {
+                        $property.Value = "👤 {0}" -f $property.Value
+                    }
+                }
+            
+                'PreRemediationDetectScriptOutput'
                 {
-                    $property.Value = "👤 {0}" -f $property.Value
+                    $propertyName = 'PreRemediationDetectScriptOutput 🔍'
+                }
+
+                'PostRemediationDetectScriptOutput'
+                {
+                    $propertyName = 'PostRemediationDetectScriptOutput 🛠️'
+                }
+
+
+                { $_ -in @('ResultDetails','Info','Schedule')}
+                {
+                    $property.Value = Get-HTMLTableFromData -InputData $property.Value
+                }
+
+                'ErrorCode'
+                {
+                    if ($property.Value -ne 0)
+                    {
+                        $property.Value = '⚠️ {0}' -f $property.Value
+                    }    
                 }
             }
 
-            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($property.Name)</td><td>$($property.Value)</td></tr>"
+            $htmlBody += "<tr><td style='font-weight: bold; width: 300px;'>$($propertyName)</td><td>$($property.Value)</td></tr>"
         }
 
         $htmlBody += "</table>"
@@ -2204,7 +2244,8 @@ function Convert-IntunePoliciesToHtml
         [Parameter(Mandatory=$false)]
         [array]$Policies,
 
-        [string]$Title = "Intune Policy Report"
+        [Parameter(Mandatory=$false)]
+        [string]$Title = "Policy Report"
     )
 
     if ([string]::IsNullOrEmpty($script:MDMDiagReportPathVariable)) 
@@ -2241,14 +2282,29 @@ $htmlHeader = @"
         }
 
         .toggle-button-inner {
-            background-color: #525e6bff;
+            background-color: #a5a5a5ff;
             color: white;
             border: none;
             padding: 5px 10px;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             cursor: pointer;
             border-radius: 4px;
+            font-size: 11px;    /* Smaller font size for inner buttons */
             width: 70px;           /* Fixed width for consistent size */
+            text-align: center;     /* Center the text */
+            box-sizing: border-box; /* Ensure padding is included in width */
+        }
+
+        .toggle-button-inner-script {
+            background-color: #ffffffff;
+            color: white;
+            border: 2px solid #ccc;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;    /* Smaller font size for inner buttons */
+            width: 40px;           /* Fixed width for consistent size */
             text-align: center;     /* Center the text */
             box-sizing: border-box; /* Ensure padding is included in width */
         }
@@ -2267,46 +2323,69 @@ $htmlHeader = @"
             box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
         }
 
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 20px;
-            table-layout: fixed;
-            border: 3px solid #ddd;
-            font-size: 13px; 
+        .script-container {
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 6px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
         }
-
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            word-wrap: break-word;
-            text-align: left;
-            vertical-align: top;
-            font-size: 13px; 
-        }
-       
-        th { background-color: #f2f2f2; text-align: left; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-
-        th.resource-col, td.resource-col { width: 100px; }
-        th { background-color: #f2f2f2; text-align: left; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
 
         .policy-area-title {
             color: #2E6DA4;
         }
         
+
+        /* === MAIN TABLE STYLING === */
+        .main-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 20px;
+            table-layout: fixed;
+            border: 3px solid #ddd;
+            font-size: 13px;
+        }
+
+        .main-table th,
+        .main-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            word-wrap: break-word;
+            text-align: left;
+            vertical-align: top;
+            font-size: 13px;
+        }
+
+        .main-table th {
+            background-color: #f2f2f2;
+        }
+
+        .main-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .main-table th.resource-col,
+        .main-table td.resource-col {
+            width: 100px;
+        }
+
+        /* === NESTED TABLE STYLING === */
         .nested-table {
             border: none !important;
+            outline: none !important;
+            background-color: transparent !important;
             border-collapse: collapse;
             width: 100%;
             table-layout: fixed;
             font-size: 13px;
         }
 
-        .nested-table th, .nested-table td {
-            outline: 1px solid #ddd;
-            border: none;
+        .nested-table th,
+        .nested-table td {
+            background-color: transparent !important;
+            outline: none !important;
+            border: none !important;
             padding: 8px;
             word-wrap: break-word;
             text-align: left;
@@ -2317,15 +2396,15 @@ $htmlHeader = @"
             width: 200px;
         }
 
+    
 
     </style>
     <script>
-        
+       
         function toggleContent(button) {
-            // Try to find the next sibling collapsible content
+            // Find the main content section to toggle
             let content = button.parentElement.nextElementSibling;
 
-            // If not found, fall back to the closest .group-container's .collapsible-content
             if (!content || !content.classList.contains('collapsible-content')) {
                 const groupContainer = button.closest('.group-container');
                 content = groupContainer ? groupContainer.querySelector('.collapsible-content') : null;
@@ -2334,10 +2413,27 @@ $htmlHeader = @"
             if (!content) return;
 
             const isVisible = window.getComputedStyle(content).display !== "none";
-            content.style.display = isVisible ? "none" : "block";
-            button.textContent = isVisible ? "Show" : "Hide";
+            const newDisplay = isVisible ? "none" : "block";
+            const newLabel = isVisible ? "Show" : "Hide";
+
+            // Toggle the main content
+            content.style.display = newDisplay;
+            button.textContent = newLabel;
+
+            // Also toggle all nested collapsible contents and update their buttons
+            const nestedContents = content.querySelectorAll('.collapsible-content');
+            const nestedButtons = content.querySelectorAll('.toggle-button');
+
+            nestedContents.forEach(nested => {
+                nested.style.display = newDisplay;
+            });
+
+            nestedButtons.forEach(nestedBtn => {
+                nestedBtn.textContent = newLabel;
+            });
         }
 
+ 
         function toggleAll() {
             const contents = document.querySelectorAll('.collapsible-content');
             const buttons = document.querySelectorAll('.toggle-button:not(#toggleAllBtn)');
@@ -2351,9 +2447,27 @@ $htmlHeader = @"
             }
         });
 
+
         toggleAllBtn.textContent = shouldCollapse ? 'Expand All' : 'Collapse All';
         }
 
+
+        function toggleScript(button) {
+            const pre = button.parentElement.querySelector('.script-body');
+            const isVisible = pre.style.display !== 'none';
+            pre.style.display = isVisible ? 'none' : 'block';
+            button.textContent = isVisible ? '➕' : '➖';
+        }
+
+
+        function copyScript(button) {
+            const pre = button.parentElement.querySelector('.script-body');
+            const text = pre.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                button.textContent = '✅';
+                setTimeout(() => button.textContent = '📋', 1500);
+            });
+        }
 
     </script>
 </head>
@@ -2390,40 +2504,6 @@ $htmlHeader = @"
 }
 #endregion
 
-
-#region Format-StringToXml
-function Format-StringToXml 
-{
-    param 
-    (
-        [string]$XmlString
-    )
-
-    # Wrap in a root element to ensure valid XML
-    $wrappedXml = "<root>$XmlString</root>"
-
-    try {
-        [xml]$xml = $wrappedXml
-    } catch {
-        Write-Host "Invalid XML format" -ForegroundColor Yellow
-        return $XmlString
-    }
-
-    $formattedXml = ""
-
-    if ($xml.root.enabled) {
-        $formattedXml += "&lt;enabled/&gt;<br>"
-    }
-
-    foreach ($node in $xml.root.data) {
-        $id = $node.id
-        $value = $node.value
-        $formattedXml += "&nbsp;&nbsp;&lt;data id='$id' value='$value'/&gt;<br>"
-    }
-
-    return "<pre>$formattedXml</pre>"
-}
-#endregion
 
 
 
@@ -2469,7 +2549,7 @@ Get-IntunePoliyLAPSData -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object 
 $outFile = '{0}\IntunePolicyReport.html' -f (Split-Path -Path $MDMDiagReportHTMLPath -Parent)
 
 # Convert the policies to HTML and save to the specified output path
-Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report"
+Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report v4.0"
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
