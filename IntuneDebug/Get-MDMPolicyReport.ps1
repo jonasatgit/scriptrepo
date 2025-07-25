@@ -45,6 +45,45 @@ param
 )
 
 
+
+#region Get-ValidDateTime
+function Get-ValidDateTime
+{
+    param 
+    (
+        [string]$DateTimeString
+    )
+
+    $knownFormats = @(
+        'M-d-yyyy HH:mm:ss.fffffff',
+        'M-dd-yyyy HH:mm:ss.fffffff',
+        'MM-d-yyyy HH:mm:ss.fffffff',
+        'MM-dd-yyyy HH:mm:ss.fffffff',
+        'yyyy-MM-dd HH:mm:ss.fffffff',
+        'dd.MM.yyyy HH:mm:ss.fffffff'
+        'M-d-yyyy HH:mm:ss',
+        'M-dd-yyyy HH:mm:ss',
+        'MM-d-yyyy HH:mm:ss',
+        'MM-dd-yyyy HH:mm:ss',
+        'yyyy-MM-dd HH:mm:ss',
+        'dd.MM.yyyy HH:mm:ss'
+    )
+
+    foreach ($format in $knownFormats) 
+    {
+        try 
+        {
+            return [datetime]::ParseExact($DateTimeString, $format, $null)
+        } 
+        catch 
+        {
+            continue
+        }
+    }
+}
+#endregion
+
+
 #region Get-IntuneScriptPolicies
 Function Get-IntuneScriptPolicies
 {
@@ -976,44 +1015,77 @@ function Get-IntuneWin32AppPolicies
         $LogPath = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\AppWorkload*.log"
     }       
 
-    # Getting all AppWorkload and sorting them by LastWriteTime
-    # This will make sure we have the latest entries at the first position in our array by sorting files descending
     $logFiles = Get-ChildItem -Path $LogPath | Sort-Object -Property LastWriteTime -Descending
 
-    # win32app policy string pattern
-    $pattern = '<!\[LOG\[Get policies = \[\{(.*)\]LOG\]!>'
+    # Corrected regex pattern for extracting the policy JSON
+    $pattern = '<!\[LOG\[Get policies = (?<policy>\[\{.*?\}\])\]LOG\]!>'
 
     # Get all policies with regex pattern filter
     $lines = $logFiles | Select-String -Pattern $pattern
 
-    if ($lines)
+    if ($lines) 
     {
-        $appList = @()
-        Foreach ($line in $lines[0])
+        $appPolicyList = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $boolErrorHappened = $false
+        foreach ($line in $lines) 
         {
-            # We need to add the chars "[{" to the beginning of the line to make it a valid JSON array 
-            # since we made the not part of the regex pattern to only match policies with at least one app
-            [array]$appList += "[{$($line.Matches.Groups[1].Value)" | ConvertFrom-Json
+            # Extract date and time
+            $Matches = $null
+            if ($line.Line -match 'time="(?<time>.*?)" date="(?<date>.*?)"') 
+            {
+                $dateTimeString = '{0} {1}' -f ($Matches['date']), ($Matches['time'])
+                # Parse the date and time to a DateTime object
+                $dateTime = $null
+                $dateTime = Get-ValidDateTime -DateTimeString $dateTimeString
+
+                # If parsing fails, output a warning once. Every line might fail and we dont want 200 errors visible
+                if ((-NOT $dateTime) -and (-not $boolErrorHappened))
+                {
+                    Write-Warning "Failed to parse date and time from file: $($line.Filename) and line: $($line.Line)"
+                    $boolErrorHappened = $true
+                    continue
+                }            
+            }
+
+            # Extract and convert the policy JSON
+            $Matches = $null
+            if ($line.Line -match $pattern) 
+            {
+                $policyJson = $Matches['policy']
+                try 
+                {
+                    $policyObject = $policyJson | ConvertFrom-Json -ErrorAction Stop
+
+                    # add property
+                    foreach ($app in $policyObject)
+                    {
+                        # Set to default value
+                        $app | Add-Member -MemberType NoteProperty -Name 'AppState' -Value @()       
+                    }
+
+                    $appPolicyList.Add([PSCustomObject][ordered]@{
+                        DateTime = $dateTime
+                        PolicyCount = $policyObject.Count
+                        Policy   = $policyObject
+                    })
+                } 
+                catch 
+                {
+                    Write-Warning "Failed to parse JSON from line: $($line.Filename). Error: $_"
+                }
+            }
         }
-    }
-    else 
-    {
-        return @()
-    }
 
-    # add property
-    foreach ($app in $appList)
-    {
-        # Set to default value
-        $app | Add-Member -MemberType NoteProperty -Name 'AppState' -Value @()       
+        # Output the parsed policies
+        $appList = $appPolicyList | Sort-Object -Property DateTime -Descending | Select-Object -First 1
     }
 
 
+    # Now we have the appList with the latest policies, lets add the status information
     if ($statusList.count -gt 0)
     {
-        foreach ($app in $appList)
+        foreach ($app in $appList.Policy)
         {
-            #[array]$appState = $statusList | Where-Object -Property 'AppID' -EQ ($app.Id) | Select-Object AssignedTo, ApplicabilityCode, Required, Status, ErrorCode
             [array]$appState = $statusList | Where-Object -Property 'AppID' -EQ ($app.Id) | Select-Object Identity, ApplicabilityCode, Required, Status, ErrorCode
             if ($appState.count -gt 0)
             {
@@ -1022,7 +1094,7 @@ function Get-IntuneWin32AppPolicies
         }
     }
 
-    return ($appList | Sort-Object -Property Name)
+    return ($appList.Policy | Sort-Object -Property Name)
 }
 #endregion
 
@@ -2549,7 +2621,7 @@ Get-IntunePoliyLAPSData -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object 
 $outFile = '{0}\IntunePolicyReport.html' -f (Split-Path -Path $MDMDiagReportHTMLPath -Parent)
 
 # Convert the policies to HTML and save to the specified output path
-Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report v4.0"
+Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report v4.1"
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
