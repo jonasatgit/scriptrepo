@@ -356,42 +356,42 @@ Function Get-IntunePoliyLAPSData
 
     # https://learn.microsoft.com/en-us/windows/client-management/mdm/laps-csp
     $BackupDirectoryMap = @{
-        0 = "0 - Disabled (password won't be backed up)" # Default
-        1 = "1 - Backup the password to Microsoft Entra ID only"
-        2 = "2 - Backup the password to Active Directory only"
+        0 = "0 = Disabled (password won't be backed up)" # Default
+        1 = "1 = Backup the password to Microsoft Entra ID only"
+        2 = "2 = Backup the password to Active Directory only"
     }
 
     $PasswordComplexityMap = @{
-        1 = "1 - Large letters."
-        2 = "2 - Large letters + small letters."
-        3 = "3 - Large letters + small letters + numbers."
-        4 = "4 - Large letters + small letters + numbers + special characters." # Default
-        5 = "5 - Large letters + small letters + numbers + special characters (improved readability)."
-        6 = "6 - Passphrase (long words)."
-        7 = "7 - Passphrase (short words)."
-        8 = "8 - Passphrase (short words with unique prefixes)."
+        1 = "1 = Large letters."
+        2 = "2 = Large letters + small letters."
+        3 = "3 = Large letters + small letters + numbers."
+        4 = "4 = Large letters + small letters + numbers + special characters." # Default
+        5 = "5 = Large letters + small letters + numbers + special characters (improved readability)."
+        6 = "6 = Passphrase (long words)."
+        7 = "7 = Passphrase (short words)."
+        8 = "8 = Passphrase (short words with unique prefixes)."
     }
 
     $PostAuthenticationActionMap = @{
-        1  = "1 - Reset password: upon expiry of the grace period, the managed account password will be reset."
-        3  = "3 - Reset the password and logoff the managed account: upon expiry of the grace period, the managed account password will be reset and any interactive logon sessions using the managed account will be terminated." # Default
-        5  = "5 - Reset the password and reboot: upon expiry of the grace period, the managed account password will be reset and the managed device will be immediately rebooted."
-        11 = "11 - Reset the password, logoff the managed account, and terminate any remaining processes: upon expiration of the grace period, the managed account password is reset, any interactive logon sessions using the managed account are logged off, and any remaining processes are terminated."
+        1  = "1 = Reset password: upon expiry of the grace period, the managed account password will be reset."
+        3  = "3 = Reset the password and logoff the managed account: upon expiry of the grace period, the managed account password will be reset and any interactive logon sessions using the managed account will be terminated." # Default
+        5  = "5 = Reset the password and reboot: upon expiry of the grace period, the managed account password will be reset and the managed device will be immediately rebooted."
+        11 = "11 = Reset the password, logoff the managed account, and terminate any remaining processes: upon expiration of the grace period, the managed account password is reset, any interactive logon sessions using the managed account are logged off, and any remaining processes are terminated."
     }
 
     $AutomaticAccountManagementTargetMap = @{
-        0 = "0 - Automatically manage the built-in Administrator account"
-        1 = "1 - Automatically manage a new custom account"
+        0 = "0 = Automatically manage the built-in Administrator account"
+        1 = "1 = Automatically manage a new custom account"
     }
 
     $AutomaticAccountManagementEnableAccountMap = @{
-        0 = "0 - Disable the automatically managed account"
-        1 = "1 - Enable the automatically managed account"
+        0 = "0 = Disable the automatically managed account"
+        1 = "1 = Enable the automatically managed account"
     }
 
     $AutomaticAccountManagementRandomizeNameMap = @{
-        0 = "0 - Don't randomize the name of the automatically managed account"
-        1 = "1 - Randomize the name of the automatically managed account"
+        0 = "0 = Don't randomize the name of the automatically managed account"
+        1 = "1 = Randomize the name of the automatically managed account"
     }
 
     # Initialize the output object
