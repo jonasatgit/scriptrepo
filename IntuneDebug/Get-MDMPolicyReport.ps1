@@ -500,8 +500,8 @@ Function ConvertTo-HTMLTableFromArray
                   
                     $htmlOutput += "<td colspan='2'>"
                     $htmlOutput += "   <div class='script-container'>"
-                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='toggleScript(this)'>➖</button>"
-                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='copyScript(this)'>📋</button>"
+                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='toggleScript(this)'>Hide</button>"
+                    $htmlOutput += "        <button class='toggle-button-inner-script' onclick='copyScript(this)'>Copy</button>"
                     $htmlOutput += "        <pre class='script-body'>$decodedString</pre>"
                     $htmlOutput += "    </div>"
                     $htmlOutput += "</td>"
@@ -545,7 +545,7 @@ Function ConvertTo-HTMLTableFromArray
 }
 #endregion
 
-# Get-HTMLTableFromData
+#region Get-HTMLTableFromData
 Function Get-HTMLTableFromData 
 {
     [CmdletBinding()]
@@ -2369,16 +2369,19 @@ $htmlHeader = @"
 
         .toggle-button-inner-script {
             background-color: #ffffffff;
-            color: white;
+            color: #333333;              /* Darker text color for visibility */
             border: 2px solid #ccc;
-            padding: 5px 10px;
+            padding: 3px 6px;
             margin-bottom: 5px;
             cursor: pointer;
             border-radius: 4px;
-            font-size: 11px;    /* Smaller font size for inner buttons */
-            width: 40px;           /* Fixed width for consistent size */
+            font-size: 13px;             /* Increased font size for visibility */
+            /* font-weight: bold;           Make the symbol stand out */
+            /* font-family: Arial, sans-serif;  Clean, readable font */
+            width: 50px;           /* Fixed width for consistent size */
+            height: 30px;           /* Fixed hight for consistent size */   
             text-align: center;     /* Center the text */
-            box-sizing: border-box; /* Ensure padding is included in width */
+            box-sizing: border-box;  /* Ensure padding is included in width */
         }
 
         .collapsible-content {
@@ -2528,7 +2531,7 @@ $htmlHeader = @"
             const pre = button.parentElement.querySelector('.script-body');
             const isVisible = pre.style.display !== 'none';
             pre.style.display = isVisible ? 'none' : 'block';
-            button.textContent = isVisible ? '➕' : '➖';
+            button.textContent = isVisible ? 'Show' : 'Hide';
         }
 
 
@@ -2537,7 +2540,7 @@ $htmlHeader = @"
             const text = pre.textContent;
             navigator.clipboard.writeText(text).then(() => {
                 button.textContent = '✅';
-                setTimeout(() => button.textContent = '📋', 1500);
+                setTimeout(() => button.textContent = 'Copy', 1500);
             });
         }
 
