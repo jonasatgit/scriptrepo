@@ -127,7 +127,11 @@ $listOfPerformanceCounters = @(
     'SMS Status Messages(*)\Processed/sec', # Site server performance counter
     'Web Service(*)\Bytes Sent/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
     'Web Service(*)\Bytes Received/sec', # Web Service performance counter. Helpful to get MP, DP, SUP and Microsoft Connected Cache performance data
-    'SMS Notification Server\Total online clients' # Management Point performance counter
+    'SMS Notification Server\Total online clients', # Management Point performance counter
+    'SMS MP LocationMgr\DP Requests/second', # SMS Management Point Location Manager location requests for a DP
+    'SMS MP LocationMgr\MP Requests/second', # SMS Management Point Location Manager location requests for a MP
+    'SMS MP LocationMgr\WSUS Requests/second' # SMS Management Point Location Manager location requests for a WSUS
+
 )
 
 
