@@ -2616,6 +2616,12 @@ $script:MDMDiagReportPathVariable = $MDMDiagReportPath
 $MDMDiagReportXml = Get-IntunePolicyDataFromXML -MDMDiagReportPath $MDMDiagReportPath
 $MDMDiagReportHTMLPath = $MDMDiagReportXml.FileFullName -replace '.xml', '.html'
 
+if (-Not (Test-Path -Path $MDMDiagReportHTMLPath))
+{
+    Write-Error "The specified MDM Diagnostics HTML Report file does not exist: `"$MDMDiagReportHTMLPath`""
+    return
+}
+
 $script:MDMDiagHTMLReportPathVariable = $MDMDiagReportHTMLPath 
 
 $script:enrollmentProviderIDs = Get-EnrollmentProviderIDs -MDMData $MDMDiagReportXml.XMlFileData
