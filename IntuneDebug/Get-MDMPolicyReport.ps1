@@ -879,10 +879,12 @@ Function Get-IntuneDeviceAndUserPolicies
                 }
 
                 # Define the properties we are interested in 
-                [array]$propertyList = $area | Get-Member | Where-Object {$_.MemberType -eq 'Property'} | Select-Object -Property Name | Where-Object {$_.Name -notlike '*_LastWrite' -and $_.Name -ne 'PolicyAreaName'}
+                [array]$propertyList = $area | Get-Member | 
+                                            Where-Object {$_.MemberType -eq 'Property'} | 
+                                            Select-Object -Property Name | 
+                                            Where-Object {$_.Name -notlike '*_LastWrite' -and $_.Name -ne 'PolicyAreaName'}
 
-
-                try{$enrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]}catch{}
+                try{$enrollmentProvider = $script:enrollmentProviderIDs[$enrollmentID]}catch{}                
                 if([string]::IsNullOrEmpty($enrollmentProvider))
                 {
                     $enrollmentProvider = 'Unknown'
@@ -907,9 +909,8 @@ Function Get-IntuneDeviceAndUserPolicies
                 $settingsList = [System.Collections.Generic.List[pscustomobject]]::new()
                 foreach ($property in $propertyList)
                 {
-
                     # Adding metadata for the property
-                    $metadataInfo = Get-IntunePolicyMetadata -MDMData  $MDMData -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
+                    $metadataInfo = Get-IntunePolicyMetadata -MDMData $MDMData -PolicyAreaName $area.PolicyAreaName -PolicyName $property.Name
                     if ($area.PolicyAreaName -ieq 'knobs')
                     {
                         $winningProvider = "Not set"
@@ -1244,7 +1245,7 @@ function Get-IntuneResourcePolicies
                 $outObj = [pscustomobject]@{
                     PolicyScope = 'Resource'
                     EnrollmentId = $enrollmentID
-                    ProviderID = (Get-EnrollmentIDData -EnrollmentId $enrollmentID -MDMData $MDMData).ProviderID
+                    ProviderID = $script:enrollmentProviderIDs[$enrollmentID]
                     ResourceTarget = $resourceTarget
                     ResourceName = $resource
                     ResourceType = $tmpResourceType    
@@ -1578,12 +1579,34 @@ function Get-EnrollmentProviderIDs
         {
             If([string]::IsNullOrEmpty($enrollment.ProviderID))
             {
-                $providerID = 'Local'
+                # Logic to get a ppkg file name from the MDMEnterpriseDiagnosticsReport
+                $providerPackage = $MDMData.MDMEnterpriseDiagnosticsReport.ProvisioningResults.Result | Where-Object -Property PackageID -eq "{$($enrollment.EnrollmentId)}"
+                if ($providerPackage)
+                {
+                    $providerID = $providerPackage.PackageFileName
+                }
+                else 
+                {                    
+                    $providerID = 'Local'
+                    try 
+                    {
+                        # try to extract the enrollment name from a string like this:
+                        # '<td valign="top" class="ColumnHeader">EnrollmentEnrollTypeUpdatePolicy</td><td valign="top">B04F44A4-B696-4B56-934A-C11667E944E4</td>'
+                        $content = Get-Content -Path $script:MDMDiagHTMLReportPathVariable -Raw
+                        $pattern = '<td[^>]*>(?<EnrollmentName>[^<]+)</td>\s*<td[^>]*>' + [regex]::Escape($enrollment.EnrollmentId) + '</td>'
+                        $regexResult = $null
+                        $regexResult = [regex]::Match($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                        $providerID = $result.Groups['EnrollmentName'].Value
+                    }
+                    catch{}
+                }
             }
             elseif ($enrollment.ProviderID -eq 'MS DM Server')
             {
                 $providerID = 'Intune'
             }
+
+            # Add the EnrollmentId and ProviderID to the hash table
             $enrollmentHashTable[$enrollment.EnrollmentId] = $providerID
         }
         else 
@@ -1881,7 +1904,7 @@ Function Get-ResourceHTMLTables
                 $tmpExpireDays = $resource.ResourceData.ExpireDays
                 try 
                 {
-                    if ([int]$resource.ResourceData.ExpireDays -le 0)
+                    if (([int]$resource.ResourceData.ExpireDays -le 0) -and -not ([string]::IsNullOrEmpty($resource.ResourceData.ExpireDays)))
                     {
                         $tmpExpireDays = '⚠️ {0}' -f $resource.ResourceData.ExpireDays   
                     }

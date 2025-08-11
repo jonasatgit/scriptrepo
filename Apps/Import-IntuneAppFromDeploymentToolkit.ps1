@@ -109,40 +109,103 @@ param
 
     This example will read the $adtSession and $IntuneAppMetadata hashtables from the Invoke-AppDeployToolkit.ps1 script file.
 #>
-function Get-HashtablesFromScript 
+function Get-HashtablesFromScript
 {
     param 
     (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
-        [string]$FilePath
+        [object]$File
     )
 
     process 
     {
-        # Read the content of the file
-        $fileContent = Get-Content -Path $FilePath -Raw
 
-        # Extract the first hashtable called $adtSession
-        $adtSessionPattern = '(?s)\$adtSession\s*=\s*@\{.*?\}'
-        $adtSessionMatch = [regex]::Match($fileContent, $adtSessionPattern)
-        if ($adtSessionMatch.Success) 
+        $FilePath = $File.FullName
+        # detect the version of the script
+        $version = ''
+        $scriptName = $FilePath | Split-Path -Leaf
+        switch ($scriptName) 
         {
-            # we will now have the content of the hashtable in $adtSessionContent 
-            # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
-            $adtSessionContent = $adtSessionMatch.Value
-            Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
-        } 
+            "Invoke-AppDeployToolkit.ps1" { $version = 'v4' }
+            "Deploy-Application.ps1" { $version = 'v3' }
+        }        
+
+        # Actions for version 4
+        if ($version -eq 'v4')
+        {
+            # Read the content of the file
+            $fileContent = Get-Content -Path $FilePath -Raw
+            # Extract the first hashtable called $adtSession
+            $adtSessionPattern = '(?s)\$adtSession\s*=\s*@\{.*?\}'
+            $adtSessionMatch = [regex]::Match($fileContent, $adtSessionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($adtSessionMatch.Success) 
+            {
+                # we will now have the content of the hashtable in $adtSessionContent 
+                # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
+                $adtSessionContent = $adtSessionMatch.Value
+                #Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
+            } 
+            else 
+            {
+                Write-Error "Failed to extract `$adtSession hashtable."
+                return
+            }
+
+            if ($null -eq $adtSessionContent) 
+            {
+                Write-Error "Failed to extract `$adtSession hashtable."
+                return
+            }
+        }
         else 
         {
-            Write-Error "Failed to extract `$adtSession hashtable."
-            return
+            $adtSessionContent = Get-Content -Path $FilePath -Raw    
         }
 
-        if ($null -eq $adtSession) 
+
+        $outObj = [PSCustomObject][ordered]@{
+            # Add id to the object to be able to identify it later
+            ID = (New-Guid).Guid
+            FilePath = $FilePath
+            'ADT-Version' = $version
+            'ADT-AppVendor' = ''
+            'ADT-AppName' = ''
+            'ADT-AppVersion' = ''
+            'ADT-AppArch' = ''
+            'ADT-AppLang' = ''
+            'ADT-AppRevision' = ''
+            'ADT-AppSuccessExitCodes' = @(0) # set default values
+            'ADT-AppRebootExitCodes' = @(1641, 3010) # set default values
+            'ADT-AppScriptVersion' = ''
+            'ADT-AppScriptDate' = ''
+            'ADT-AppScriptAuthor' = ''
+        } 
+
+        # build the $propertyList by enumerating the properties of $outObj and exluding the ID and FilePath properties. We also need to remove the prefix 'adt-'
+        $propertyList = $outObj.PSObject.Properties | Where-Object { $_.Name -notin @('ID', 'FilePath','ADT-Version') } | ForEach-Object { $_.Name -replace '^ADT-', '' }
+
+        foreach ($property in $propertyList) 
         {
-            Write-Error "Failed to extract `$adtSession hashtable."
-            return
+            $adtSessionMatch = $null
+            $adtSessionPattern = "\`$?$property\s*=\s*(['`"])(?<string>.*?)(['`"])"
+            $adtSessionMatch = [regex]::Match($adtSessionContent, $adtSessionPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($adtSessionMatch.Success) 
+            {
+                $value = $adtSessionMatch.Groups['string'].Value
+                #Write-Output "Extracted value: $value"
+                $outObj."ADT-$property" = $value
+            }
         }
+
+        return $outObj
+
+        
+        <#
+        # Lets now load the script with the Intune related metadata
+        # That script is always the same no matter the ADT script version
+        $fileContent = $null
+        $FilePathIntuneAppMetadata = $FilePath -replace '\.ps1', '\-IntuneAppMetadata.ps1'
+        $fileContent = Get-Content -Path $FilePathIntuneAppMetadata -Raw
 
         # Extract the second hashtable called $IntuneAppMetadata
         $intuneAppMetadataPattern = '(?s)\$IntuneAppMetadata\s*=\s*@\{.*?\}'
@@ -166,14 +229,9 @@ function Get-HashtablesFromScript
             return
         }
 
-        # Combine the hashtables into a single PSCustomObject
-        $combinedObject = [PSCustomObject][ordered]@{
-            # Add id to the object to be able to identify it later
-            ID = (New-Guid).Guid
-            FilePath = $FilePath
-        } 
 
-        # Add properties from $adtSession to $combinedObject
+
+        # Add properties from $adtSession to $outObj
         foreach ($key in $adtSession.Keys) 
         {
             if ($key -ieq 'DeployAppScriptFriendlyName')
@@ -182,19 +240,23 @@ function Get-HashtablesFromScript
             }
             else 
             {
-                $combinedObject | Add-Member -MemberType NoteProperty -Name "ADT-$($key)" -Value $adtSession[$key]
+                $outObj | Add-Member -MemberType NoteProperty -Name "ADT-$($key)" -Value $adtSession[$key]
             }
         }
 
-        # Add properties from $intuneAppMetadata to $combinedObject
+        # Add properties from $intuneAppMetadata to $outObj
         foreach ($key in $intuneAppMetadata.Keys) 
         {
-            $combinedObject | Add-Member -MemberType NoteProperty -Name "IN-$($key)" -Value $intuneAppMetadata[$key]
+            $outObj | Add-Member -MemberType NoteProperty -Name "IN-$($key)" -Value $intuneAppMetadata[$key]
         }
 
+        # Adding the versioninfo to the combined object
+        $outObj | Add-Member -MemberType NoteProperty -Name "ADT-Version" -Value $Version
 
-        return $combinedObject
+        return $outObj
+        #>
     }
+        
 }
 #endregion
 
@@ -1724,6 +1786,7 @@ $arrayOfDisplayedProperties = @(
     'ADT-InstallTitle',
     'ADT-InstallName',
     'ADT-AppLang',	
+    'ADT-Version',
     'IN-IntuneInstallCommand',
     'IN-IntuneUninstallCommand',
     'IN-AllowAvailableUninstall',
@@ -1738,11 +1801,18 @@ $arrayOfDisplayedProperties = @(
 )
 
 # Lets get all the Invoke-AppDeployToolkit.ps1 files in the AppBasePath to extract the hashtable data from them
-$fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File -Filter "Invoke-AppDeployToolkit.ps1"
+#$fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File -Filter "Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1"
+
+
+$fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File | Where-Object {
+    $_.Name -in @("Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1")
+}
+
+
 
 # Read the hashtable data from the script files to be able to select which apps to import.
 # The data will be displayed in an Out-GridView for selection.
-[array]$appList = $fileList.FullName | Get-HashtablesFromScript
+[array]$appList = $fileList | Get-HashtablesFromScript
 
 $selectionTitle = "Intune App Import Tool. Select apps to import."
 [array]$selectedApps = $appList | Select-Object -Property $arrayOfDisplayedProperties | Out-GridView -Title $selectionTitle -OutputMode Multiple
