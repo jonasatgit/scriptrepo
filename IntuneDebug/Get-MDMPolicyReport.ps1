@@ -24,6 +24,15 @@
     The script can be run locally on a device to generate a new report or it can be run with the MDMDiagReportPath parameter to use an existing MDM Diagnostics export folder.
     The report includes information about Intune script policies, LAPS settings, firewall settings, and more.
 
+.VERSION
+    4.0.1
+
+.AUTHOR
+    Jonas Ohmsen
+
+.LINK
+    https://aka.ms/IntuneDebug
+
 .PARAMETER MDMDiagReportPath
     Path to the MDM Diagnostics export folder. 
     The folder should contain the MDMDiagReport.xml file, the MDMDiagReport.html file, and the IntuneManagementExtension AppWorkload.log files.
@@ -2655,7 +2664,7 @@ Get-IntunePoliyLAPSData -MDMData $MDMDiagReportXml.XMlFileData | ForEach-Object 
 $outFile = '{0}\IntunePolicyReport.html' -f (Split-Path -Path $MDMDiagReportHTMLPath -Parent)
 
 # Convert the policies to HTML and save to the specified output path
-Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report v4.1"
+Convert-IntunePoliciesToHtml -OutputPath $outFile -Policies $IntunePolicyList -Title "Intune Policy Report v4.0.1"
 
 # Open the generated HTML report in Microsoft Edge
 Start-Process "msedge.exe" -ArgumentList $outFile
