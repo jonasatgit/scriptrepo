@@ -1,6 +1,6 @@
 ﻿
 <#
-.Synopsis
+.SYNOPSIS
     Script to create html report of Intune policies from MDM Diagnostics Report XML file.
  
 .DESCRIPTION
@@ -19,8 +19,10 @@
     #
     #************************************************************************************************************
 
-    This script generates an HTML report of Intune policies from the MDM Diagnostics Report XML, HTML and AppWorkload.log files
+    This script generates a HTML report of Intune policies from the MDM Diagnostics Report XML, HTML and AppWorkload.log files
 
+    The script can be run locally on a device to generate a new report or it can be run with the MDMDiagReportPath parameter to use an existing MDM Diagnostics export folder.
+    The report includes information about Intune script policies, LAPS settings, firewall settings, and more.
 
 .PARAMETER MDMDiagReportPath
     Path to the MDM Diagnostics export folder. 
