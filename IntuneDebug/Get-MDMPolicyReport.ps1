@@ -1,7 +1,7 @@
 ﻿
 <#
 .SYNOPSIS
-    Script to create html report of Intune policies from MDM Diagnostics Report XML file.
+    Script to create a html report about Intune policies applied to a system
  
 .DESCRIPTION
     #************************************************************************************************************
