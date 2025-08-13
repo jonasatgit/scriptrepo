@@ -24,12 +24,6 @@
     The script can be run locally on a device to generate a new report or it can be run with the MDMDiagReportPath parameter to use an existing MDM Diagnostics export folder.
     The report includes information about Intune script policies, LAPS settings, firewall settings, and more.
 
-.VERSION
-    4.0.1
-
-.AUTHOR
-    Jonas Ohmsen
-
 .LINK
     https://aka.ms/IntuneDebug
 
