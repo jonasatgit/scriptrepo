@@ -2401,6 +2401,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
 
         try 
         {
+            # STEP 1: We need to extract some data from the intunewin file
             # We need to extract the content of the intunewin file to get file information, metadata and the file we need to upload
             $intuneWinFullName = '{0}\{1}\{2}.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName, $configMgrApp.DeploymentTypes[0].LogicalName
             Write-CMTraceLog -Message "Getting the contents of: `"$($intuneWinFullName)`""
@@ -2432,7 +2433,8 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             Continue
         }
 
-        # Lets create the app hash table
+        # STEP 2: We need to create the Win32LobApp object
+        # We need to create a hash table with all the needed properties
         $appHashTable = [ordered]@{
             "@odata.type" = "#microsoft.graph.win32LobApp"
             "applicableArchitectures" = "x86,x64"
@@ -2504,6 +2506,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             #>
         }
 
+        # STEP 3: We need to create the detection rules for the app as those are mandatory
         Write-CMTraceLog -Message "Creating app detection rules for: `"$($configMgrApp.Name)`""
         # we need to create a rule object for each detection Rule
         $detectionRulesListToAdd = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -2875,6 +2878,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         }
         $appHashTable.detectionRules = $detectionRulesListToAdd
 
+        # STEP 4: We need to create ast least one requirement rule for the app as those are mandatory
         Write-CMTraceLog -Message "Creating basic app requirement rule to run on x86 and x64 systems with a minimum Windows 10 version of 1607"
         $requirementRule = [ordered]@{
             "applicableArchitectures" = 'All'
@@ -2896,6 +2900,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             #verbose = $true
         }
 
+        # STEP 5: Create the Win32 app in Intune with the constructed body before we can upload the content
         Write-CMTraceLog -Message "Creating Win32 app in Intune"
         Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
         $win32MobileAppRequest = Invoke-MgGraphRequest @paramSplatting
@@ -2905,6 +2910,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             continue
         }
 
+        # STEP 6: We need request a content version for the app
         Write-CMTraceLog -Message "Request content version for Intune app"
         $paramSplatting = @{
             Method = 'POST'
@@ -2920,6 +2926,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             Continue
         }
 
+        # STEP 7: We need tp upload content metadata to Intune in order to get the Azure Storage URI with SAS token
         # Write the data to the app object
         $Win32AppFileBody = [ordered]@{
             "@odata.type" = "#microsoft.graph.mobileAppContentFile"
@@ -2952,6 +2959,9 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             $ContentVersionsFiles = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri -Stage 'azureStorageUriRequest'
         }
 
+        # STEP 8: We need to upload the content to the Azure Storage blob using the URI with SAS token
+        # If the token is expired we need to renew it to be able to upload the whole content
+        # The content needs to be uploaded in chunks
         Write-CMTraceLog -Message "Trying to upload file to Intune Azure Storage. File: $($IntunePackageFullName)"
         $ChunkSizeInBytes = 1024l * 1024l * 6l;
         $FileSize = (Get-Item -Path $IntunePackageFullName).Length
@@ -3039,7 +3049,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         $SASRenewalTimer.Stop()        
         $BinaryReader.Close()
      
-        # Finalize the upload with the blocklist
+        # STEP 9: We need to finalize the upload by sending the blocklist to Azure Storage
         Write-CMTraceLog -Message "Will finalize the upload with the blocklist of uploaded blocks"
         $Uri = "$($ContentVersionsFiles.azureStorageUri)&comp=blocklist"
         $XML = '<?xml version="1.0" encoding="utf-8"?><BlockList>'
@@ -3065,7 +3075,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
     
         try 
         {
-
+            # STEP 10: We need to commit the file we just uploaded by sending the encryption info to Intune using the content version files URI
             # Commit the file with the encryption info by building the JSON object with data from the Detection.xml file
             $IntuneWinEncryptionInfo = [ordered]@{
                 "encryptionKey" = $detectionXML.ApplicationInfo.EncryptionInfo.EncryptionKey
@@ -3096,6 +3106,7 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             Write-CMTraceLog -Message "Waiting for Intune service to process file commit request"
             $Win32MobileAppFileContentCommitRequestResult = Wait-ForGraphRequestCompletion -Uri $Win32MobileAppFilesUri
 
+            # STEP 11: We need to set the commited content version to the app in order to bind the file to the app
             # set commited content version
             $Win32AppFileCommitBody = [ordered]@{
                 "@odata.type" = "#microsoft.graph.win32LobApp"
@@ -3112,7 +3123,8 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             Write-CMTraceLog -Message "Command $($paramSplatting['Method']) to: $($paramSplatting['Uri'])"
             Invoke-MgGraphRequest @paramSplatting -ErrorAction Stop
 
-        
+            # STEP 12: Not mandatory but we now can upload the icon if we have one and bind that to the app
+            # Normally the icon is uploaded during app creation but sometimes that failes so we do it here, after the app is created and the content is uploaded
             # if we have an icon we need to upload it
             if ($appIconEncodedBase64String)
             {

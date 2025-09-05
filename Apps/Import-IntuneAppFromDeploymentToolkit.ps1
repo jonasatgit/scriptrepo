@@ -94,20 +94,19 @@ param
 #region Function Get-HashtablesFromScript
 <#
 .SYNOPSIS
-    Function to read the hashtable data from an Invoke-AppDeployToolkit.ps1 script.
+    Function to read the hashtable data from an Invoke-AppDeployToolkit.ps1 or Deploy-Application.ps1 script.
 
 .DESCRIPTION
-    The script will read the $adtSession and $IntuneAppMetadata hashtables from the script file.
-    $adtSession is a default hashtable in the Invoke-AppDeployToolkit.ps1 script.
-    $IntuneAppMetadata is a custom hashtable that is added to the script file to add relevant data for Intune.
+    The function will read data from an Invoke-AppDeployToolkit.ps1 or Deploy-Application.ps1 script
+    and return a custom object with all the properties we need to create the Intune app.    
 
 .PARAMETER FilePath
     The path to the Invoke-AppDeployToolkit.ps1 script file.
 
 .EXAMPLE
-    Get-HashtablesFromScript -FilePath "C:\IntuneApps\7-Zip-20241217\Invoke-AppDeployToolkit.ps1"
+    Get-HashtablesFromScript -File (Get-Item -Path "C:\IntuneApps\7-Zip-20241217\Invoke-AppDeployToolkit.ps1")
 
-    This example will read the $adtSession and $IntuneAppMetadata hashtables from the Invoke-AppDeployToolkit.ps1 script file.
+    This example will read from ADT script files.
 #>
 function Get-HashtablesFromScript
 {
@@ -128,22 +127,76 @@ function Get-HashtablesFromScript
         {
             "Invoke-AppDeployToolkit.ps1" { $version = 'v4' }
             "Deploy-Application.ps1" { $version = 'v3' }
-        }        
+        }    
+        
+        # Create the output object with all properties we want to extract
+        $outObj = [PSCustomObject][ordered]@{
+            # Add ID to the object to be able to identify it later
+            ID = (New-Guid).Guid
+            FilePath = $FilePath
+            'ADT-Version' = $version
+            'ADT-AppVendor' = ''
+            'ADT-AppName' = ''
+            'ADT-AppVersion' = ''
+            'ADT-AppArch' = ''
+            'ADT-AppLang' = ''
+            'ADT-AppRevision' = ''
+            'ADT-AppSuccessExitCodes' = @(0) # set default values
+            'ADT-AppRebootExitCodes' = @(1641, 3010) # set default values
+            'ADT-AppProcessesToClose' = @()
+            'ADT-AppScriptVersion' = ''
+            'ADT-DeployAppScriptVersion' = ''
+            'ADT-AppScriptDate' = ''
+            'ADT-AppScriptAuthor' = ''
+            'IntuneAppDescription' = 'App imported from AppDeployToolkit' # Set default value
+            'IntuneRunAsAccount' = 'System' # Set default value to System
+            'IntuneInstallCommand' = ''
+            'IntuneUninstallCommand' = ''
+            'IntuneAllowAvailableUninstall' = $false # Set default value to false
+            'IntuneAppCategory' = @()
+            'IntuneInstallAssignmentEntraIDGroupName' = ''
+            'IntuneInstallAssignmentIntent' = 'Available' # Set default value to Available
+            'IntuneInstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ") # Set default value to now
+        } 
+
+        # build the $propertyList by enumerating the properties of $outObj and exluding some we dont need. 
+        # We also need to remove the prefix 'adt-' to match the property names in the $adtSession hashtable
+        # The ADT prefix is just for the admin to know where the property comes from
+        # That way we only need to build the property list once when creating the $outObj
+        $adtPropertyList = $outObj.PSObject.Properties | 
+                                Where-Object { $_.Name -notin @('ID', 'FilePath','ADT-Version') } | 
+                                    Where-Object { $_.Name -notmatch '^Intune' } |
+                                        ForEach-Object { $_.Name -replace '^ADT-', '' } 
+
+        # Read the content of the file
+        $fileContent = Get-Content -Path $FilePath -Raw
 
         # Actions for version 4
         if ($version -eq 'v4')
         {
-            # Read the content of the file
-            $fileContent = Get-Content -Path $FilePath -Raw
             # Extract the first hashtable called $adtSession
-            $adtSessionPattern = '(?s)\$adtSession\s*=\s*@\{.*?\}'
+            # We will use the string to run Invoke-Expression to convert it to a hashtable and extract the values we need
+            # We need "DeployAppScriptVersion" come after any other hashtables for the regex to work
+            # Because the last } will be the one that closes the $adtSession hashtable and cannot close before
+            $adtSessionPattern = '(?s)\$adtSession\s*=\s*@\{.*?DeployAppScriptVersion.*?\}'
+            $adtSessionMatch = $null
             $adtSessionMatch = [regex]::Match($fileContent, $adtSessionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
             if ($adtSessionMatch.Success) 
             {
                 # we will now have the content of the hashtable in $adtSessionContent 
                 # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
                 $adtSessionContent = $adtSessionMatch.Value
-                #Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
+                Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
+
+                # Add values to $outObj from $adtSession
+                foreach ($property in $adtPropertyList)
+                {
+                    if ($adtSession.ContainsKey($property))
+                    {
+                        $outObj."ADT-$property" = $adtSession[$property]
+                    }
+                }
+
             } 
             else 
             {
@@ -157,104 +210,69 @@ function Get-HashtablesFromScript
                 return
             }
         }
+        elseif ($version -eq 'v3') 
+        {
+            foreach ($property in $adtPropertyList) 
+            {
+                # Extraction of individual properties using regex. Since in v3 we dont have a single hashtable
+                $adtSessionMatch = $null
+                $adtSessionPattern = "`$?$property\s*=\s*(?<string>.*)(['`"]?)"
+                $adtSessionMatch = [regex]::Match(($fileContent -replace '\[Version\]'), $adtSessionPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                if ($adtSessionMatch.Success) 
+                {
+                    #Write-host '--------'
+                    #Write-Host (($adtSessionMatch.Groups['string'].Value) -replace "['`"]")
+                    $outObj."ADT-$property" = ($adtSessionMatch.Groups['string'].Value) -replace "['`"]"
+                }
+            }              
+        }
         else 
         {
-            $adtSessionContent = Get-Content -Path $FilePath -Raw    
+            Write-Error "Unsupported script version. Only Invoke-AppDeployToolkit.ps1 (v4) and Deploy-Application.ps1 (v3) are supported."
+            return
         }
 
-
-        $outObj = [PSCustomObject][ordered]@{
-            # Add id to the object to be able to identify it later
-            ID = (New-Guid).Guid
-            FilePath = $FilePath
-            'ADT-Version' = $version
-            'ADT-AppVendor' = ''
-            'ADT-AppName' = ''
-            'ADT-AppVersion' = ''
-            'ADT-AppArch' = ''
-            'ADT-AppLang' = ''
-            'ADT-AppRevision' = ''
-            'ADT-AppSuccessExitCodes' = @(0) # set default values
-            'ADT-AppRebootExitCodes' = @(1641, 3010) # set default values
-            'ADT-AppScriptVersion' = ''
-            'ADT-AppScriptDate' = ''
-            'ADT-AppScriptAuthor' = ''
-        } 
-
-        # build the $propertyList by enumerating the properties of $outObj and exluding the ID and FilePath properties. We also need to remove the prefix 'adt-'
-        $propertyList = $outObj.PSObject.Properties | Where-Object { $_.Name -notin @('ID', 'FilePath','ADT-Version') } | ForEach-Object { $_.Name -replace '^ADT-', '' }
-
-        foreach ($property in $propertyList) 
-        {
-            $adtSessionMatch = $null
-            $adtSessionPattern = "\`$?$property\s*=\s*(['`"])(?<string>.*?)(['`"])"
-            $adtSessionMatch = [regex]::Match($adtSessionContent, $adtSessionPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if ($adtSessionMatch.Success) 
-            {
-                $value = $adtSessionMatch.Groups['string'].Value
-                #Write-Output "Extracted value: $value"
-                $outObj."ADT-$property" = $value
-            }
-        }
-
-        return $outObj
-
-        
-        <#
         # Lets now load the script with the Intune related metadata
         # That script is always the same no matter the ADT script version
-        $fileContent = $null
-        $FilePathIntuneAppMetadata = $FilePath -replace '\.ps1', '\-IntuneAppMetadata.ps1'
-        $fileContent = Get-Content -Path $FilePathIntuneAppMetadata -Raw
+        $intuneAppMetadata = $null
+        $filePathIntuneAppMetadata = $FilePath -replace '.ps1', '-IntuneAppMetadata.ps1'
 
-        # Extract the second hashtable called $IntuneAppMetadata
-        $intuneAppMetadataPattern = '(?s)\$IntuneAppMetadata\s*=\s*@\{.*?\}'
-        $intuneAppMetadataMatch = [regex]::Match($fileContent, $intuneAppMetadataPattern)
-        if ($intuneAppMetadataMatch.Success) 
+        if (Test-Path $filePathIntuneAppMetadata)
         {
-            # we will now have the content of the hashtable in $IntuneAppMetadata
-            # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
-            $intuneAppMetadataContent = $intuneAppMetadataMatch.Value
-            Invoke-Expression -Command $intuneAppMetadataContent -OutVariable intuneAppMetadata
+
+            $intuneAppMetadata = Get-Content -Path $filePathIntuneAppMetadata -Raw
+
+            # Lets now create the Intune related propertylist
+            $intunePropertyList = $outObj.PSObject.Properties | 
+                                        Where-Object { $_.Name -match '^Intune' } | 
+                                            Select-Object -Property Name -ExpandProperty Name
+
+
+            $intuneAppMetadataPattern = '(?s)\$IntuneAppMetadata\s*=\s*@\{.*?IntuneInstallAssignmentStartDate.*?\}'
+            $intuneAppMetadataMatch = [regex]::Match($intuneAppMetadata, $intuneAppMetadataPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($intuneAppMetadataMatch.Success) 
+            {
+                Invoke-Expression -Command $intuneAppMetadataMatch -OutVariable intuneAppMetadata
+
+                foreach ($property in $intunePropertyList) 
+                {
+                    if ($intuneAppMetadata.ContainsKey($property))
+                    {
+                        $outObj."$property" = $intuneAppMetadata[$property]
+                    }
+                }
+            } 
+            else 
+            {
+                Write-Warning "Failed to extract `$IntuneAppMetadata hashtable from file: $filePathIntuneAppMetadata"
+            }
         } 
         else 
         {
-            Write-Error "Failed to extract `$IntuneAppMetadata hashtable."
-            return
-        }
-
-        if ($null -eq $intuneAppMetadata) 
-        {
-            Write-Error "Failed to extract `$IntuneAppMetadata hashtable."
-            return
-        }
-
-
-
-        # Add properties from $adtSession to $outObj
-        foreach ($key in $adtSession.Keys) 
-        {
-            if ($key -ieq 'DeployAppScriptFriendlyName')
-            {
-                # Skip this key as it is not needed in the combined object and will only contain the name of this function
-            }
-            else 
-            {
-                $outObj | Add-Member -MemberType NoteProperty -Name "ADT-$($key)" -Value $adtSession[$key]
-            }
-        }
-
-        # Add properties from $intuneAppMetadata to $outObj
-        foreach ($key in $intuneAppMetadata.Keys) 
-        {
-            $outObj | Add-Member -MemberType NoteProperty -Name "IN-$($key)" -Value $intuneAppMetadata[$key]
-        }
-
-        # Adding the versioninfo to the combined object
-        $outObj | Add-Member -MemberType NoteProperty -Name "ADT-Version" -Value $Version
+            Write-Warning "Failed to find IntuneAppMetadata script file: $filePathIntuneAppMetadata"
+        }                          
 
         return $outObj
-        #>
     }
         
 }
@@ -1779,43 +1797,18 @@ function Get-AppFileBody{
 #******************************************************************#
 #region                   Main script
 #******************************************************************#
-$arrayOfDisplayedProperties = @(
-    'ADT-AppName',
-    'ADT-AppVendor',
-    'ADT-AppVersion',
-    'ADT-InstallTitle',
-    'ADT-InstallName',
-    'ADT-AppLang',	
-    'ADT-Version',
-    'IN-IntuneInstallCommand',
-    'IN-IntuneUninstallCommand',
-    'IN-AllowAvailableUninstall',
-    'IN-IntuneAppCategory',
-    'IN-InstallAssignmentEntraIDGroupName',
-    'IN-InstallAssignmentIntent',
-    'IN-InstallAssignmentStartDate',
-    'IN-IntuneAppDescription',
-    'IN-IntuneRunAsAccount',
-    'FilePath',
-    'ID'
-)
 
 # Lets get all the Invoke-AppDeployToolkit.ps1 files in the AppBasePath to extract the hashtable data from them
-#$fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File -Filter "Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1"
-
-
 $fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File | Where-Object {
     $_.Name -in @("Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1")
 }
-
-
 
 # Read the hashtable data from the script files to be able to select which apps to import.
 # The data will be displayed in an Out-GridView for selection.
 [array]$appList = $fileList | Get-HashtablesFromScript
 
 $selectionTitle = "Intune App Import Tool. Select apps to import."
-[array]$selectedApps = $appList | Select-Object -Property $arrayOfDisplayedProperties | Out-GridView -Title $selectionTitle -OutputMode Multiple
+[array]$selectedApps = $appList | Out-GridView -Title $selectionTitle -OutputMode Multiple
 
 if ($null -eq $selectedApps)
 {
@@ -1919,50 +1912,29 @@ else
         }
 
         $Rules = @()
-        #$Rules += New-ScriptRequirementRule -ScriptFile "E:\VSCodeRequirement.ps1" -DisplayName "VS Code Requirement" -EnforceSignatureCheck $false -RunAs32Bit $false -RunAsAccount "system" -OperationType "integer" -Operator "equal" -ComparisonValue "0"
         $Rules += New-ScriptDetectionRule -ScriptFile $detectionScriptPath -EnforceSignatureCheck $false -RunAs32Bit $false 
-        #$Rules += New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
-
-        # Validate input parameters
-        if ([string]::IsNullOrEmpty($selectedApp.'IN-IntuneAppDescription'))
-        {
-            $selectedApp.'IN-IntuneAppDescription' = 'App imported from AppDeployToolkit'
-            Write-Host "Will use `"$($selectedApp.'IN-IntuneAppDescription')`" as description" -ForegroundColor Green
-        }
-        
-        if ([string]::IsNullOrEmpty($selectedApp.'IN-IntuneRunAsAccount'))
-        {
-            $selectedApp.'IN-IntuneRunAsAccount' = "system"
-            Write-Host "Will use `"$($selectedApp.'IN-IntuneRunAsAccount')`" as RunAsAccount" -ForegroundColor Green
-        }
-        
-        if ($selectedApp.'IN-IntuneRunAsAccount' -inotin ("system","user"))
+      
+        # Validate input parameters       
+        if ($selectedApp.'IntuneRunAsAccount' -inotin ("system","user"))
         {
             Write-Host "Invalid RunAsAccount provided. Has to be system or user. Fallback to: `"system`"" -ForegroundColor Green
-            $selectedApp.'IN-IntuneRunAsAccount' = "system"
+            $selectedApp.'IntuneRunAsAccount' = "system"
         }
-
-        if ($null -eq $selectedApp.'IN-AllowAvailableUninstall')
-        {
-            $selectedApp.'IN-AllowAvailableUninstall' = $false
-            Write-Host "Will use `"$($selectedApp.'IN-AllowAvailableUninstall')`" as AllowAvailableUninstall" -ForegroundColor Green
-        }
-
 
         $appParamSplatting = @{
             DisplayName = $selectedApp.'ADT-AppName'
             SourceFile = $filePath
             Publisher = $selectedApp.'ADT-AppVendor'
-            Description = $selectedApp.'IN-IntuneAppDescription'
-            RunAsAccount = $selectedApp.'IN-IntuneRunAsAccount'
+            Description = $selectedApp.'IntuneAppDescription'
+            RunAsAccount = $selectedApp.'IntuneRunAsAccount'
             DeviceRestartBehavior = "basedOnReturnCode"
-            InstallCommandLine = $selectedApp.'IN-IntuneInstallCommand'
-            UninstallCommandLine = $selectedApp.'IN-IntuneUninstallCommand'
+            InstallCommandLine = $selectedApp.'IntuneInstallCommand'
+            UninstallCommandLine = $selectedApp.'IntuneUninstallCommand'
             Version = $selectedApp.'ADT-AppVersion'
             #Owner = ""
             IconPath = $null
             Rules = $Rules
-            AllowAvailableUninstall = $selectedApp.'IN-AllowAvailableUninstall'
+            AllowAvailableUninstall = $selectedApp.'IntuneAllowAvailableUninstall'
             ReturnCodes = Get-DefaultReturnCodes
         }
 
@@ -1994,46 +1966,41 @@ else
 
         try 
         {
-            if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentEntraIDGroupName')))
+            if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')))
             {
-                Write-Host "Will search for group displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+                Write-Host "Will search for group displayName `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
 
-                if ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentIntent'))
-                {
-                    Write-Host "No InstallAssignmentIntent provided. Will use: `"Available`")`"" -ForegroundColor Green
-                    $selectedApp.'IN-InstallAssignmentIntent' = "Available"
-                }
                 # nstallAssignmentIntent has to be required or available
-                if ($selectedApp.'IN-InstallAssignmentIntent' -inotin ("Available","Required"))
+                if ($selectedApp.'IntuneInstallAssignmentIntent' -inotin ("Available","Required"))
                 {
                     Write-Host "Invalid InstallAssignmentIntent provided. Has to be Available or Required. Fallback to: `"Available`"" -ForegroundColor Green
-                    $selectedApp.'IN-InstallAssignmentIntent' = "Available"
+                    $selectedApp.'IntuneInstallAssignmentIntent' = "Available"
                 }
 
-                if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IN-InstallAssignmentStartDate')))
+                if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IntuneInstallAssignmentStartDate')))
                 {
-                    Write-Host "Will use `"$($selectedApp.'IN-InstallAssignmentStartDate')`" as start date" -ForegroundColor Green
-                    $selectedApp.'IN-InstallAssignmentStartDate' = (Get-Date $selectedApp.'IN-InstallAssignmentStartDate').ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    Write-Host "Will use `"$($selectedApp.'IntuneInstallAssignmentStartDate')`" as start date" -ForegroundColor Green
+                    $selectedApp.'IntuneInstallAssignmentStartDate' = (Get-Date $selectedApp.'IntuneInstallAssignmentStartDate').ToString("yyyy-MM-ddTHH:mm:ssZ")
                 }
                 else 
                 {
                     Write-Host "No InstallAssignmentStartDate provided. Will use: `"$((Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ"))`"" -ForegroundColor Green
-                    $selectedApp.'IN-InstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    $selectedApp.'IntuneInstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
                 }
 
                 $startTimeHash = $null
-                if ($selectedApp.'IN-InstallAssignmentIntent' -ieq "Required")
+                if ($selectedApp.'IntuneInstallAssignmentIntent' -ieq "Required")
                 {
                     $startTimeHash = @{
-                        startDateTime = $selectedApp.'IN-InstallAssignmentStartDate'
+                        startDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'
                         useLocalTime = $true
-                        deadlineDateTime = $selectedApp.'IN-InstallAssignmentStartDate'   
+                        deadlineDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'   
                     }
                 }
                 else 
                 {
                     $startTimeHash = @{
-                        startDateTime = $selectedApp.'IN-InstallAssignmentStartDate'
+                        startDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'
                     }
                 }
             }
@@ -2044,31 +2011,31 @@ else
             }
       
 
-            Write-Host "Will search for group displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+            Write-Host "Will search for group displayName `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
             #$group = Get-MgGroup -Filter "displayName eq '$($item.GroupName)'"
-            $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')'"
+            $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')'"
             $groupResult = Invoke-MgGraphRequest -Uri $uri -Method Get -ErrorAction Stop -OutputType PSObject       
         }
         catch 
         {
-            Write-Host "Failed to get group `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
+            Write-Host "Failed to get group `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
             Write-Host "$($_)" -ForegroundColor Red
             continue
         }
     
         if ($groupResult.value.count -eq 0)
         {
-            Write-Host "No group found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
+            Write-Host "No group found with displayName `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`". Skipping group" -ForegroundColor Yellow
             continue
         }
         elseif ($groupResult.value.count -gt 1) 
         {
-            Write-Host "Multiple groups found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Group needs to be unique. Skipping group" -ForegroundColor Yellow
+            Write-Host "Multiple groups found with displayName `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`". Group needs to be unique. Skipping group" -ForegroundColor Yellow
             continue
         }
         elseif ($groupResult.value.count -eq 1) 
         {
-            Write-Host "Group found with displayName `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`". Will use this group for assignment" -ForegroundColor Green
+            Write-Host "Group found with displayName `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`". Will use this group for assignment" -ForegroundColor Green
         }
 
         $assignmentSettings = @{
@@ -2095,12 +2062,12 @@ else
                 deviceAndAppManagementAssignmentFilterType = "none"
                 groupId = $groupResult.value.id
             }
-            intent = $selectedApp.'IN-InstallAssignmentIntent'
+            intent = $selectedApp.'IntuneInstallAssignmentIntent'
         }
 
         try 
         {
-            Write-Host "Will try to assign App as `"$($selectedApp.'IN-InstallAssignmentIntent')`" to group `"$($selectedApp.'IN-InstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
+            Write-Host "Will try to assign App as `"$($selectedApp.'IntuneInstallAssignmentIntent')`" to group `"$($selectedApp.'IntuneInstallAssignmentEntraIDGroupName')`"" -ForegroundColor Green
             $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($uploadedApp.Id)/assignments"
             $result = Invoke-MgGraphRequest -Uri $uri -Method Post -Body ($assignmentSettings | ConvertTo-Json) -ContentType "application/json" -ErrorAction Stop           
         }
