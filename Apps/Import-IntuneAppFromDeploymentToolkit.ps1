@@ -131,12 +131,11 @@ function Get-HashtablesFromScript
         
         # Create the output object with all properties we want to extract
         $outObj = [PSCustomObject][ordered]@{
-            # Add ID to the object to be able to identify it later
-            ID = (New-Guid).Guid
+            'DataMissing' = $false # Will be set to true if we have all what we need to create the Intune app
             FilePath = $FilePath
             'ADT-Version' = $version
-            'ADT-AppVendor' = ''
-            'ADT-AppName' = ''
+            'ADT-AppName' = ''            
+            'ADT-AppVendor' = ''            
             'ADT-AppVersion' = ''
             'ADT-AppArch' = ''
             'ADT-AppLang' = ''
@@ -156,7 +155,11 @@ function Get-HashtablesFromScript
             'IntuneAppCategory' = @()
             'IntuneInstallAssignmentEntraIDGroupName' = ''
             'IntuneInstallAssignmentIntent' = 'Available' # Set default value to Available
-            'IntuneInstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ") # Set default value to now
+            'IntuneInstallAssignmentStartDate' = ''
+            'IntuneMetadataScriptFound' = $false # Will be set to true if we find the IntuneAppMetadata script
+            'DetectionScriptFound' = $false # Will be set to true if we find a detection script in the ADT script
+            'RequirementScriptFound' = $false # Will be set to true if we find a requirement script in the ADT script
+            ID = (New-Guid).Guid # Add ID to the object to be able to identify it later
         } 
 
         # build the $propertyList by enumerating the properties of $outObj and exluding some we dont need. 
@@ -164,7 +167,7 @@ function Get-HashtablesFromScript
         # The ADT prefix is just for the admin to know where the property comes from
         # That way we only need to build the property list once when creating the $outObj
         $adtPropertyList = $outObj.PSObject.Properties | 
-                                Where-Object { $_.Name -notin @('ID', 'FilePath','ADT-Version') } | 
+                                Where-Object { $_.Name -notin @('ID', 'FilePath','ADT-Version', 'DataMissing') } | 
                                     Where-Object { $_.Name -notmatch '^Intune' } |
                                         ForEach-Object { $_.Name -replace '^ADT-', '' } 
 
@@ -270,7 +273,50 @@ function Get-HashtablesFromScript
         else 
         {
             Write-Warning "Failed to find IntuneAppMetadata script file: $filePathIntuneAppMetadata"
-        }                          
+        }    
+        
+        # Before returning the object we will set 'DataMissing' to false if we have been able to extract the $adtSession hashtable
+        # We need at least the AppName and AppVersion to be able to create the Intune app
+        # As well as the IntuneInstallCommand and IntuneUninstallCommand
+        # We also need to check if we have found the IntuneAppMetadata script, the detection.ps1 and requirement.ps1 scripts
+        if ([string]::isNullOrEmpty($outObj.'ADT-AppName'))
+        {
+            $outObj.'DataMissing' = $true
+        }
+
+        if ([string]::isNullOrEmpty($outObj.'ADT-AppVersion'))
+        {
+            $outObj.'DataMissing' = $true
+        }
+
+        if ([string]::isNullOrEmpty($outObj.'IntuneInstallCommand'))
+        {
+            $outObj.'DataMissing' = $true
+        }
+
+        if ([string]::isNullOrEmpty($outObj.'IntuneUninstallCommand'))
+        {
+            $outObj.'DataMissing' = $true
+        }
+
+        $pathToDetectionScript = '{0}\detection.ps1' -f ($outObj.FilePath | Split-Path -Parent)
+        Write-host $pathToDetectionScript -ForegroundColor green
+        if (Test-Path $pathToDetectionScript)
+        {
+            $outObj.'DetectionScriptFound' = $true
+        }
+        else 
+        {
+            $outObj.'DetectionScriptFound' = $false
+            $outObj.'DataMissing' = $true
+        }
+
+        # not mandatory but we will note if we find it
+        $pathToRequirementScript = '{0}\requirement.ps1' -f ($outObj.FilePath | Split-Path -Parent)
+        if (Test-Path $pathToRequirementScript)
+        {
+            $outObj.'RequirementScriptFound' = $true
+        }
 
         return $outObj
     }
@@ -887,6 +933,29 @@ function Invoke-Win32AppUpload {
             }
             Invoke-MgGraphRequest @paramSplatting
 
+        }
+
+        # update the application with AllowAvailableUninstall since the cmdlet does not set it correctly during creation
+        If ($AllowAvailableUninstall)
+        {
+            $params = @{
+                "@odata.type"   = "#microsoft.graph.win32LobApp"
+                "allowAvailableUninstall"  = $true
+            }
+
+            $params = $params | ConvertTo-Json 
+
+            # Update the application with AllowAvailableUninstall
+            Write-Host "Updating the application with AllowAvailableUninstall..." -ForegroundColor Yellow
+            #Update-MgDeviceAppManagementMobileApp -MobileAppId $mobileAppId -BodyParameter $params    
+
+            $paramSplatting = @{
+                "Method" = 'PATCH'
+                "Uri" = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($mobileAppId)"
+                "Body" = $params
+                "ContentType" = "application/json"
+            }
+            Invoke-MgGraphRequest @paramSplatting
         }
 
         # Return the application ID
@@ -1945,6 +2014,7 @@ else
     
         $uploadedApp = $null
         $uploadedApp = Invoke-Win32AppUpload @appParamSplatting
+   
 
         #Always remove the detection.xml file after upload
         Remove-Item -Path "$($filePath | Split-Path -Parent)\Detection.xml" -Force
@@ -1975,18 +2045,15 @@ else
                 {
                     Write-Host "Invalid InstallAssignmentIntent provided. Has to be Available or Required. Fallback to: `"Available`"" -ForegroundColor Green
                     $selectedApp.'IntuneInstallAssignmentIntent' = "Available"
-                }
+                }   
+                
 
                 if (-NOT ([string]::IsNullOrEmpty($selectedApp.'IntuneInstallAssignmentStartDate')))
                 {
-                    Write-Host "Will use `"$($selectedApp.'IntuneInstallAssignmentStartDate')`" as start date" -ForegroundColor Green
                     $selectedApp.'IntuneInstallAssignmentStartDate' = (Get-Date $selectedApp.'IntuneInstallAssignmentStartDate').ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    Write-Host "Will use `"$($selectedApp.'IntuneInstallAssignmentStartDate')`" as start date" -ForegroundColor Green
                 }
-                else 
-                {
-                    Write-Host "No InstallAssignmentStartDate provided. Will use: `"$((Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ"))`"" -ForegroundColor Green
-                    $selectedApp.'IntuneInstallAssignmentStartDate' = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-                }
+
 
                 $startTimeHash = $null
                 if ($selectedApp.'IntuneInstallAssignmentIntent' -ieq "Required")
@@ -1997,10 +2064,18 @@ else
                         deadlineDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'   
                     }
                 }
-                else 
-                {
-                    $startTimeHash = @{
-                        startDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'
+                elseif ($selectedApp.'IntuneInstallAssignmentIntent' -ieq "Available")
+                {   
+                    if (([string]::IsNullOrEmpty($selectedApp.'IntuneInstallAssignmentStartDate')))
+                    {
+                        $startTimeHash = $null # results in "As soon as possible"
+                        Write-Host "Will use `"As soon as possble`" as start date, since no date is set" -ForegroundColor Green
+                    }
+                    else 
+                    {                      
+                        $startTimeHash = @{
+                            startDateTime = $selectedApp.'IntuneInstallAssignmentStartDate'
+                        }
                     }
                 }
             }
