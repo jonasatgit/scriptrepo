@@ -2315,10 +2315,15 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
     #{
     foreach($configMgrApp in $appInObj)
     {
+
+        # Is the last zip file still open?
+        if ($IntunePackageIntuneWinMetadataStream) { $IntunePackageIntuneWinMetadataStream.Dispose() }
+        if ($IntuneWin32AppFile) { $IntuneWin32AppFile.Dispose() }
+
+        # We simply skip all the apps that a user did not select
+        # This way we can use the original list and do not need to create a new one, which makes the export afterwards easier
         if ($configMgrApp.CI_ID -notin $selectedAppsLimited.CI_ID)
-        {
-            # We simply skip all the apps that a user did not select
-            # This way we can use the original list and do not need to create a new one, which makes the export afterwards easier
+        {  
             continue
         }
 
@@ -2405,25 +2410,25 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
             # We need to extract the content of the intunewin file to get file information, metadata and the file we need to upload
             $intuneWinFullName = '{0}\{1}\{2}.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName, $configMgrApp.DeploymentTypes[0].LogicalName
             Write-CMTraceLog -Message "Getting the contents of: `"$($intuneWinFullName)`""
-            $intuneWinDetectionXMLFullName = '{0}\{1}\{2}.detection.xml' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName ,$configMgrApp.DeploymentTypes[0].LogicalName
             $IntuneWin32AppFile = [System.IO.Compression.ZipFile]::OpenRead($intuneWinFullName)
-            Write-CMTraceLog -Message "Extracting Detection.xml to read size and encryption data."
-            $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'Detection.xml'} | ForEach-Object {
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($_, $intuneWinDetectionXMLFullName, $true)
+            $DetectionXmlEntry = $IntuneWin32AppFile.Entries | Where-Object { $_.Name -ieq 'Detection.xml' }
+            if ($DetectionXmlEntry) 
+            {
+                $DetectionXmlStream = $DetectionXmlEntry.Open()
+                $StreamReader = New-Object System.IO.StreamReader($DetectionXmlStream)
+                $DetectionXmlContent = $StreamReader.ReadToEnd()
+                $StreamReader.Close()
+                $DetectionXmlStream.Dispose()
+                [xml]$detectionXML = $DetectionXmlContent
+            }
+            else 
+            {
+                Write-CMTraceLog -Message "Detection.xml not found in intunewin file. Will skip app: `"$($configMgrApp.Name)`"" -Severity Error
+                Continue
             }
 
-            Write-CMTraceLog -Message "Extracting IntunePackage.intunewin. That file will be uploaded to Intune."
-            $IntunePackageFullName = '{0}\{1}\IntunePackage.intunewin' -f $ExportFolderWin32Apps, $configMgrApp.LogicalName
-            $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'} | ForEach-Object {
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($_, $IntunePackageFullName, $true)
-            }
+            $IntunePackageIntuneWinMetadata = $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'}       
 
-            $IntunePackageIntuneWinMetadata = $IntuneWin32AppFile.Entries | Where-Object {$_.Name -ieq 'IntunePackage.intunewin'}
-            # Close the file   
-            $IntuneWin32AppFile.Dispose()
-            [xml]$detectionXML = Get-content -Path $intuneWinDetectionXMLFullName
-            # remove the file as we do not need it anymore
-            $intuneWinDetectionXMLFullName | Remove-Item -Force -ErrorAction SilentlyContinue
         }
         catch 
         {
@@ -2962,12 +2967,12 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         # STEP 8: We need to upload the content to the Azure Storage blob using the URI with SAS token
         # If the token is expired we need to renew it to be able to upload the whole content
         # The content needs to be uploaded in chunks
+        $IntunePackageIntuneWinMetadataStream = $IntunePackageIntuneWinMetadata.Open()
         Write-CMTraceLog -Message "Trying to upload file to Intune Azure Storage. File: $($IntunePackageFullName)"
         $ChunkSizeInBytes = 1024l * 1024l * 6l;
-        $FileSize = (Get-Item -Path $IntunePackageFullName).Length
+        $FileSize = $IntunePackageIntuneWinMetadata.Length
         $ChunkCount = [System.Math]::Ceiling($FileSize / $ChunkSizeInBytes)
-        $BinaryReader = New-Object -TypeName System.IO.BinaryReader([System.IO.File]::Open($IntunePackageFullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite))
-        $Position = $BinaryReader.BaseStream.Seek(0, [System.IO.SeekOrigin]::Begin)
+        $BinaryReader = New-Object -TypeName System.IO.BinaryReader($IntunePackageIntuneWinMetadataStream)
 
         $ChunkIDs = @()
         $SASRenewalTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -3041,6 +3046,8 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         {
             Write-CMTraceLog -Message "$($_)" -Severity Error
             Write-CMTraceLog -Message "Delete app in Intune and retry again. Will skip to the next one..." -Severity Warning
+            if ($IntunePackageIntuneWinMetadataStream) { $IntunePackageIntuneWinMetadataStream.Dispose() }
+            if ($IntuneWin32AppFile) { $IntuneWin32AppFile.Dispose() }
             continue
         }
 
@@ -3070,8 +3077,13 @@ if ($Step3UploadAppsToIntune -or $CreateIntuneWinFilesAndUploadToIntune -or $Run
         {
             Write-CMTraceLog -Message "Failed to finalize Azure Storage blob upload. Error message: $($_.Exception.Message)" -Severity Error
             Write-CMTraceLog "Delete app in Intune and retry again. Will skip to the next one..." -Severity Warning
+            if ($IntunePackageIntuneWinMetadataStream) { $IntunePackageIntuneWinMetadataStream.Dispose() }
+            if ($IntuneWin32AppFile) { $IntuneWin32AppFile.Dispose() }
             continue
         }
+
+        if ($IntunePackageIntuneWinMetadataStream) { $IntunePackageIntuneWinMetadataStream.Dispose() }
+        if ($IntuneWin32AppFile) { $IntuneWin32AppFile.Dispose() }
     
         try 
         {
