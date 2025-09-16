@@ -67,6 +67,8 @@ To store the individual items the script will create the following folder under 
 The script will create a log file in the same directory as the export and not next to the script.
 
 Changelog:
+20250915 - Changed intunewin file handling. The file will no longer be unpacked. Instead the data is read directly from the file.
+           This should improve performance and will save space.
 20250619 - Fixed logic for folder detection rules.
 20250604 - Fixed an Typo error by using RegKey decetion and issue with operator 'and' by detection rules, because intepred as operator 'or'.
            https://github.com/jonasatgit/scriptrepo/pull/14
@@ -261,7 +263,7 @@ param
     [String]$ReplaceUnInstallCommand = ''
 )
 
-$scriptVersion = '20241217'
+$scriptVersion = '20250915'
 $script:LogOutputMode = $OutputMode
 #$script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1') # Next to the script
 $script:LogFilePath = '{0}\{1}.log' -f $ExportFolder ,($MyInvocation.MyCommand -replace '.ps1') # Next to the exported data. Might make more sense.
