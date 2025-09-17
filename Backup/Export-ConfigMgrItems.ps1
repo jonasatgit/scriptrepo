@@ -152,7 +152,7 @@ param
 # Do not change
 $script:Spacer = '-'
 $script:LogFilePath = '{0}\{1}.log' -f $PSScriptRoot ,($MyInvocation.MyCommand -replace '.ps1')
-$script:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-hhmm')
+$script:FullExportFolderName = '{0}\{1}' -f $ExportRootFolder, (Get-date -Format 'yyyyMMdd-HHmm')
 $script:ExitWithError = $false
 
 #region Write-CMTraceLog
@@ -675,7 +675,7 @@ function New-CMCollectionListCustom
                 MinuteDuration = $schedule.MinuteDuration
                 MinuteSpan = $schedule.MinuteSpan
                 MonthDay = $schedule.MonthDay
-                StartTime = $schedule.StartTime.ToString("yyyymmddHHMMss.000000+***")
+                StartTime = $schedule.StartTime.ToString("yyyyMMddHHmmss.000000+***")
                 ForNumberOfWeeks = $schedule.ForNumberOfWeeks
                 WeekOrder = $schedule.WeekOrder
                 ForNumberOfMonths = $schedule.ForNumberOfMonths
@@ -723,7 +723,7 @@ function New-CMCollectionListCustom
                     Description = $Window.Description
                     IsEnabled = $Window.IsEnabled
                     IsGMT = $Window.IsGMT
-                    Starttime = $Window.Starttime #.ToString("yyyymmddHHMMss.000000+***")
+                    Starttime = $Window.Starttime #.ToString("yyyyMMddHHmmss.000000+***")
                     ServiceWindowType = $Window.ServiceWindowType
                     ServiceWindowSchedules = $Window.ServiceWindowSchedules
                     RecurrenceType = $Window.RecurrenceType
@@ -983,6 +983,16 @@ function Export-CMItemCustomFunction
             "Path:   $($itemFullName)" | Out-File -FilePath $inventoryFile -Append
             "ItemID:   $($itemModelName)" | Out-File -FilePath $inventoryFile -Append
             ($script:Spacer * 50) | Out-File -FilePath $inventoryFile -Append
+
+            # If the file already exists, we will append a timestamp to the filename
+            # This can happen if you have multiple items with the same name
+            if (Test-Path $itemFullName)
+            {
+                $itemExtension = [system.IO.Path]::GetExtension($itemFullName)
+                $itemFileName = [system.IO.Path]::GetFileNameWithoutExtension($itemFullName)
+                $itemDirectory = [system.IO.Path]::GetDirectoryName($itemFullName)
+                $itemFullName = '{0}\{1}{2}{3}' -f $itemDirectory, $itemFileName, (get-date -f 'HHmmss'), $itemExtension
+            }
 
             try
             {
