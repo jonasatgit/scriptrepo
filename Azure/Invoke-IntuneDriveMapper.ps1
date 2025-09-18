@@ -169,7 +169,11 @@ if (-NOT ($newScriptContent -imatch 'Function Add-NewNetworkDrives'))
 }
 
 # prepre task to map drives
-$taskGUID = (New-Guid).Guid
+#$taskGUID = (New-Guid).Guid
+# Settings fixed guid to avoid multiple tasks if the script is run multiple times
+# The initial random guid was for a different scenario where we created multiple tasks for different users
+# We now create only one task for all users
+$taskGUID = 'b7a52efb-3cf5-4036-9723-fe3616a82f59'
 
 $outFileFullName = '{0}\MapDrives-{1}.ps1' -f $env:ProgramData, $taskGUID
 $taskName = 'MapDrives-{0}' -f $taskGUID
