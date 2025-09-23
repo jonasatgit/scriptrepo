@@ -70,6 +70,15 @@
     List of ConfigMgr alerts to exclude from monitoring. Should be the "Alert ID" which can be shown in ConfigMgr console under "Active Alerts".
     Use only temporary in case an alert is known and not relevant for a time being.
 
+.PARAMETER IgnoreGeneralAlerts
+    Switch parameter. If set the script will ignore all general ConfigMgr alerts.
+
+.PARAMETER IgnoreEPAlerts
+    Switch parameter. If set the script will ignore all Endpoint Protection related ConfigMgr alerts.
+
+.PARAMETER IgnoreCHAlerts
+    Switch parameter. If set the script will ignore all Client Health related ConfigMgr alerts.
+
 .EXAMPLE
     Get-ConfigMgrComponentState.ps1
 
@@ -137,9 +146,15 @@ param
     [Parameter(Mandatory=$false)]
     [string[]]$ExcludeComponentsList = @(),
     [Parameter(Mandatory=$false)]
-    [string[]]$ExcludeSiteSystemsList = @(),
+    [string[]]$ExcludeSiteSystemsList = @("SMS_DISTRIBUTION_MANAGER","SMS_PACKAGE_TRANSFER_MANAGER"),
     [Parameter(Mandatory=$false)]
-    [int[]]$ExcludeAlertIDsList = @()
+    [int[]]$ExcludeAlertIDsList = @(),
+    [Parameter(Mandatory=$false)]
+    [switch]$IgnoreGeneralAlerts,
+    [Parameter(Mandatory=$false)]
+    [switch]$IgnoreEPAlerts,
+    [Parameter(Mandatory=$false)]
+    [switch]$IgnoreCHAlerts
 )
 
 
@@ -631,32 +646,194 @@ else
 
                 #region SMS_Alert
                 # Trying to read SMS_Alert to extract alert state
-                try 
+                If ($IgnoreGeneralAlerts)
                 {
-                    $wqlQuery = "select * from SMS_Alert"
-                    [array]$listFromSMSAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-                    <#
-                        AlertState
-                        0  Active
-                        1  Postponed
-                        2  Canceled
-                        3  Unknown
-                        4  Disabled
-                        5  Never Triggered
-                        
-                        Severity
-                        1  Error
-                        2  Warning
-                        3  Informational
-                    #>
-                    if ($listFromSMSAlert.Count -eq 0)
+                    if($WriteLog){Write-CMTraceLog -Message "Will ignore all general ConfigMgr alerts" -Component ($MyInvocation.MyCommand)}
+                }
+                else 
+                {
+                    if($WriteLog){Write-CMTraceLog -Message "Will check general ConfigMgr alerts" -Component ($MyInvocation.MyCommand)} 
+                
+                    try 
+                    {
+                        $wqlQuery = "select * from SMS_Alert"
+                        [array]$listFromSMSAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                        <#
+                            AlertState
+                            0  Active
+                            1  Postponed
+                            2  Canceled
+                            3  Unknown
+                            4  Disabled
+                            5  Never Triggered
+                            
+                            Severity
+                            1  Error
+                            2  Warning
+                            3  Informational
+                        #>
+                        if ($listFromSMSAlert.Count -eq 0)
+                        {
+                            $tmpScriptStateObj.Status = 'Error'
+                            $tmpScriptStateObj.Description = "User running the script might not have enough rights to read class SMS_Alert"
+                        }
+                        else 
+                        {
+                            foreach ($alertState in ($listFromSMSAlert | Where-Object {($_.AlertState -eq 0) -and ($_.IsIgnored -eq 0)}))
+                            {
+
+                                # we might need to exclude some alerts from monitoring
+                                if ($ExcludeAlertIDsList -contains $alertState.ID)
+                                {
+                                    if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
+                                    continue
+                                }
+
+                                if($alertState.SourceSiteCode)
+                                {
+                                    $sourceSiteCode = $alertState.SourceSiteCode
+                                }
+                                else
+                                {
+                                    $sourceSiteCode = $($ProviderInfo.SiteCode)
+                                }
+
+                                
+                                # Trying to find a unique name for the alert, since multiple duplicate entries are possible
+                                if (($alertState.Name -ieq '$RuleFailureAlertName') -or ($alertState.Name -ieq 'Rule Failure Alert'))
+                                {
+                                    if($alertState.InstanceNameParam1)
+                                    {
+                                        $alertName = $alertState.InstanceNameParam1
+                                    }
+                                    else
+                                    {
+                                        $alertName = 'Rule Failure Alert'
+                                    }
+                                }
+                                else 
+                                {
+                                    $alertName = $alertState.Name
+                                }
+
+                                $tmpObj = New-Object psobject | Select-Object $propertyList
+                                $tmpObj.CheckType = 'AlertState'
+                                $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode, $alertState.ID
+                                $tmpObj.SystemName = $systemName
+                                $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                                $tmpObj.SiteCode = $alertState.SourceSiteCode
+                                $tmpObj.Description = ""
+                                $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                                [void]$resultObject.Add($tmpObj) 
+                            }
+                        }
+                    }
+                    catch 
                     {
                         $tmpScriptStateObj.Status = 'Error'
-                        $tmpScriptStateObj.Description = "User running the script might not have enough rights to read class SMS_Alert"
+                        $tmpScriptStateObj.Description = "$($error[0].Exception)"
                     }
-                    else 
+                }
+                #endregion
+
+
+                #region SMS_EPAlert
+                # Trying to read SMS_EPAlert to extract alert state
+                if ($IgnoreEPAlerts)
+                {
+                    if($WriteLog){Write-CMTraceLog -Message "Will ignore all Endpoint Protection related ConfigMgr alerts" -Component ($MyInvocation.MyCommand)}
+                }
+                else
+                {
+                    if($WriteLog){Write-CMTraceLog -Message "Will check Endpoint Protection related ConfigMgr alerts" -Component ($MyInvocation.MyCommand)} 
+
+                    try 
                     {
-                        foreach ($alertState in ($listFromSMSAlert | Where-Object {($_.AlertState -eq 0) -and ($_.IsIgnored -eq 0)}))
+                        $wqlQuery = "select * from SMS_EPAlert where AlertState = 0 and IsIgnored = 0"
+                        [array]$listFromSMSEPAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                        #$listFromSMSAlert | ogv
+                        <#
+                            AlertState
+                            0  Active
+                            1  Postponed
+                            2  Canceled
+                            3  Unknown
+                            4  Disabled
+                            5  Never Triggered
+                            
+                            Severity
+                            1  Error
+                            2  Warning
+                            3  Informational
+                        
+                        #>
+                        foreach ($alertState in $listFromSMSEPAlert)
+                        {
+                            # we might need to exclude some alerts from monitoring
+                            if ($ExcludeAlertIDsList -contains $alertState.ID)
+                            {
+                                if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
+                                continue
+                            }     
+
+                            if($alertState.SourceSiteCode)
+                            {
+                                $sourceSiteCode = $alertState.SourceSiteCode
+                            }
+                            else
+                            {
+                                $sourceSiteCode = $($ProviderInfo.SiteCode)
+                            }
+
+                            $tmpObj = New-Object psobject | Select-Object $propertyList
+                            $tmpObj.CheckType = 'EPAlertState'
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
+                            $tmpObj.SystemName = $systemName
+                            $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
+                            $tmpObj.SiteCode = $alertState.SourceSiteCode
+                            $tmpObj.Description = ""
+                            $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
+                            [void]$resultObject.Add($tmpObj) 
+                        }
+                    }
+                    catch 
+                    {
+                        $tmpScriptStateObj.Status = 'Error'
+                        $tmpScriptStateObj.Description = "$($error[0].Exception)"
+                    }
+                }
+                #endregion
+
+
+                #region SMS_CHAlert
+                # Trying to read SMS_CHAlert to extract alert state
+                if ($IgnoreCHAlerts)
+                {
+                    if($WriteLog){Write-CMTraceLog -Message "Will ignore all Client Health related ConfigMgr alerts" -Component ($MyInvocation.MyCommand)}
+                }
+                else
+                {
+                    try 
+                    {
+                        $wqlQuery = "select * from SMS_CHAlert where AlertState = 0 and IsIgnored = 0"
+                        [array]$listFromSMSCHAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
+                        #$listFromSMSAlert | ogv
+                        <#
+                            AlertState
+                            0  Active
+                            1  Postponed
+                            2  Canceled
+                            3  Unknown
+                            4  Disabled
+                            5  Never Triggered
+                            
+                            Severity
+                            1  Error
+                            2  Warning
+                            3  Informational
+                        
+                        #>
+                        foreach ($alertState in $listFromSMSCHAlert)
                         {
 
                             # we might need to exclude some alerts from monitoring
@@ -674,28 +851,9 @@ else
                             {
                                 $sourceSiteCode = $($ProviderInfo.SiteCode)
                             }
-
-                            
-                            # Trying to find a unique name for the alert, since multiple duplicate entries are possible
-                            if (($alertState.Name -ieq '$RuleFailureAlertName') -or ($alertState.Name -ieq 'Rule Failure Alert'))
-                            {
-                                if($alertState.InstanceNameParam1)
-                                {
-                                    $alertName = $alertState.InstanceNameParam1
-                                }
-                                else
-                                {
-                                    $alertName = 'Rule Failure Alert'
-                                }
-                            }
-                            else 
-                            {
-                                $alertName = $alertState.Name
-                            }
-
                             $tmpObj = New-Object psobject | Select-Object $propertyList
-                            $tmpObj.CheckType = 'AlertState'
-                            $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertName, $sourceSiteCode, $alertState.ID
+                            $tmpObj.CheckType = 'CHAlertState'
+                            $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
                             $tmpObj.SystemName = $systemName
                             $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
                             $tmpObj.SiteCode = $alertState.SourceSiteCode
@@ -704,129 +862,11 @@ else
                             [void]$resultObject.Add($tmpObj) 
                         }
                     }
-                }
-                catch 
-                {
-                    $tmpScriptStateObj.Status = 'Error'
-                    $tmpScriptStateObj.Description = "$($error[0].Exception)"
-                }
-                #endregion
-
-
-                #region SMS_EPAlert
-                # Trying to read SMS_EPAlert to extract alert state
-                try 
-                {
-                    $wqlQuery = "select * from SMS_EPAlert where AlertState = 0 and IsIgnored = 0"
-                    [array]$listFromSMSEPAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-                    #$listFromSMSAlert | ogv
-                    <#
-                        AlertState
-                        0  Active
-                        1  Postponed
-                        2  Canceled
-                        3  Unknown
-                        4  Disabled
-                        5  Never Triggered
-                        
-                        Severity
-                        1  Error
-                        2  Warning
-                        3  Informational
-                    
-                    #>
-                    foreach ($alertState in $listFromSMSEPAlert)
+                    catch 
                     {
-                        # we might need to exclude some alerts from monitoring
-                        if ($ExcludeAlertIDsList -contains $alertState.ID)
-                        {
-                            if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
-                            continue
-                        }     
-
-                        if($alertState.SourceSiteCode)
-                        {
-                            $sourceSiteCode = $alertState.SourceSiteCode
-                        }
-                        else
-                        {
-                            $sourceSiteCode = $($ProviderInfo.SiteCode)
-                        }
-
-                        $tmpObj = New-Object psobject | Select-Object $propertyList
-                        $tmpObj.CheckType = 'EPAlertState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
-                        $tmpObj.SystemName = $systemName
-                        $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
-                        $tmpObj.SiteCode = $alertState.SourceSiteCode
-                        $tmpObj.Description = ""
-                        $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
-                        [void]$resultObject.Add($tmpObj) 
+                        $tmpScriptStateObj.Status = 'Error'
+                        $tmpScriptStateObj.Description = "$($error[0].Exception)"
                     }
-                }
-                catch 
-                {
-                    $tmpScriptStateObj.Status = 'Error'
-                    $tmpScriptStateObj.Description = "$($error[0].Exception)"
-                }
-                #endregion
-
-
-                #region SMS_CHAlert
-                # Trying to read SMS_CHAlert to extract alert state
-                try 
-                {
-                    $wqlQuery = "select * from SMS_CHAlert where AlertState = 0 and IsIgnored = 0"
-                    [array]$listFromSMSCHAlert = Get-WmiObject -ComputerName ($ProviderInfo.Machine) -Namespace "root\sms\site_$($ProviderInfo.SiteCode)" -Query $wqlQuery -ErrorAction Stop
-                    #$listFromSMSAlert | ogv
-                    <#
-                        AlertState
-                        0  Active
-                        1  Postponed
-                        2  Canceled
-                        3  Unknown
-                        4  Disabled
-                        5  Never Triggered
-                        
-                        Severity
-                        1  Error
-                        2  Warning
-                        3  Informational
-                    
-                    #>
-                    foreach ($alertState in $listFromSMSCHAlert)
-                    {
-
-                        # we might need to exclude some alerts from monitoring
-                        if ($ExcludeAlertIDsList -contains $alertState.ID)
-                        {
-                            if($WriteLog){Write-CMTraceLog -Message "Will skip alert with ID: $($alertState.ID)" -Component ($MyInvocation.MyCommand)}
-                            continue
-                        }
-
-                        if($alertState.SourceSiteCode)
-                        {
-                            $sourceSiteCode = $alertState.SourceSiteCode
-                        }
-                        else
-                        {
-                            $sourceSiteCode = $($ProviderInfo.SiteCode)
-                        }
-                        $tmpObj = New-Object psobject | Select-Object $propertyList
-                        $tmpObj.CheckType = 'CHAlertState'
-                        $tmpObj.Name = '{0}:{1}:{2}:{3}:ID{4}' -f $tmpObj.CheckType, $systemName, $alertState.Name, $sourceSiteCode, $alertState.ID
-                        $tmpObj.SystemName = $systemName
-                        $tmpObj.Status = if($alertState.Severity -eq 1){'Error'}elseif($alertState.Severity -eq 2){'Warning'}elseif($alertState.Severity -eq 3){'Informational'}
-                        $tmpObj.SiteCode = $alertState.SourceSiteCode
-                        $tmpObj.Description = ""
-                        $tmpObj.PossibleActions = 'ConfigMgr console: "\Monitoring\Overview\Alerts\Active Alerts". Also, check the logfile of the corresponding component'
-                        [void]$resultObject.Add($tmpObj) 
-                    }
-                }
-                catch 
-                {
-                    $tmpScriptStateObj.Status = 'Error'
-                    $tmpScriptStateObj.Description = "$($error[0].Exception)"
                 }
                 #endregion
             } # END If (-NOT ($ProviderInfo))
