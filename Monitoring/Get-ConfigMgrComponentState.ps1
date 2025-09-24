@@ -144,9 +144,9 @@ param
     [ValidateRange(0,60)]
     [int]$OutputTestData=0,
     [Parameter(Mandatory=$false)]
-    [string[]]$ExcludeComponentsList = @(),
+    [string[]]$ExcludeComponentsList = @("SMS_DISTRIBUTION_MANAGER","SMS_PACKAGE_TRANSFER_MANAGER"),
     [Parameter(Mandatory=$false)]
-    [string[]]$ExcludeSiteSystemsList = @("SMS_DISTRIBUTION_MANAGER","SMS_PACKAGE_TRANSFER_MANAGER"),
+    [string[]]$ExcludeSiteSystemsList = @(),
     [Parameter(Mandatory=$false)]
     [int[]]$ExcludeAlertIDsList = @(),
     [Parameter(Mandatory=$false)]
