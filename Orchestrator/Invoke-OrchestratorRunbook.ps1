@@ -577,6 +577,8 @@ try
     {
         $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential
     }    
+
+    Write-Host "Runbook job created with ID: $($runbookJob.Id)"
 }
 catch 
 {
@@ -595,23 +597,48 @@ Write-Host "Runbook job created"
 #endregion
 
 
-#region Wait for the runbook result
+#region Wait for the runbook resul
 Write-Host "Waiting for runbook job result"
-try 
-{
-    $runbookJobResult = Get-OrchestratorRunbookJobStatus -ScorchURI $ScorchURI -JobID $runbookJob.Id -Credential $credential -MaxJobRuntimeSec $MaxJobRuntimeSec -WaitForCompletion
+# start timer and loop until the runbook job is completed or the maximum wait time is reached
 
-    if ($runbookJobResult.RunbookInstanceStatus -inotmatch 'Success')
-    {
-        exit 1 # to let a task sequence step fail
-    }
-}
-catch 
+$timeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
+$timeoutValue = 2 * $MaxJobRuntimeSec # Give some extra time to get the runbook job result
+Write-Host "Will wait up to $timeoutValue seconds for runbook job to complete in case of error 500 internal server error"
+Write-Host "Maximum runbook job runtime is set to $MaxJobRuntimeSec seconds"
+do 
 {
-    Write-Host "Runbook job failed"
-    Write-Host $_
-    Exit 1 # to let a task sequence step fail
-}
+    try 
+    {
+        Write-Host "Will get runbook job status after 5 seconds"
+        Start-Sleep -Seconds 5 # Give the orchestrator web service some time to start the runbook job
+        $runbookJobResult = Get-OrchestratorRunbookJobStatus -ScorchURI $ScorchURI -JobID $runbookJob.Id -Credential $credential -MaxJobRuntimeSec $MaxJobRuntimeSec -WaitForCompletion
+
+        if ($runbookJobResult.RunbookInstanceStatus -inotmatch 'Success')
+        {
+            exit 1 # to let a task sequence step fail
+        }
+    }
+    catch 
+    {
+        if ($_ -imatch '\(500\) Internal Server Error')
+        {
+            Write-Host "Error 500 internal server error. Might be a temporary issue due to SQL lock state. Will try again in 5 seconds"
+            Start-Sleep -Seconds 5
+            # we will just try again and not fail the script
+        }
+        else 
+        {
+            Write-Host "Runbook job failed"
+            Write-Host $_
+            Exit 1 # to let a task sequence step fail
+        }
+    }
+} 
+until 
+(
+    ($runbookJobResult.RunbookInstanceStatus -imatch 'Success') -or  ($timeoutTimer.Elapsed.TotalSeconds -ge $timeoutValue)
+)
+$timeoutTimer.Stop()
 #endregion
 
 # region Get runbook output parameters
