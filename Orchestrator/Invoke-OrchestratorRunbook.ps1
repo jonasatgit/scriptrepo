@@ -156,7 +156,7 @@ param(
     [array]$RunbookOutParamsList, 
 
     [Parameter(Mandatory = $false)]
-    # A switch to enable the putput of all runbook output parameters. If set, the script will return all output parameters defined in the runbook
+    # A switch to enable the output of all runbook output parameters. If set, the script will return all output parameters defined in the runbook
     # and not just the ones defined in the RunbookOutParamsList parameter. The RunbookOutParamsList parameter will be ignored if this switch is set.
     [Switch]$OutputAllOutParameters,
 
