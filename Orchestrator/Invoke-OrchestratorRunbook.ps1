@@ -1,6 +1,6 @@
 <#
 .Synopsis
-    Script to invoke a System Center Orchestrator 2022 runbook from a ConfigMgr task sequence using a REST API call with credentials from task sequence variables
+    Script to invoke a System Center Orchestrator 2022 or higher runbook from a ConfigMgr task sequence using a REST API call with credentials from task sequence variables
     
 .DESCRIPTION
     #************************************************************************************************************
@@ -43,6 +43,7 @@
 
 .PARAMETER MaxJobRuntimeSec
     The maximum time in seconds the script will wait for the runbook to complete. Default is 30 seconds
+    In case of error 500 internal server error, the script will wait up to 2 times the MaxJobRuntimeSec time.
 
 .PARAMETER UserVariableName
     The name of the task sequence variable that contains the username.
@@ -92,7 +93,7 @@
     The RunbookOutParamsList parameter will be ignored if this switch is set.
 
 .EXAMPLE
-    Run a runbook in without runbook parameters
+    Run a runbook without runbook parameters
     .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02'
 
 .EXAMPLE
