@@ -495,6 +495,7 @@ Function Get-OrchestratorRunbookOutputParameters
 #region Get Credentils
 if (-NOT $TaskSequenceMode)
 {
+    Write-Host "Running in manual mode. Will prompt for credentials"
     if ([string]::IsNullOrEmpty($UserName))
     {
         $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
