@@ -1,0 +1,105 @@
+name: AppFactory-v2
+
+trigger: none
+
+pool:
+  name: 'DevOps-SelfHosted-01'
+
+variables:
+- group: IntuneAppFactoryV3
+
+stages:
+- stage: validateAppsStage
+  displayName: 'Validate Apps Stage'
+  jobs:
+  - job: validateAppsJob
+    timeoutInMinutes: 15
+    steps:
+    
+    - task: PowerShell@2
+      name: validateAppsTask
+      displayName: 'Validate Apps Task'
+      inputs:
+        scriptType: filePath
+        filePath: 'Scripts/Test-AppMetadata.ps1'
+        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile)
+        pwsh: true
+
+    - task: PublishBuildArtifacts@1
+      name: publishArtifactsTask
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: AppsToProcess
+
+    - task: DeleteFiles@1
+      name: cleanupArtifactsTask
+      inputs:
+        SourceFolder: '$(Build.ArtifactStagingDirectory)'
+        Contents: '**'
+
+- stage: packageAppsStage
+  displayName: 'Package Apps Stage'
+  jobs:
+  - job: packageAppsJob
+    timeoutInMinutes: 120
+    steps:
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'AppsToProcess'
+        path: '$(Build.ArtifactStagingDirectory)'
+
+    - task: PowerShell@2
+      name: packageAppsTask
+      displayName: 'Package Apps Task'
+      inputs:
+        scriptType: filePath
+        filePath: 'Scripts/Invoke-AppCreation.ps1'
+        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile)
+        pwsh: true
+
+    - task: PublishBuildArtifacts@1
+      name: publishArtifactsTask
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: AppsToProcess
+
+    - task: DeleteFiles@1
+      name: cleanupArtifactsTask
+      inputs:
+        SourceFolder: '$(Build.ArtifactStagingDirectory)'
+        Contents: '**'
+
+- stage: uploadAppsStage
+  displayName: 'Upload Apps Stage'
+  jobs:
+  - job: uploadAppsJob
+    timeoutInMinutes: 120
+    steps:
+
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: 'AppsToProcess'
+        path: '$(Build.ArtifactStagingDirectory)'
+
+    - task: PowerShell@2
+      name: uploadAppsTask
+      displayName: 'Upload Apps Task'
+      inputs:
+        scriptType: filePath
+        filePath: 'Scripts/Invoke-AppUpload.ps1'
+        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile)
+        pwsh: true
+
+    - task: PublishBuildArtifacts@1
+      name: publishArtifactsTask
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: AppsToProcess
+
+    - task: DeleteFiles@1
+      name: cleanupArtifactsTask
+      inputs:
+        SourceFolder: '$(Build.ArtifactStagingDirectory)'
+        Contents: '**'
+# End of file

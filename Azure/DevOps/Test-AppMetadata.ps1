@@ -17,15 +17,31 @@ Script to analyze apps
 # if Microsoft has been advised of the possibility of such damages.
 # 
 #************************************************************************************************************
+
+
+.PARAMETER AppFolderName
+    The name of the folder containing the applications to upload.
+
+.PARAMETER TemplateFolderName
+    The name of the folder containing the application templates. Mainly the AppDeploymentToolkit.
+
+.PARAMETER AppsToProcessFile
+    The path to the file containing the list of applications to process.
+
+.PARAMETER AppStorageAccountName
+    The name of the storage account where the application content is stored.
+
+.PARAMETER TestStorageAccountFolder
+    Switch to test the storage account folder existance. (Important: Will also create the folder if it does not exist)
 #>
 
 
 [CmdletBinding()]
 param
 (
-    [string]$AppFolderName = 'AppsV2',
-    [string]$TemplateFolderName = 'TemplatesV2',
-    [string]$AppsToProcessFile = 'appsToProcess.csv',
+    [string]$AppFolderName,
+    [string]$TemplateFolderName,
+    [string]$AppsToProcessFile,
     [string]$AppStorageAccountName,
     [switch]$TestStorageAccountFolder
 )
@@ -74,7 +90,7 @@ function Get-HashtablesFromScript
         # Create the output object with all properties we want to extract
         $outObj = [PSCustomObject][ordered]@{
             'DataMissingOrWrong' = $false # Will be set to true if we have all what we need to create the Intune app
-            'FilePath' = $FilePath
+            #'FilePath' = $FilePath
             'FolderName' = ($FilePath | Split-Path -Parent | Split-Path -Leaf)
             'ADT-Version' = $version
             'ADT-AppName' = ''            
@@ -90,6 +106,8 @@ function Get-HashtablesFromScript
             'ADT-DeployAppScriptVersion' = ''
             'ADT-AppScriptDate' = ''
             'ADT-AppScriptAuthor' = ''
+            'ADT-InstallName' = ''
+            'ADT-InstallTitle' = ''
             'AppIconFound' = $false
             'StorageAccountFolderName' =  ($FilePath | Split-Path -Parent | Split-Path -Leaf).ToLower() -replace '\.', '-' -replace '_', '-'
             'StorageAccountFolderState' = 'Unknown' 
@@ -97,6 +115,7 @@ function Get-HashtablesFromScript
             'IntuneMetadataFound' = $false # Will be set to true if we find the IntuneAppMetadata script
             'IntuneDetectionScriptFound' = $false # Will be set to true if we find a detection script in the ADT script
             'IntuneRequirementScriptFound' = $false # Will be set to true if we find a requirement script in the ADT script
+            'CheckResults' = @{} # Will contain any issues found during the checks
             ID = (New-Guid).Guid # Add ID to the object to be able to identify it later
         } 
 
@@ -195,26 +214,44 @@ function Get-HashtablesFromScript
         # AppVendor, AppName, AppVersion, AppRevision
         if([string]::isNullOrEmpty($outObj.'ADT-AppName'))
         {
-            $outObj.'DataMissingOrWrong' = $true
-            Write-Warning "AppName is missing in file: $FilePath"
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppName', "AppName is missing in file: $($FilePath | Split-Path -leaf)")
         }
 
         if([string]::isNullOrEmpty($outObj.'ADT-AppVersion'))
         {
-            $outObj.'DataMissingOrWrong' = $true
-            Write-Warning "AppVersion is missing in file: $FilePath"
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppVersion', "AppVersion is missing in file: $($FilePath | Split-Path -leaf)")            
+        }
+
+        if([string]::isNullOrEmpty($outObj.'ADT-AppArch'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppArch', "AppArch is missing in file: $($FilePath | Split-Path -leaf)")            
         }
 
         if([string]::isNullOrEmpty($outObj.'ADT-AppVendor'))
         {
-            $outObj.'DataMissingOrWrong' = $true
-            Write-Warning "AppVendor is missing in file: $FilePath"
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppVendor', "AppVendor is missing in file: $($FilePath | Split-Path -leaf)")
         }
 
         if([string]::isNullOrEmpty($outObj.'ADT-AppRevision'))
         {
-            $outObj.'DataMissingOrWrong' = $true
-            Write-Warning "AppRevision is missing in file: $FilePath"
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppRevision', "AppRevision is missing in file: $($FilePath | Split-Path -leaf)")
+        }
+
+        if([string]::isNullOrEmpty($outObj.'ADT-InstallName'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('InstallName', "InstallName is missing in file: $($FilePath | Split-Path -leaf)")
+        }
+
+        if([string]::isNullOrEmpty($outObj.'ADT-InstallTitle'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('InstallTitle', "InstallTitle is missing in file: $($FilePath | Split-Path -leaf)")
         }
 
         # Do we have a requirement script?
@@ -238,77 +275,79 @@ function Get-HashtablesFromScript
         {
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.InstallCommand))
             {
-                $outObj.'DataMissingOrWrong' = $true
-                Write-Warning "InstallCommand is missing in IntuneMetadata"
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('InstallCommand', "InstallCommand is missing in IntuneMetadata")
             }
 
             if([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.UninstallCommand))
             {
-                $outObj.'DataMissingOrWrong' = $true
-                Write-Warning "UninstallCommand is missing in IntuneMetadata"
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('UninstallCommand', "UninstallCommand is missing in IntuneMetadata")
             }
 
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.SetupFIle))
             {
-                $outObj.'DataMissingOrWrong' = $true
-                Write-Warning "SetupFIle is missing in IntuneMetadata"
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('SetupFIle', "SetupFIle is missing in IntuneMetadata")
             }
             else 
             {
                 if($outObj.IntuneMetadata.InstallData.InstallCommand -notmatch [regex]::Escape($outObj.IntuneMetadata.InstallData.SetupFIle))
                 {
-                    $outObj.'DataMissingOrWrong' = $true
-                    Write-Warning "SetupFIle is not part of the InstallCommand in IntuneMetadata"
+                    $outObj.DataMissingOrWrong = $true
+                    $outObj.CheckResults.Add('SetupFIleInInstallCommand', "SetupFIle is not referenced in InstallCommand in IntuneMetadata")
                 }
             }
 
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.InstallExperience))
             {
-                $outObj.'DataMissingOrWrong' = $true
-                Write-Warning "InstallExperience is missing in IntuneMetadata"
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('InstallExperience', "InstallExperience is missing in IntuneMetadata")
             }
             else 
             {
                 # the value must be one of: system, user
                 if ($outObj.IntuneMetadata.InstallData.InstallExperience -notin @('system', 'user'))
                 {
-                    $outObj.'DataMissingOrWrong' = $true
-                    Write-Warning "InstallExperience has an invalid value in IntuneMetadata. Valid values are: system, user"
+                    $outObj.DataMissingOrWrong = $true
+                    $outObj.CheckResults.Add('InstallExperienceValue', "InstallExperience has an invalid value in IntuneMetadata. Valid values are: system, user")
                 }
             }
 
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.DeviceRestartBehavior))
             {
-                $outObj.'DataMissingOrWrong' = $true
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('DeviceRestartBehavior', "DeviceRestartBehavior is missing in IntuneMetadata")
             }
             else 
             {
                 # the value must be one of: noRestart, basedOnReturnCode, forceRestart
                 if ($outObj.IntuneMetadata.InstallData.DeviceRestartBehavior -notin @('noRestart', 'basedOnReturnCode', 'forceRestart'))
                 {
-                    $outObj.'DataMissingOrWrong' = $true
-                    Write-Warning "DeviceRestartBehavior has an invalid value in IntuneMetadata. Valid values are: noRestart, basedOnReturnCode, forceRestart"
+                    $outObj.DataMissingOrWrong = $true
+                    $outObj.CheckResults.Add('DeviceRestartBehaviorValue', "DeviceRestartBehavior has an invalid value in IntuneMetadata. Valid values are: noRestart, basedOnReturnCode, forceRestart")
                 }
             }
 
             # AllowAvailableUninstall must be true or false
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.AllowAvailableUninstall))
             {
-                $outObj.'DataMissingOrWrong' = $true
-                Write-Warning "AllowAvailableUninstall is missing in IntuneMetadata"
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('AllowAvailableUninstall', "AllowAvailableUninstall is missing in IntuneMetadata")
             }
             else 
             {
                 if ($outObj.IntuneMetadata.InstallData.AllowAvailableUninstall -notin @('true', 'false'))
                 {
-                    $outObj.'DataMissingOrWrong' = $true
-                    Write-Warning "AllowAvailableUninstall has an invalid value in IntuneMetadata. Valid values are: true, false"
+                    $outObj.DataMissingOrWrong = $true
+                    $outObj.CheckResults.Add('AllowAvailableUninstallValue', "AllowAvailableUninstall has an invalid value in IntuneMetadata. Valid values are: true, false")
                 }
             }
         }
         else 
         {
-            $outObj.'DataMissingOrWrong' = $true
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('InstallData', "InstallData section is missing in IntuneMetadata")
         }
 
         # lets check if we have an icon file in the app folder
@@ -340,7 +379,9 @@ function Test-StorageAccountFolder
         [Parameter(Mandatory=$true)]
         [string]$AppStorageAccountName,
         [Parameter(Mandatory=$false)]
-        [Switch]$CreateIfNotExists
+        [Switch]$CreateIfNotExists,
+        [Parameter(Mandatory=$false)]
+        [String]$TempDirectory = [System.IO.Path]::GetTempPath()
     )
 
     # process pipeline
@@ -351,31 +392,78 @@ function Test-StorageAccountFolder
     }
     process 
     {
-        $storageContainerName = $AppInfo.'StorageAccountFolderName'
+        $storageContainerName = $AppInfo.StorageAccountFolderName.ToLower()
         $container = Get-AzStorageContainer -Context $storageContext -Name $storageContainerName -ErrorAction SilentlyContinue
         if (-not $container) 
         {
             Write-Host "Storage container not found: $storageContainerName"
-            $AppInfo.'StorageAccountFolderState' = 'Missing'
+            $AppInfo.StorageAccountFolderState = 'Missing'
             if ($CreateIfNotExists) 
             {
                 try 
                 {
                     Write-Host "Creating storage container: $storageContainerName"
                     $null = New-AzStorageContainer -Context $storageContext -Name $storageContainerName -ErrorAction "Stop"
-                    $AppInfo.'StorageAccountFolderState' = 'Exists'             
+                    $AppInfo.StorageAccountFolderState = 'Exists'             
                 }
                 catch 
                 {
-                    $AppInfo.'StorageAccountFolderState' = 'ErrorCreating'
-                    Write-Warning "Failed to create storage container: `"$($storageContainerName)`""
-                    Write-Warning $_
+                    Write-Warning "Failed to create storage container: $storageContainerName. Error: $($_.Exception.Message)"
+
+                    if (($_ | Out-String) -match '403.*authorized') 
+                    {
+                        Write-Warning "403 Forbidden detected. Check if the managed identity has the correct permissions and storage account network settings."
+                        Exit 1
+                    }
+
+                    Write-Warning "Full error: $($_ | Out-String)"
+
+                    $AppInfo.StorageAccountFolderState = 'ErrorCreating'
+                    $AppInfo.DataMissingOrWrong = $true
+                    $AppInfo.CheckResults.Add("StorageContainerCreation", "Failed to create storage container: `"$($_)`"")
                 }
             }
         }
         else 
         {
             $AppInfo.'StorageAccountFolderState' = 'Exists'
+        }
+
+        if ($CreateIfNotExists)
+        {
+            #--- Create & upload README.txt to App/Files (overwrite if it exists) ---
+            try 
+            {
+                $readmeText = 'Place app files here'
+                $blobName = 'App/Files/README.txt'   # two virtual folders: App -> Files
+
+                # Create a temporary local file for upload
+                $tempFile = [System.IO.Path]::Combine($TempDirectory, [System.IO.Path]::GetRandomFileName())
+                Set-Content -Path $tempFile -Value $readmeText -Encoding UTF8
+
+                # Upload and overwrite if it already exists (-Force)
+                $paramSplatting = @{
+                    File       = $tempFile
+                    Container  = $storageContainerName
+                    Blob       = $blobName
+                    Context    = $storageContext
+                    Properties = @{ ContentType = 'text/plain; charset=utf-8' }
+                    Force      = $true
+                    ErrorAction= 'Stop'
+                }
+
+                $null = Set-AzStorageBlobContent @paramSplatting
+
+                # Cleanup local temp
+                Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
+
+                Write-Host "README.txt uploaded to container '$storageContainerName' at '$blobName' (overwritten if existed)."
+            }
+            catch 
+            {
+                Write-Warning "Failed to upload README.txt to $storageContainerName/App/Files. Error: $($_.Exception.Message)"
+                # not critical, so we just log it
+            }
         }
 
         return $AppInfo
@@ -443,87 +531,78 @@ if (-Not (Test-Path -Path $appBasePath))
     return
 }
 
+
+# load all app files possible
+[array]$adtAppFileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File | Where-Object {
+    $_.Name -in @("Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1")
+}
+
 # load apps to process from csv file if it exists
 [array]$appsToProcess = @()
 $appsToProcessPath = '{0}\{1}' -f $sourceDirectory, $appsToProcessFile
 if (Test-Path -Path $appsToProcessPath) 
-{
-    $appsToProcess = Import-Csv -Path $appsToProcessPath
-    Write-Host "Loaded $($appsToProcess.Count) apps to process from file" -ForegroundColor Cyan
+{    
+    $firstLine = Get-Content -Path $appsToProcessPath -TotalCount 1
+    if ($firstLine -notmatch '\bAppFolderName\b') 
+    {
+        Write-Error "Header 'AppFolderName' is not present in the CSV."
+        break
+    }
+
+    # Copy apps to process file to artifact staging directory. This will help to be able to analyze what apps were processed later
+    Copy-Item -Path $appsToProcessPath -Destination $artifactStagingDirectory -Force -ErrorAction SilentlyContinue
+
+    # Import the CSV file
+    $appsToProcess = Import-Csv -Path $appsToProcessPath -ErrorAction Stop
+    Write-Host "Loaded $($appsToProcess.Count) apps to process from file: $appsToProcessFile" 
 } 
 else 
 {
-    Write-Warning "Apps to process file not found."
+    Write-Warning "Apps to process file not found. Will work with all apps."
 }
 
-if ($appsToProcess.Count -eq 0) 
+if ($appsToProcess.AppFolderName.Count -gt 0) 
 {
-    Write-Host "No apps to process loaded from file. Will process all apps found in path." -ForegroundColor Cyan
-    [array]$fileList = Get-ChildItem -Path $AppBasePath -Depth 1 -File | Where-Object {
-        $_.Name -in @("Invoke-AppDeployToolkit.ps1", "Deploy-Application.ps1")
+    # we have the folder names in $appsToProcess.AppFolderName
+    # We now need to filter $adtAppFileList to only include those apps
+    [array]$fileListToProcess = $adtAppFileList | Where-Object {
+        $appFolderName = $_.DirectoryName | Split-Path -Leaf
+        $appFolderName -in $appsToProcess.AppFolderName
     }
 }
 else 
 {
-    # only process apps listed in the csv file. The csv file will contain the folder names of the apps to process
-    [array]$fileList = @()
-    foreach ($app in $appsToProcess) 
-    {
-        $csvAppFolder = '{0}\{1}' -f $appBasePath, $app.AppFolderName
-        if (-not (Test-Path -Path $csvAppFolder)) 
-        {
-            Write-Warning "App folder not found: $csvAppFolder"
-            continue
-        }
-        
-        # Check for ADT script files in order of preference
-        $scriptFiles = @('Invoke-AppDeployToolkit.ps1', 'Deploy-Application.ps1')
-        $foundScript = $false
-        
-        foreach ($scriptFile in $scriptFiles) 
-        {
-            $adtScriptPath = '{0}\{1}' -f $csvAppFolder, $scriptFile
-            if (Test-Path -Path $adtScriptPath) 
-            {
-                $fileList += Get-Item -Path $adtScriptPath
-                $foundScript = $true
-                break
-            }
-        }
-        
-        if (-not $foundScript) 
-        {
-            Write-Warning "No ADT script file found in folder: $appFolder"
-        }
-    }
+    # add all apps
+    [array]$fileListToProcess = $adtAppFileList
 }
 
 
-Write-Host "Found $($fileList.Count) ADT script files"
-if($fileList.Count -eq 0) 
+Write-Host "Working with $($fileListToProcess.Count) ADT script files"
+if($fileListToProcess.Count -eq 0) 
 {
     Write-Error "No ADT script files found in path"
-    return
+    break
 }
 
 # Read the hashtable data from the script files to be able to select which apps to import.
-# The data will be displayed in an Out-GridView for selection.
-[array]$appList = $fileList | Get-HashtablesFromScript
-
+# the result of the function is an array of custom objects with all the data we need
+[array]$appList = $fileListToProcess | Get-HashtablesFromScript
 
 if ($TestStorageAccountFolder)
 {
     $appList = $appList | Test-StorageAccountFolder -AppStorageAccountName $AppStorageAccountName -CreateIfNotExists
 }
 
+# Save the app list to an xml file for later steps in the pipeline
 $fileOutPath = '{0}\AppsToProcess.xml' -f $artifactStagingDirectory
 $appList | Export-Clixml -Path $fileOutPath -Force
 
-# we will also save the data as json for easier consumption in later steps
+# we will also save the data as json for easier consumption and readability
 $appList | ConvertTo-Json -Depth 10 | Out-File -FilePath ($fileOutPath -replace 'xml$', 'json') -Encoding utf8 -Force
+Write-Host "App metadata for $($appList.Count) apps saved to xml and json"
 
 # Show data in DevOps pipeline log
-Import-Clixml -Path $fileOutPath | ConvertTo-Json -Depth 10
+#Import-Clixml -Path $fileOutPath | ConvertTo-Json -Depth 10
 
 <#
 # Handle next stage execution or not if no applications are allowed to be processed
