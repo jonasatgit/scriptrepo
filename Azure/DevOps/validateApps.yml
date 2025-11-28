@@ -88,7 +88,7 @@ stages:
       inputs:
         scriptType: filePath
         filePath: 'Scripts/Invoke-AppUpload.ps1'
-        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile)
+        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile) -CreateAssignments
         pwsh: true
 
     - task: PublishBuildArtifacts@1

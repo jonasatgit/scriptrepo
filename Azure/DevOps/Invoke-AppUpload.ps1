@@ -36,6 +36,9 @@ https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Wi
 .PARAMETER TestStorageAccountFolder
     Switch to test the storage account folder existance. (Important: Will also create the folder if it does not exist)
 
+.PARAMETER BlockSizeMB
+    The block size in MB to use for uploading the IntuneWin files. Default is 100 MB.
+
 #>
 [CmdletBinding()]
 param
@@ -44,12 +47,297 @@ param
     [string]$TemplateFolderName,
     [string]$AppsToProcessFile,
     [string]$AppStorageAccountName,
-    [switch]$TestStorageAccountFolder
+    [switch]$TestStorageAccountFolder,
+    [UInt64]$BlockSizeMB = 100,
+    [Switch]$CreateAssignments
 )
 
 
 # To be able to unpack the intunewin file
 $null = Add-Type -AssemblyName "System.IO.Compression.FileSystem" -ErrorAction Stop
+
+
+<#
+.SYNOPSIS
+    Function to create a new Intune Win32 app assignment.
+
+.DESCRIPTION
+    This function creates a new Intune Win32 app assignment with the specified parameters.
+    It constructs the assignment JSON and sends it to the Microsoft Graph API to create the assignment.
+
+.PARAMETER AppID
+    The ID of the app to assign.
+
+.PARAMETER TargetType
+    The type of target for the assignment. Valid values are "Group", "AllDevices", or "AllUsers".
+
+.PARAMETER AssigmentType
+    The type of assignment. Valid values are "Include" or "Exclude". Default is "Include".
+
+.PARAMETER EntraIDGroupID
+    The Entra ID group ID to assign the app to. Required if TargetType is "Group".
+
+.PARAMETER Intent
+    The intent of the assignment. Valid values are "Available", "Required", or "Uninstall". Default is "Available".
+
+.PARAMETER Notification
+    The notification setting for the assignment. Valid values are "showAll", "showReboot", or "hideAll". Default is "showAll".
+
+.PARAMETER DeliveryOptimizationPriority
+    The delivery optimization priority for the assignment. Valid values are "foreground" or "notConfigured". Default is "notConfigured".
+
+.PARAMETER StartDateTime
+    The start date and time for the assignment. Optional.
+
+.PARAMETER DeadlineDateTime
+    The deadline date and time for the assignment. Optional.
+
+.PARAMETER UseLocalTime
+    Specifies whether to use local time for the assignment. Default is $true.
+
+.PARAMETER UseRestartGracePeriod
+    Specifies whether to use a restart grace period for the assignment. Default is $false.
+
+.PARAMETER CountdownDisplayBeforeRestartInMinutes
+    The countdown display time before restart in minutes. Default is 15 minutes.
+
+.PARAMETER GracePeriodInMinutes
+    The grace period in minutes for the assignment. Default is 1440 minutes (24 hours).
+
+.PARAMETER RestartNotificationSnoozeDurationInMinutes
+    The snooze duration for restart notifications in minutes. Default is 240 minutes (4 hours).
+
+.PARAMETER AssignmentFilterId
+    The ID of the assignment filter to use. Optional.
+
+.PARAMETER AssignmentFilterType
+    The type of assignment filter to use. Valid values are "none", "include", or "exclude". Default is "none".
+
+.EXAMPLE
+    New-IntuneWin32AppAssignment -AppID "12345678-1234-1234-1234-123456789012" -TargetType "Group" -EntraIDGroupID "87654321-4321-4321-4321-210987654321" -Intent "Required" -Notification "showAll" -DeliveryOptimizationPriority "foreground" -StartDateTime (Get-Date) -DeadlineDateTime (Get-Date).AddDays(7) -UseLocalTime $true -UseRestartGracePeriod $true -CountdownDisplayBeforeRestartInMinutes 15 -GracePeriodInMinutes 1440 -RestartNotificationSnoozeDurationInMinutes 240
+#>
+Function New-IntuneWin32AppAssignment
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$AppID,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("Group","AllDevices","AllUsers")]
+        [string]$TargetType,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Include","Exclude")]
+        [string]$AssigmentType = "Include",
+
+        [Parameter(Mandatory=$false)]
+        [string]$EntraIDGroupID,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("Available","Required","Uninstall")]
+        [String]$Intent, # https://learn.microsoft.com/en-us/graph/api/intune-apps-mobileappassignment-create?view=graph-rest-beta#request-body
+
+        [Parameter(Mandatory=$false)]
+        [validateset("showAll","showReboot","hideAll")]
+        [string]$Notification = "showAll",
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("foreground","notConfigured")]
+        [string]$DeliveryOptimizationPriority = "notConfigured",
+
+        [Parameter(Mandatory=$false)]
+        [datetime]$StartDateTime,
+
+        [Parameter(Mandatory=$false)]
+        [datetime]$DeadlineDateTime,
+
+        [Parameter(Mandatory=$false)]
+        [bool]$UseLocalTime = $true,
+
+        [Parameter(Mandatory=$false)]
+        [Switch]$UseRestartGracePeriod,
+
+        [Parameter(Mandatory=$false)]
+        [int]$CountdownDisplayBeforeRestartInMinutes = 15,
+
+        [Parameter(Mandatory=$false)]
+        [int]$GracePeriodInMinutes = 1440,
+
+        [Parameter(Mandatory=$false)]
+        [int]$RestartNotificationSnoozeDurationInMinutes = 240,
+
+        [Parameter(Mandatory=$false)]
+        [string]$AssignmentFilterId,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("none","include","exclude")]
+        [string]$AssignmentFilterType = "none"
+
+    )
+
+    <# Example assignment JSON
+        "mobileAppAssignments":
+            [
+                {
+                "@odata.type": "#microsoft.graph.mobileAppAssignment",
+                "intent": "Required",
+                "settings":
+                    {
+                    "@odata.type": "#microsoft.graph.win32LobAppAssignmentSettings",
+                    "deliveryOptimizationPriority": "foreground",
+                    "installTimeSettings":
+                        {
+                        "@odata.type": "#microsoft.graph.mobileAppInstallTimeSettings",
+                        "deadlineDateTime": "2025-12-06T08:00:00.000Z",
+                        "startDateTime": "2025-12-01T00:00:00.000Z",
+                        "useLocalTime": true
+                        },
+                    "notifications": "showReboot",
+                    "restartSettings":
+                        {
+                        "@odata.type": "#microsoft.graph.win32LobAppRestartSettings",
+                        "countdownDisplayBeforeRestartInMinutes": 15,
+                        "gracePeriodInMinutes": 1440,
+                        "restartNotificationSnoozeDurationInMinutes": 240
+                        }
+                    },
+                "target":
+                    {
+                    "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+                    "deviceAndAppManagementAssignmentFilterId": "cf4e962e-c789-4efa-9208-ae1a60cd1db7",
+                    "deviceAndAppManagementAssignmentFilterType": "include",
+                    "groupId": "4d784caf-e371-4657-b541-835f5c7420cc"
+                    }
+                }
+            ]
+        }
+    #>
+
+    #create base structrure for assignment
+    $assignment = [ordered]@{}
+    $assignment['@odata.type'] = "#microsoft.graph.mobileAppAssignment"
+    $assignment['intent'] = $Intent
+
+    # Adding settings to the assignment like install time, notifications, delivery optimization priority, restart settings
+    $settings = [ordered]@{}
+    $settings['@odata.type'] = "#microsoft.graph.win32LobAppAssignmentSettings"
+
+    $installTimeSettings = [ordered]@{}
+    if ($StartDateTime)
+    {
+        $installTimeSettings['startDateTime'] = $StartDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $installTimeSettings['useLocalTime'] = $UseLocalTime
+    }
+
+    if ($DeadlineDateTime)
+    {
+        $installTimeSettings['deadlineDateTime'] = $DeadlineDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+
+    $settings['installTimeSettings'] = $installTimeSettings
+
+    $settings['notifications'] = $Notification
+    $settings['deliveryOptimizationPriority'] = $DeliveryOptimizationPriority
+
+    if($UseRestartGracePeriod)
+    {
+        $restartSettings = [ordered]@{}
+        $restartSettings['@odata.type'] = "#microsoft.graph.win32LobAppRestartSettings"
+        $restartSettings['countdownDisplayBeforeRestartInMinutes'] = $CountdownDisplayBeforeRestartInMinutes
+        $restartSettings['gracePeriodInMinutes'] = $GracePeriodInMinutes
+        $restartSettings['restartNotificationSnoozeDurationInMinutes'] = $RestartNotificationSnoozeDurationInMinutes
+
+        $settings['restartSettings'] = $restartSettings
+    }
+
+    $assignment['settings'] = $settings
+
+    # Adding target to the assignment, which can be a group, all devices or all users and a filter or not
+    $target = [ordered]@{}
+
+    switch ($TargetType)
+    {
+        "Group" 
+        {
+            $target['@odata.type'] = "#microsoft.graph.groupAssignmentTarget"
+            if ($AssignmentFilterId)
+            {
+                $target['deviceAndAppManagementAssignmentFilterId'] = $AssignmentFilterId
+                $target['deviceAndAppManagementAssignmentFilterType'] = $AssignmentFilterType
+            }
+            $target['groupId'] = $EntraIDGroupID
+        }
+        "AllDevices" 
+        {
+            $target['@odata.type'] = "#microsoft.graph.allDevicesAssignmentTarget"
+        }
+        "AllUsers" 
+        {
+            $target['@odata.type'] = "#microsoft.graph.allLicensedUsersAssignmentTarget"
+        }
+    }
+
+    $assignment['target'] = $target
+
+    # Will use Invoke-MgGraphRequest to create the assignment with the constructed hashtable from before
+    # https://learn.microsoft.com/en-us/graph/api/intune-apps-mobileappassignment-create?view=graph-rest-beta
+
+    Write-Host "Will try to create assignment for app $AppID as $TargetType"
+    $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppID)/assignments"
+    $result = Invoke-MgGraphRequest -Uri $uri -Method Post -Body ($assignment | ConvertTo-Json -Depth 10) -ContentType "application/json" -ErrorAction Stop           
+    
+    return $result
+
+}
+
+<#
+.SYNOPSIS
+    Function to get an Entra ID group by its display name.
+
+.DESCRIPTION
+    This function retrieves an Entra ID group by its display name using the Microsoft Graph API.
+    It returns the group details if found, or a message indicating no group was found.
+
+.PARAMETER GroupDisplayName
+    The display name of the group to search for.
+
+.EXAMPLE
+    Get-EntraIDGroupByDisplayName -GroupDisplayName "MyGroup"
+
+    This will search for a group with the display name "MyGroup" and return its details if found.
+#>
+Function Get-EntraIDGroupByDisplayName
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$GroupDisplayName
+    )
+
+    Write-Host "Will search for group displayName `"$GroupDisplayName`""
+    $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$GroupDisplayName'"
+    [array]$groupResult = Invoke-MgGraphRequest -Uri $uri -Method Get -ErrorAction Stop -OutputType PSObject       
+
+    if ($groupResult.value.count -eq 0)
+    {
+        Write-Host "No group found with displayName `"$GroupDisplayName`""
+    }
+    elseif ($groupResult.value.count -gt 1) 
+    {
+        Write-Host "Multiple groups found with displayName `"$GroupDisplayName`""
+    }
+    elseif ($groupResult.value.count -eq 1) 
+    {
+        Write-Host "Group found with displayName `"$GroupDisplayName`""
+    }
+
+    return $groupResult
+}
+
+
 
 <#
 .SYNOPSIS
@@ -1252,7 +1540,7 @@ foreach($app in $appMetadata)
     $IntunePackageIntuneWinMetadataStream = $IntunePackageIntuneWinMetadata.Open()
     Write-Host "Trying to upload file to Intune Azure Storage. File: $($IntunePackageFullName)"
     #$ChunkSizeInBytes = 1024l * 1024l * 6l;
-    [UInt64]$BlockSizeMB = 100 # To support files larger than 8 GB we need to use UInt64
+    #[UInt64]$BlockSizeMB = 100 # To support files larger than 8 GB we need to use UInt64
     [UInt64]$chunkSizeInBytes = (1024 * 1024 * $blockSizeMB)
     $FileSize = $IntunePackageIntuneWinMetadata.Length
     $ChunkCount = [System.Math]::Ceiling($FileSize / $ChunkSizeInBytes)
@@ -1477,6 +1765,83 @@ foreach($app in $appMetadata)
     $fullAppDestination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/"
     & $azcopyExe copy $fullAppSource $fullAppDestination --recursive=true --log-level=INFO
     #>
+
+    if ($CreateAssignments)
+    {
+        foreach ($assignmentDefinition in $app.IntuneMetadata.Assignments)
+        {
+
+            # New-IntuneWin32AppAssignment -AppID '111111' -TargetType Group -AssigmentType Include -EntraIDGroupID '111111111111' -Intent Required -Notification showReboot -DeliveryOptimizationPriority notConfigured -StartDateTime (Get-Date) -DeadlineDateTime ((Get-Date).AddDays(10)) -UseLocalTime $true -UseRestartGracePeriod 
+
+            
+            # add logic here to skip if group not found or multiple groups found
+
+            If ($assignmentDefinition.GroupName -ieq 'AllDevices') 
+            { 
+                $targetType = 'AllDevices'
+            } 
+            elseif ($assignmentDefinition.GroupName -ieq 'AllUsers')  
+            { 
+                $targetType = 'AllUsers'
+            }
+            else
+            {
+                $targetType = 'Group'
+                # getting group id
+                $entraIdGroupData = Get-EntraIDGroupByDisplayName -GroupDisplayName $assignmentDefinition.GroupName
+            }
+
+            <#
+            "Assignments": [
+            {
+            "Type": "Test",
+            "GroupName": "AllDevices",
+            "Intent": "available",
+            "Notification": "showAll",
+            "UseLocalTime": "true",
+            "FilterName": "",
+            "FilterMode": "",
+            "AvailableTime": "",
+            "DeadlineTime": "",
+            "DeliveryOptimizationPriority": "notConfigured",
+            "EnableRestartGracePeriod": "false",
+            "RestartGracePeriodInMinutes": "",
+            "RestartCountDownDisplayInMinutes": "",
+            "RestartNotificationSnoozeInMinutes": ""
+            }
+        ]
+            
+            #>
+
+            $assignParamSplatting = @{
+                AppID = $Win32MobileAppRequest.id
+                TargetType = $targetType
+                AssigmentType = 'Include'
+                Intent = $assignmentDefinition.Intent
+                Notification = $assignmentDefinition.Notification
+                DeliveryOptimizationPriority = $assignmentDefinition.DeliveryOptimizationPriority
+                UseLocalTime = If($assignmentDefinition.UseLocalTime -ieq 'true' -or $assignmentDefinition.UseLocalTime -eq $true) { $true } else { $false }
+            }
+
+            if($targetType -eq 'Group')
+            {
+                $assignParamSplatting.Add('EntraIDGroupID', $entraIdGroupData.value.id)
+            }
+            
+            if(-NOT ([string]::IsNullOrEmpty($assignmentDefinition.AvailableTime)))
+            {
+                $assignParamSplatting.Add('StartDateTime', [DateTime]::Parse($assignmentDefinition.AvailableTime))
+            }
+
+            if(-NOT ([string]::IsNullOrEmpty($assignmentDefinition.DeadlineTime)))
+            {
+                $assignParamSplatting.Add('DeadlineDateTime', [DateTime]::Parse($assignmentDefinition.DeadlineTime))
+            }
+
+            New-IntuneWin32AppAssignment @assignParamSplatting
+
+        }
+    }
 
 }
 
