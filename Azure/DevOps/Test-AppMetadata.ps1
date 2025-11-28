@@ -108,6 +108,9 @@ function Get-HashtablesFromScript
             'ADT-AppScriptAuthor' = ''
             'ADT-InstallName' = ''
             'ADT-InstallTitle' = ''
+            'ADT-CompanyName' = ''
+            'ADT-RegistryBrandingPath' = ''
+            'ADT-AppFullName' = ''
             'AppIconFound' = $false
             'StorageAccountFolderName' =  ($FilePath | Split-Path -Parent | Split-Path -Leaf).ToLower() -replace '\.', '-' -replace '_', '-'
             'StorageAccountFolderState' = 'Unknown' 
@@ -146,7 +149,10 @@ function Get-HashtablesFromScript
                 # we will now have the content of the hashtable in $adtSessionContent 
                 # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
                 $adtSessionContent = $adtSessionMatch.Value
-                Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
+                Invoke-Expression -Command $adtSessionContent -OutVariable adtSessionTmp
+
+                # We need to invoke the variable twice to get the hashtable correctly, because we re-use the hashtable name inside the hashtable
+                Invoke-Expression -Command $adtSessionTmp -OutVariable adtSession
 
                 # Add values to $outObj from $adtSession
                 foreach ($property in $adtPropertyList)
