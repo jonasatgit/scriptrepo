@@ -1,9 +1,18 @@
 name: AppFactory-v2
 
+parameters:
+- name: failIfDataMissingOrWrong
+  type: boolean
+  default: false
+  displayName: 'Fail if data missing or wrong'
+
 trigger: none
 
 pool:
   name: 'DevOps-SelfHosted-01'
+
+workspace:
+  clean: all   # Cleans everything in the agent's work directory before the job starts
 
 variables:
 - group: IntuneAppFactoryV3
@@ -22,7 +31,7 @@ stages:
       inputs:
         scriptType: filePath
         filePath: 'Scripts/Test-AppMetadata.ps1'
-        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile)
+        arguments: -AppStorageAccountName $(IN-AppStorageAccount) -TestStorageAccountFolder -AppFolderName $(IN-AppsFolderName) -TemplateFolderName $(IN-TemplateFolderName) -AppsToProcessFile $(IN-AppsToProcessFile) -FailIfDataMissingOrWrong ${{ parameters.failIfDataMissingOrWrong }}
         pwsh: true
 
     - task: PublishBuildArtifacts@1
@@ -102,4 +111,14 @@ stages:
       inputs:
         SourceFolder: '$(Build.ArtifactStagingDirectory)'
         Contents: '**'
+
+- stage: CleanupStage
+  displayName: 'Final Cleanup'
+  jobs:
+  - job: cleanupJob
+    steps:
+    - powershell: |
+        Write-Host "Cleaning up b folder..."
+        Remove-Item -Path "$(Agent.WorkFolder)\_work\*\b" -Recurse -Force
+      displayName: 'Cleanup b folder'
 # End of file
