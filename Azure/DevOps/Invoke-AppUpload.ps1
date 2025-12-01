@@ -1300,69 +1300,6 @@ foreach($app in $appMetadata)
     }
 
 
-    <#
-        Lets create subfolders
-        Example of the folder structure:
-    
-        - Will contain the AppDeployToolkit files and the app installation files intended for installation
-        ..\Adobe_AdobeReader_2021.007.20099_Rev01\App
-
-        - Will contain the IntuneAppMetadata.json and Icon.png and any other Intune related data not required 
-        in the app package intended for installation
-        ..\Adobe_AdobeReader_2021.007.20099_Rev01\IntuneData
-    #>
-    <#
-    $subFolders = @('App', 'IntuneData')
-    foreach ($subFolder in $subFolders) 
-    {
-        $fullSubFolderPath = Join-Path -Path $tmpAppFolderPath -ChildPath $subFolder
-        if (-not (Test-Path -Path $fullSubFolderPath)) 
-        {
-            New-Item -Path $fullSubFolderPath -ItemType Directory -ErrorAction "Stop" | Out-Null
-            Write-Host "Created subfolder: $fullSubFolderPath"
-        }
-    }
-
-    # copy AppDeployToolkit template into the app folder
-    $templateSourcePath = '{0}\{1}\AppDeployToolkit' -f $sourceDirectory, $TemplateFolderName
-    Copy-Item -Path $templateSourcePath\* -Destination "$tmpAppFolderPath\App" -Recurse -ErrorAction "Stop"
-    Write-Host "Copied files from $templateSourcePath to $tmpAppFolderPath"
-
-    # copy all files into the correct app folder
-    $appSourcePath = '{0}\{1}\{2}' -f $sourceDirectory, $AppFolderName, $app.FolderName
-
-    # Copy specific files into correct locations
-    if(Test-Path -Path "$appSourcePath\Invoke-AppDeployToolkit.ps1")
-    {
-        Copy-Item -Path "$appSourcePath\Invoke-AppDeployToolkit.ps1" -Destination "$tmpAppFolderPath\App" -Force -ErrorAction Stop
-    }
-
-    if(Test-Path -Path "$appSourcePath\Icon.png")
-    {
-        Copy-Item -Path "$appSourcePath\Icon.png" -Destination "$tmpAppFolderPath\IntuneData" -Recurse -Force -ErrorAction Stop
-    }
-
-    if(Test-Path -Path "$appSourcePath\IntuneAppMetadata.json")
-    {
-        Copy-Item -Path "$appSourcePath\IntuneAppMetadata.json" -Destination "$tmpAppFolderPath\IntuneData" -Recurse -Force -ErrorAction Stop
-    }
-    Write-Host "Copied files from $appSourcePath to $tmpAppFolderPath"
-
-   
-
-    $ContainerName = $app.StorageAccountFolderName
-    $source = "$tmpAppFolderPath/*"
-    $destination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName"
-
-    $result = Copy-DataFromOrToStorageAccount -Source $source -Destination $destination -TempDirectory $tempDirectory
-
-    if ($result -inotmatch 'Success') 
-    {
-        Write-Error $result
-        Exit 1
-    }
-    #>
-
     # create intunewin file
     write-host "Creating IntuneWin file..."
 
@@ -1409,16 +1346,6 @@ foreach($app in $appMetadata)
         }     
 
 
-    # upload intunewin file to storage account
-    # NOT YET
-    <#
-    write-host "Uploading IntuneWin file to storage account..."
-    & $azcopyExe login --identity
-    $intuneWinSource = "$tmpAppFolderPath\IntuneData\*"
-    $intuneWinDestination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/IntuneData/"
-    & $azcopyExe copy $intuneWinSource $intuneWinDestination --recursive=true --log-level=INFO
-    #>
-
     # Step 1: Create intune app body
     write-host "Creating Intune App JSON body..."
     $paramSplatting = @{
@@ -1430,11 +1357,13 @@ foreach($app in $appMetadata)
         SetupFileName        = $app.IntuneMetadata.InstallData.SetupFile
         RunAsAccount         = $app.IntuneMetadata.InstallData.InstallExperience
         DeviceRestartBehavior= $app.IntuneMetadata.InstallData.DeviceRestartBehavior
-        Version              = $app.IntuneMetadata.AppInfo.Version
+        Version              = $app.'ADT-AppVersion'
         installCommandLine   = $app.IntuneMetadata.InstallData.InstallCommand
         uninstallCommandLine = $app.IntuneMetadata.InstallData.UninstallCommand
         AllowAvailableUninstall = If($app.IntuneMetadata.InstallData.AllowAvailableUninstall -ieq 'true' -or $app.IntuneMetadata.InstallData.AllowAvailableUninstall -eq $true) { $true } else { $false }
     }
+
+    #Write-host ($paramSplatting | out-string)
 
     $intuneAppBody = GetWin32AppBody @paramSplatting
 
@@ -1446,6 +1375,7 @@ foreach($app in $appMetadata)
     $Rules = @()
     # add detection rules
     # Example detection rule: check if chrome.exe exists in the default installation path
+    <#
     $paramSplatting = @{
         ruleType                = "detection"
         operator                = "notConfigured"
@@ -1456,10 +1386,15 @@ foreach($app in $appMetadata)
         path                    = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
     }
     $Rules += New-FileSystemRule @paramSplatting
+    #>
 
     #$Rules += New-ScriptRequirementRule -ScriptFile "E:\VSCodeRequirement.ps1" -DisplayName "VS Code Requirement" -EnforceSignatureCheck $false -RunAs32Bit $false -RunAsAccount "system" -OperationType "integer" -Operator "equal" -ComparisonValue "0"
     #$Rules += New-ScriptDetectionRule -ScriptFile "E:\VSCodeDetection.ps1" -EnforceSignatureCheck $false -RunAs32Bit $false 
     #$Rules += New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
+
+    # Custom detection rule based on registry key from the app metadata
+    $regPath = $app.'RegistryBrandingPath' -replace ':', ''
+    $Rules += New-RegistryRule -ruleType detection -keyPath $regPath -valueName "Installed" -operationType integer -operator equal -comparisonValue "1"
 
     # Adding "rules" to the intune app body
     $intuneAppBody.Add("rules", @($Rules))
@@ -1469,13 +1404,14 @@ foreach($app in $appMetadata)
     $intuneAppBody | ConvertTo-Json -Depth 100 | Out-File -FilePath $jsonBodyFilePath -Encoding utf8 -Force
     Write-Host "Saved Intune App JSON body to: $jsonBodyFilePath"
 
-    <#
-    # upload json body file to storage account
-    write-host "Uploading Full App to storage account..."
-    & $azcopyExe login --identity
-    $fullAppDestination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/IntuneData/"
-    & $azcopyExe copy $jsonBodyFilePath $fullAppDestination --recursive=true --log-level=INFO
-    #>
+    try 
+    {
+        Copy-DataFromOrToStorageAccount -Source $jsonBodyFilePath -Destination "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/IntuneData/IntuneAppBody.json" -TempDirectory $tempDirectory
+    }
+    catch 
+    {
+        Write-Warning "Failed to upload Intune App JSON body to storage account: $_"
+    }
 
     # STEP 2: Create the Intune app via Graph API
     write-host "Creating Intune App via Graph API..."
@@ -1757,23 +1693,12 @@ foreach($app in $appMetadata)
 
 
     Write-Host "Successfully created Intune Win32 app: $($app.FolderName) with ID: $($Win32MobileAppRequest.id)"
-    # upload complete app to storage account
-    <#
-    write-host "Uploading Full App to storage account..."
-    & $azcopyExe login --identity
-    $fullAppSource = "$tmpAppFolderPath\App*"
-    $fullAppDestination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/"
-    & $azcopyExe copy $fullAppSource $fullAppDestination --recursive=true --log-level=INFO
-    #>
+
 
     if ($CreateAssignments)
     {
         foreach ($assignmentDefinition in $app.IntuneMetadata.Assignments)
         {
-
-            # New-IntuneWin32AppAssignment -AppID '111111' -TargetType Group -AssigmentType Include -EntraIDGroupID '111111111111' -Intent Required -Notification showReboot -DeliveryOptimizationPriority notConfigured -StartDateTime (Get-Date) -DeadlineDateTime ((Get-Date).AddDays(10)) -UseLocalTime $true -UseRestartGracePeriod 
-
-            
             # add logic here to skip if group not found or multiple groups found
 
             If ($assignmentDefinition.GroupName -ieq 'AllDevices') 
@@ -1787,31 +1712,8 @@ foreach($app in $appMetadata)
             else
             {
                 $targetType = 'Group'
-                # getting group id
-                $entraIdGroupData = Get-EntraIDGroupByDisplayName -GroupDisplayName $assignmentDefinition.GroupName
             }
 
-            <#
-            "Assignments": [
-            {
-            "Type": "Test",
-            "GroupName": "AllDevices",
-            "Intent": "available",
-            "Notification": "showAll",
-            "UseLocalTime": "true",
-            "FilterName": "",
-            "FilterMode": "",
-            "AvailableTime": "",
-            "DeadlineTime": "",
-            "DeliveryOptimizationPriority": "notConfigured",
-            "EnableRestartGracePeriod": "false",
-            "RestartGracePeriodInMinutes": "",
-            "RestartCountDownDisplayInMinutes": "",
-            "RestartNotificationSnoozeInMinutes": ""
-            }
-        ]
-            
-            #>
 
             $assignParamSplatting = @{
                 AppID = $Win32MobileAppRequest.id
@@ -1825,7 +1727,7 @@ foreach($app in $appMetadata)
 
             if($targetType -eq 'Group')
             {
-                $assignParamSplatting.Add('EntraIDGroupID', $entraIdGroupData.value.id)
+                $assignParamSplatting.Add('EntraIDGroupID', $assignmentDefinition.GroupId)
             }
             
             if(-NOT ([string]::IsNullOrEmpty($assignmentDefinition.AvailableTime)))
