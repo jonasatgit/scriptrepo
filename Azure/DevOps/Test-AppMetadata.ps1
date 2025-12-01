@@ -33,6 +33,9 @@ Script to analyze apps
 
 .PARAMETER TestStorageAccountFolder
     Switch to test the storage account folder existance. (Important: Will also create the folder if it does not exist)
+
+.PARAMETER FailIfDataMissingOrWrong
+    To indicate if the script should fail if data is missing or wrong in the app metadata.
 #>
 
 
@@ -43,7 +46,8 @@ param
     [string]$TemplateFolderName,
     [string]$AppsToProcessFile,
     [string]$AppStorageAccountName,
-    [switch]$TestStorageAccountFolder
+    [switch]$TestStorageAccountFolder,
+    $FailIfDataMissingOrWrong
 )
 
 
@@ -108,9 +112,9 @@ function Get-HashtablesFromScript
             'ADT-AppScriptAuthor' = ''
             'ADT-InstallName' = ''
             'ADT-InstallTitle' = ''
-            'ADT-CompanyName' = ''
-            'ADT-RegistryBrandingPath' = ''
-            'ADT-AppFullName' = ''
+            'CompanyName' = ''
+            'RegistryBrandingPath' = ''
+            'AppFullName' = ''
             'AppIconFound' = $false
             'StorageAccountFolderName' =  ($FilePath | Split-Path -Parent | Split-Path -Leaf).ToLower() -replace '\.', '-' -replace '_', '-'
             'StorageAccountFolderState' = 'Unknown' 
@@ -149,10 +153,8 @@ function Get-HashtablesFromScript
                 # we will now have the content of the hashtable in $adtSessionContent 
                 # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
                 $adtSessionContent = $adtSessionMatch.Value
-                Invoke-Expression -Command $adtSessionContent -OutVariable adtSessionTmp
 
-                # We need to invoke the variable twice to get the hashtable correctly, because we re-use the hashtable name inside the hashtable
-                Invoke-Expression -Command $adtSessionTmp -OutVariable adtSession
+                Invoke-Expression -Command $adtSessionContent -OutVariable adtSession
 
                 # Add values to $outObj from $adtSession
                 foreach ($property in $adtPropertyList)
@@ -162,7 +164,6 @@ function Get-HashtablesFromScript
                         $outObj."ADT-$property" = $adtSession[$property]
                     }
                 }
-
             } 
             else 
             {
@@ -175,6 +176,45 @@ function Get-HashtablesFromScript
                 Write-Error "Failed to extract `$adtSession hashtable."
                 return
             }
+
+            # Extract the second hashtable called $customSessionData
+            # We will use the string to run Invoke-Expression to convert it to a hashtable and extract the values we need
+            # We need "DeployAppScriptVersion" come after any other hashtables for the regex to work
+            # Because the last } will be the one that closes the $adtSession hashtable and cannot close before
+            $customSessionPattern = '(?s)\$customSessionData\s*=\s*@\{.*?## DO NOT REMOVE THIS COMMENT - Custom Session Data Marker.*?\}'
+            $customSessionMatch = $null
+            $customSessionMatch = [regex]::Match($fileContent, $customSessionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($customSessionMatch.Success) 
+            {
+                # we will now have the content of the hashtable in $customSessionData
+                # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
+                $customSessionContent = $customSessionMatch.Value
+
+                Invoke-Expression -Command $customSessionContent -OutVariable customSessionData 
+
+                # Add values to $outObj from $customSessionData
+                foreach ($property in $adtPropertyList)
+                {
+                    if ($customSessionData.ContainsKey($property))
+                    {
+                        $outObj.$property = $customSessionData[$property]
+                    }
+                }
+            } 
+            else 
+            {
+                Write-Error "Failed to extract `$customSessionData hashtable."
+                return
+            }
+
+            if ($null -eq $customSessionContent) 
+            {
+                Write-Error "Failed to extract `$customSessionData hashtable."
+                return
+            }
+
+
+
         }
         elseif ($version -eq 'v3') 
         {
@@ -258,6 +298,24 @@ function Get-HashtablesFromScript
         {
             $outObj.DataMissingOrWrong = $true
             $outObj.CheckResults.Add('InstallTitle', "InstallTitle is missing in file: $($FilePath | Split-Path -leaf)")
+        }
+
+        if([string]::isNullOrEmpty($outObj.'CompanyName'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('CompanyName', "CompanyName is missing in file: $($FilePath | Split-Path -leaf)")
+        }
+
+        if([string]::isNullOrEmpty($outObj.'RegistryBrandingPath'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('RegistryBrandingPath', "RegistryBrandingPath is missing in file: $($FilePath | Split-Path -leaf)")
+        }
+
+        if([string]::isNullOrEmpty($outObj.'AppFullName'))
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('AppFullName', "AppFullName is missing in file: $($FilePath | Split-Path -leaf)")
         }
 
         # Do we have a requirement script?
@@ -606,6 +664,42 @@ $appList | Export-Clixml -Path $fileOutPath -Force
 # we will also save the data as json for easier consumption and readability
 $appList | ConvertTo-Json -Depth 10 | Out-File -FilePath ($fileOutPath -replace 'xml$', 'json') -Encoding utf8 -Force
 Write-Host "App metadata for $($appList.Count) apps saved to xml and json"
+
+
+# Check if any app has DataMissingOrWrong = $true
+[array]$appsWithIssues = $appList | Where-Object { $_.DataMissingOrWrong -eq $true }
+if ($appsWithIssues.Count -gt 0) 
+{
+    foreach ($appEntry in $appsWithIssues) 
+    {
+        Write-Host "------------------------------"
+        Write-Host "App check results for: $($appEntry.FolderName)"
+        foreach ($issue in $appEntry.CheckResults.GetEnumerator()) 
+        {
+            Write-Warning " - $($issue.Key): $($issue.Value)" 
+        }
+    } 
+}
+else 
+{
+    Write-Host "All apps have valid data."
+}
+
+# Fail the script if any app has DataMissingOrWrong = $true and the FailIfDataMissingOrWrong parameter is set
+# might be bboolean or string 'true'
+if (($FailIfDataMissingOrWrong -eq $true) -or ($FailIfDataMissingOrWrong -ieq 'true') -and $appsWithIssues.Count -gt 0)
+{
+    Write-Error "One or more apps have missing or wrong data."
+    Exit 1
+}
+else 
+{
+    if ($appsWithIssues.Count -gt 0) 
+    {
+        Write-Warning "One or more apps have missing or wrong data."
+        Write-Warning "FailIfDataMissingOrWrong is not set. Script will not fail with error."
+    }    
+}
 
 # Show data in DevOps pipeline log
 #Import-Clixml -Path $fileOutPath | ConvertTo-Json -Depth 10
