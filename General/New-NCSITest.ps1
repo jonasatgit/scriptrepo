@@ -20,7 +20,11 @@
 param
 (
     [Switch]$Install,
-    [Switch]$Uninstall
+    [Switch]$Uninstall,
+    [String]$TaskName = "Invoke-NCSITest",
+    [String]$TaskPath = "CUSTOM",
+    [String]$ScriptPath = "C:\Install\NCSITest",
+    [String]$ScriptName = "Invoke-NCSITest.ps1"
 )
 
 #region Start-NCSICheck DO NOT DELETE THIS LINE
@@ -211,18 +215,22 @@ Function Start-NCSICheck
     #************************************************************************************************************
 
 .PARAMETER TaskName
-    Name of the scheduled task to create. Default is "Invoke-NCSITest". 
+    Name of the scheduled task to create. 
 
 .PARAMETER TaskPath
-    Path of the scheduled task to create. Default is "\CUSTOM".
+    Path of the scheduled task to create. 
 
 #>
 function New-NCSITestTask
 {
     param
     (
-        [String]$TaskName = "Invoke-NCSITest",
-        [String]$TaskPath = "\CUSTOM"
+        [parameter(Mandatory = $True)]
+        [String]$TaskName,
+        [parameter(Mandatory = $True)]
+        [String]$TaskPath,
+        [parameter(Mandatory = $True)]
+        [String]$ScriptFullPath
     )
 
 $scheduledTaskXML = @'
@@ -262,14 +270,15 @@ $scheduledTaskXML = @'
   <Actions Context="Author">
     <Exec>
       <Command>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
-      <Arguments>-ExecutionPolicy Bypass -File "C:\Install\NCSITest\Invoke-NCSITest.ps1"</Arguments>
+      <Arguments>-ExecutionPolicy Bypass -File "{0}"</Arguments>
     </Exec>
   </Actions>
 </Task>
 '@
 
+    $scheduledTaskXML = $scheduledTaskXML -f $ScriptFullPath
 
-    $null = Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Xml $scheduledTaskXML
+    $null = Register-ScheduledTask -TaskName $TaskName -TaskPath "\$TaskPath" -Xml $scheduledTaskXML
 }
 
 <#
@@ -292,10 +301,10 @@ $scheduledTaskXML = @'
     #************************************************************************************************************
 
 .PARAMETER ScriptPath
-    Path where the script should be exported. Default is "C:\Install\NCSITest".
+    Path where the script should be exported. 
 
 .PARAMETER ScriptName
-    Name of the script file. Default is "Invoke-NCSITest.ps1".
+    Name of the script file. 
 
 #>
 Function Export-NCSIScript
@@ -303,8 +312,8 @@ Function Export-NCSIScript
     [CmdletBinding()]
     param
     (
-        [string]$ScriptPath = "C:\Install\NCSITest",
-        [string]$ScriptName = "Invoke-NCSITest.ps1"
+        [string]$ScriptPath,
+        [string]$ScriptName
     )
 
     if (-NOT (Test-Path $ScriptPath))
@@ -332,9 +341,9 @@ Function Export-NCSIScript
 if ($Install)
 {
 
-    Export-NCSIScript
+    Export-NCSIScript -ScriptPath $ScriptPath -ScriptName $ScriptName
 
-    New-NCSITestTask
+    New-NCSITestTask -TaskName $TaskName -TaskPath $TaskPath -ScriptFullPath ('{0}\{1}' -f $ScriptPath, $ScriptName)
 
 }
 
@@ -342,21 +351,21 @@ if ($Install)
 if ($Uninstall)
 {
     # get scheduled task and unregister if exists
-    $task = Get-ScheduledTask -TaskName "Invoke-NCSITest" -ErrorAction SilentlyContinue
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($task)
     {
         $null = $task | Unregister-ScheduledTask -Confirm:$false
     }
 
     # remove script files
-    $scriptPath = "C:\Install\NCSITest\Invoke-NCSITest.ps1"
+    $scriptPath = '{0}\{1}' -f $ScriptPath, $ScriptName
     if (Test-Path $scriptPath)
     {
         Remove-Item -Path $scriptPath -Force
     }
 
     # also remove the folder if empty
-    $scriptFolder = "C:\Install\NCSITest"
+    $scriptFolder = $ScriptPath
     if (Test-Path $scriptFolder)
     {
         $files = Get-ChildItem -Path $scriptFolder
