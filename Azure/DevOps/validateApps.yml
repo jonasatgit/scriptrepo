@@ -11,9 +11,6 @@ trigger: none
 pool:
   name: 'DevOps-SelfHosted-01'
 
-workspace:
-  clean: all   # Cleans everything in the agent's work directory before the job starts
-
 variables:
 - group: IntuneAppFactoryV3
 
@@ -22,6 +19,10 @@ stages:
   displayName: 'Validate Apps Stage'
   jobs:
   - job: validateAppsJob
+  
+    workspace:
+      clean: all
+
     timeoutInMinutes: 15
     steps:
     
@@ -112,13 +113,4 @@ stages:
         SourceFolder: '$(Build.ArtifactStagingDirectory)'
         Contents: '**'
 
-- stage: CleanupStage
-  displayName: 'Final Cleanup'
-  jobs:
-  - job: cleanupJob
-    steps:
-    - powershell: |
-        Write-Host "Cleaning up b folder..."
-        Remove-Item -Path "$(Agent.WorkFolder)\_work\*\b" -Recurse -Force
-      displayName: 'Cleanup b folder'
 # End of file

@@ -90,57 +90,70 @@ $filterHashtableNCSI = @{
 }
 
 # get NCSI event to be able to check the NCSI state
-$event = Get-WinEvent -FilterHashtable $filterHashtableNCSI -MaxEvents 1
+$eventObj = Get-WinEvent -FilterHashtable $filterHashtableNCSI -MaxEvents 1
 
 # Internet and local are okay
-if ($event.Message -imatch '(V4 Capability:) (Internet|Local)')
+if ($eventObj.Message -imatch '(V4 Capability:) (Internet|Local)')
 {
     New-CustomEventMessage -EventType InternetDetected -EventMessage "NCSI detected Internet or Local connectivity. All good. Nothing to do."
 }
 else
 {
-    New-CustomEventMessage -EventType Error -EventMessage "Wrong NCSI state detected! $($event.Message | Out-String)"   
+    New-CustomEventMessage -EventType Error -EventMessage "Wrong NCSI state detected! Will wait for 5 seconds and test again, to avoid false positives. $($eventObj.Message | Out-String)"   
 
-    # lets check if the script ran before by checking the custom event messages
-    $filterHashtableScript = @{
-        LogName = 'Application'
-        ID = 1003 # 1003 -> FixStarted
-        StartTime = ($scriptStartTime.AddHours(-$ScriptDelayInHours))
-        ProviderName = 'NCSICheckScript'
-    }
+    Start-Sleep -Seconds 5
 
-    [array]$eventScript = Get-WinEvent -FilterHashtable $filterHashtableScript -ErrorAction SilentlyContinue
-    if ($eventScript.count -gt 0)
+    # Get event again to re-check NCSI state
+    $eventObj = Get-WinEvent -FilterHashtable $filterHashtableNCSI -MaxEvents 1
+    
+    if ($eventObj.Message -imatch '(V4 Capability:) (Internet|Local)')
     {
-        New-CustomEventMessage -EventType FixStartedAlready -EventMessage "The script started the fix before and should not run for $ScriptDelayInHours hour/s"        
+        New-CustomEventMessage -EventType InternetDetected -EventMessage "NCSI detected Internet or Local connectivity. All good. Nothing to do."
     }
     else
     {
-        # Will try to fix the state
-        $wmiServices = Get-CimInstance -query "Select * from win32_process where name = 'svchost.exe'" -ErrorAction SilentlyContinue
-        $wmiNlaSvc = $wmiServices | Where-Object {$_.CommandLine -like '*NlaSvc'}
-        if ($wmiNlaSvc)
+
+        # lets check if the script ran before by checking the custom event messages
+        $filterHashtableScript = @{
+            LogName = 'Application'
+            ID = 1003 # 1003 -> FixStarted
+            StartTime = ($scriptStartTime.AddHours(-$ScriptDelayInHours))
+            ProviderName = 'NCSICheckScript'
+        }
+
+        [array]$eventScript = Get-WinEvent -FilterHashtable $filterHashtableScript -ErrorAction SilentlyContinue
+        if ($eventScript.count -gt 0)
         {
-            New-CustomEventMessage -EventType StartFix -EventMessage "Found NlaSvc service process to kill. ID: $($wmiNlaSvc.ProcessId) Command: $($wmiNlaSvc.CommandLine)"
-            Stop-Process -Id $wmiNlaSvc.ProcessId -Force   
-
-            # Waiting before checking events again
-            Start-Sleep -Seconds 5
-            $event = Get-WinEvent -FilterHashtable $filterHashtableNCSI -MaxEvents 1
-
-            # Internet and local are okay
-            if ($event.Message -imatch '(V4 Capability:) (Internet|Local)')
-            {
-                New-CustomEventMessage -EventType InternetDetected -EventMessage "NCSI detected Internet or Local connectivity. All good. Nothing to do."
-            }
-            else
-            {
-                New-CustomEventMessage -EventType Error -EventMessage "NlaSvc service process kill did not fix the issue"
-            }
+            New-CustomEventMessage -EventType FixStartedAlready -EventMessage "The script started the fix before and should not run for $ScriptDelayInHours hour/s"        
         }
         else
         {
-            New-CustomEventMessage -EventType Error -EventMessage "NlaSvc service process not found!! Not able to start fix"
+            # Will try to fix the state
+            $wmiServices = Get-CimInstance -query "Select * from win32_process where name = 'svchost.exe'" -ErrorAction SilentlyContinue
+            $wmiNlaSvc = $wmiServices | Where-Object {$_.CommandLine -like '*NlaSvc'}
+            if ($wmiNlaSvc)
+            {
+                New-CustomEventMessage -EventType StartFix -EventMessage "Found NlaSvc service process to kill. ID: $($wmiNlaSvc.ProcessId) Command: $($wmiNlaSvc.CommandLine)"
+                Stop-Process -Id $wmiNlaSvc.ProcessId -Force   
+
+                # Waiting before checking events again
+                Start-Sleep -Seconds 5
+                $eventObj = Get-WinEvent -FilterHashtable $filterHashtableNCSI -MaxEvents 1
+
+                # Internet and local are okay
+                if ($eventObj.Message -imatch '(V4 Capability:) (Internet|Local)')
+                {
+                    New-CustomEventMessage -EventType InternetDetected -EventMessage "NCSI detected Internet or Local connectivity. All good. Nothing to do."
+                }
+                else
+                {
+                    New-CustomEventMessage -EventType Error -EventMessage "NlaSvc service process kill did not fix the issue"
+                }
+            }
+            else
+            {
+                New-CustomEventMessage -EventType Error -EventMessage "NlaSvc service process not found!! Not able to start fix"
+            }
         }
     }
 }
