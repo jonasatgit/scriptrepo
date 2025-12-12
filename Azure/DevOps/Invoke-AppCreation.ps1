@@ -45,147 +45,10 @@ param
 )
 
 
-# To be able to unpack the intunewin file
-$null = Add-Type -AssemblyName "System.IO.Compression.FileSystem" -ErrorAction Stop
+#region MAIN SCRIPT
 
-<#
-.SYNOPSIS
-    Function to copy data from or to a storage account using azcopy and managed identity.
-
-.DESCRIPTION
-    The function will copy data from or to a storage account using azcopy and managed identity.
-    The function will download azcopy if it is not present in the temp directory.
-    The function will return 'Success' if the copy was successful, otherwise it will return the error message.
-
-.PARAMETER Source
-    The source path to copy from.
-
-.PARAMETER Destination
-    The destination path to copy to.
-
-.PARAMETER TempDirectory
-    The temporary directory to store azcopy.exe.
-
-.EXAMPLE
-    Download data from a storage account to a local folder:
-    Copy-DataFromOrToStorageAccount -Source "https://mystorageaccount.blob.core.windows.net/mycontainer" -Destination "C:\MyAppFolder" -TempDirectory "C:\Temp"
-
-.EXAMPLE
-    Upload data from a local folder to a storage account:
-    Copy-DataFromOrToStorageAccount -Source "C:\MyAppFolder" -Destination "https://mystorageaccount.blob.core.windows.net/mycontainer" -TempDirectory "C:\Temp"
-#>
-function Copy-DataFromOrToStorageAccount 
-{
-    param 
-    (
-        [Parameter(Mandatory = $true)]
-        [string]$Source,
-        [Parameter(Mandatory = $true)]
-        [string]$Destination,
-        [Parameter(Mandatory = $true)]
-        [string]$TempDirectory # to store azcopy.exe
-    )
-
-    try 
-    {
-        # we can now download the actual app content into the app folder from the storage account
-        # For that we need azcopy.exe
-        $azcopyPath = Get-ChildItem "$tempDirectory\azcopy_windows*" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if($azcopyPath)
-        {
-            $azcopyExe = Join-Path $azcopyPath.FullName "azcopy.exe"
-        }
-        else 
-        {
-            # fake path to be able to validate its existence and not fail with test-path missing parameter error later in the script
-            $azcopyExe = Join-Path $tempDirectory "azcopy.exe"
-        }
-
-        # Download azcopy if not already present
-        if (-NOT (Test-Path -Path $azcopyExe)) 
-        {
-            Write-Host "Downloading azcopy tool..."
-            Invoke-WebRequest -Uri https://aka.ms/downloadazcopy-v10-windows -OutFile "$tempDirectory\azcopy.zip" -UseBasicParsing
-            Expand-Archive "$tempDirectory\azcopy.zip" -DestinationPath $tempDirectory
-            $azcopyPath = Get-ChildItem "$tempDirectory\azcopy_windows*" | Select-Object -First 1
-            $azcopyExe = Join-Path $azcopyPath.FullName "azcopy.exe"
-        }
-        else 
-        {
-            Write-host "Azcopy tool already present. No need to download"
-        }
-
-        Write-Host "Login azcopy tool with managed identity..."
-        $loginReturn = & $azcopyExe login --identity
-        
-        # Download all blobs from the container
-        Write-Host "Starting azcopy from `"$Source`" to `"$Destination`"..."
-        $output = & $azcopyExe copy $Source $Destination --recursive=true --log-level=INFO 2>&1
-        if ($LASTEXITCODE -ne 0) 
-        {
-            $errorMessage = "AzCopy failed with exit code $LASTEXITCODE"
-            Write-Warning "AzCopy failed. Output:"
-            $output | ForEach-Object { Write-Warning "$_" }
-                                    
-            if ($output -match "403") 
-            {
-                Write-Warning "403 Forbidden detected. Check if the managed identity has the correct permissions and storage account network settings."
-            }
-            return $false
-        }            
-    }
-    catch 
-    {
-        Write-Warning "AzCopy failed with error: $_"
-        return $false
-    }
-
-    Write-Host "AzCopy completed successfully."
-    return $true
-}
-
-function Get-BlobHashData
-{
-    [CmdletBinding()]
-    param 
-    (
-        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
-        [string]$ContainerName,
-        [Parameter(Mandatory=$true)]
-        [string]$StorageAccountName
-    )
-
-    # process pipeline
-    Begin
-    {
-        $null = Connect-AzAccount -Identity
-        $storageContext = New-AzStorageContext -StorageAccountName $StorageAccountName -UseConnectedAccount -ErrorAction "Stop"
-    }
-    process 
-    {
-        $storageBlobs = Get-AzStorageBlob -Context $storageContext -Container $ContainerName -IncludeDeleted:$false -errorAction "Stop"
-
-        # we need the blob name and the content hash. We then need to sort by hash and create a combined hash
-        foreach ($blob in $storageBlobs) 
-        {
-            Write-Host '-----------'
-            Write-Host $blob.Name
-            try
-            {
-                $blobHashBase64 = [convert]::ToBase64String($blob.BlobProperties.ContentHash)
-            }
-            catch 
-            {
-                $blobHashBase64 = '0000' # happens if we have no content hash
-            }
-
-            [PSCustomObject]@{
-                BlobName = $blob.Name
-                BlobHashBase64 = $blobHashBase64
-            }
-        }
-    }
-}
+# load base functions
+. "$PSScriptRoot\Invoke-BaseFunctions.ps1"
 
 
 # init variables
@@ -375,5 +238,5 @@ foreach($app in $appMetadata)
     
 }
 
-
 Write-Host "Script completed."
+#endregion
