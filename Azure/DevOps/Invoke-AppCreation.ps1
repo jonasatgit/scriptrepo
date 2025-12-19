@@ -192,6 +192,16 @@ foreach($app in $appMetadata)
         Copy-Item -Path "$appSourcePath\Icon.png" -Destination "$tmpAppFolderPath\IntuneData" -Recurse -Force -ErrorAction Stop
     }
 
+    If (Test-Path -Path "$appSourcePath\detection.ps1")
+    {
+        Copy-Item -Path "$appSourcePath\detection.ps1" -Destination "$tmpAppFolderPath\IntuneData" -Recurse -Force -ErrorAction Stop
+    }
+
+    if (Test-Path -Path "$appSourcePath\requirement.ps1")
+    {
+        Copy-Item -Path "$appSourcePath\requirement.ps1" -Destination "$tmpAppFolderPath\IntuneData" -Recurse -Force -ErrorAction Stop
+    }
+
     Write-Host "Copied files from $appSourcePath to $tmpAppFolderPath"
 
     # upload the app folder to the storage account

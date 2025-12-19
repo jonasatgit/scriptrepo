@@ -1,0 +1,135 @@
+﻿{
+    "InstallData": {
+        "Description": "Descriptive text just for the administrator. Not used by the solution.",
+        "InstallCommand": "The installation command. Example: Invoke-AppDeployToolkit.exe Install",
+        "UninstallCommand": "The uninstallation command. Example: Invoke-AppDeployToolkit.exe Uninstall",
+        "SetupFile": "The file used to install the app. Example: Invoke-AppDeployToolkit.exe",
+        "InstallExperience": "POSSIBLE-VALUES:[system, user]",
+        "MaxRunTimeInMinutes": "Integer value of maximum allowed time in minutes for the installation to complete. Default is 60 minutes.",
+        "DeviceRestartBehavior": "POSSIBLE-VALUES:[suppress, force, basedOnReturnCode, allow]",
+        "AllowAvailableUninstall": "POSSIBLE-VALUES:[true, false]"
+    },
+
+    "General": {
+        "Description": "Descriptive text about the app",
+        "Notes": "Notes about the app",
+        "Owner": "Owner of the app",
+        "ScopeTagName": "Not yet implemented in the solution. Could be the scope tag name to be used for the app in the future."
+    },
+
+    "DetectionAndRequirementRules": [
+        {
+            "Type": "Script",
+            "RuleType": "detection",
+            "Description": "Custom detection script. A Detection.ps1 file needs to be in the root folder of the app package. While requirement-scripts can be used in addition to other requirements. A detection script will replace all other detection rules.",
+            "EnforceSignatureCheck": "POSSIBLE-VALUES:[true, false]",
+            "RunAs32Bit": "POSSIBLE-VALUES:[true, false]"
+        },
+        {
+            "Type": "Script",
+            "RuleType": "requirement",
+            "Description": "Custom requirement script. A Requirement.ps1 file needs to be in the root folder of the app package.",   
+            "EnforceSignatureCheck": "POSSIBLE-VALUES:[true, false]",
+            "RunAs32Bit": "POSSIBLE-VALUES:[true, false]",
+            "RunAsAccount": "POSSIBLE-VALUES:[system, user]",
+            "OperationType": "POSSIBLE-VALUES:[string, dateTime, integer, float, version, boolean]. What kind of value is to be returned by the script. This makes sure Intune compares it correctly.",
+            "Operator": "POSSIBLE-VALUES:[equal, notEqual, greaterThan, greaterThanOrEqual, lessThan, lessThanOrEqual]",
+            "ComparisonValue": "Value to the compared against. Any custom value coming from the script will be compared against this value."
+        },
+        {
+            "Type": "Registry",
+            "RuleType": "POSSIBLE-VALUES:[requirement, detection]",
+            "Description": "Registry value COMPARISON rule. Can be used to test values like versionnumbers for example. Can either be used as a detection or requirement rule",
+            "OperationType": "POSSIBLE-VALUES:[string, integer, version]. What kind of value is to be compared. This makes sure Intune compares it correctly.",
+            "KeyPath": "Registry path to be checked. Use double \\ for path entries due to json format. Example: HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IntuneTools",
+            "ValueName": "Registry-Value to be checked. Example: DisplayVersion",
+            "Operator": "POSSIBLE-VALUES:[equal, notEqual, greaterThan, greaterThanOrEqual, lessThan, lessThanOrEqual]",
+            "Value": "Value to the compared against. Example: 1.0.0",
+            "Check32BitOn64System": "POSSIBLE-VALUES:[true, false]. Whether to check the 32-bit registry view on a 64-bit system."
+        },
+        {
+            "Type": "Registry",
+            "RuleType": "POSSIBLE-VALUES:[requirement, detection]",
+            "Description": "Registry EXISTENCE rule. Can be used to test the existence of a registry entry. Can either be used as a detection or requirement rule",
+            "OperationType": "POSSIBLE-VALUES:[exists, doesNotExist]. Whether the registry value should exist or not.",
+            "KeyPath": "Registry path to be checked. Use double \\ for path entries due to json format. Example: HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IntuneTools",
+            "ValueName": "Registry-Value to be checked. Example: DisplayVersion",
+            "Operator": "POSSIBLE-VALUES:[notConfigured]",
+            "Value": "Value needs to be empty for existence rules.",
+            "Check32BitOn64System": "POSSIBLE-VALUES:[true, false]. Whether to check the 32-bit registry view on a 64-bit system."
+        },
+        {
+            "Type": "File",
+            "RuleType": "POSSIBLE-VALUES:[requirement, detection]",
+            "Description": "File or folder COMPARISON rule. Can be used to test values like versionnumbers for example. Can either be used as a detection or requirement rule",
+            "OperationType": "POSSIBLE-VALUES:[modifiedDate, createdDate, version, sizeInMB]. What kind of value is to be compared. This makes sure Intune compares it correctly.",
+            "Path": "Path to file or folder. Use double \\ for path entries due to json format. Example: C:\\Program Files\\IntuneTools",
+            "FileOrFolderName": "Folder or filename like: BinariesFolder or IntuneTools.exe",
+            "Operator": "POSSIBLE-VALUES:[equal, notEqual, greaterThan, greaterThanOrEqual, lessThan, lessThanOrEqual]",
+            "ComparisonValue": "Value to the compared against. Example: 1.0.0",
+            "Check32BitOn64System": "POSSIBLE-VALUES:[true, false]. Whether to check the 32-bit file system redirection on a 64-bit system."
+        },
+        {
+            "Type": "File",
+            "RuleType": "POSSIBLE-VALUES:[requirement, detection]",
+            "Description": "File or folder EXISTENCE rule. Can be used to test the existence of a file or folder. Can either be used as a detection or requirement rule",
+            "OperationType": "POSSIBLE-VALUES:[exists, doesNotExist]. Whether the file or folder should exist or not.",
+            "Path": "Path to file or folder. Use double \\ for path entries due to json format. Example: C:\\Program Files\\IntuneTools",
+            "FileOrFolderName": "Folder or filename like: BinariesFolder or IntuneTools.exe",
+            "Operator": "POSSIBLE-VALUES:[notConfigured]",
+            "ComparisonValue": "Value needs to be empty for existence rules.",
+            "Check32BitOn64System": "POSSIBLE-VALUES:[true, false]. Whether to check the 32-bit file system redirection on a 64-bit system."
+        }
+    ],
+
+    "Assignments": [
+        {
+            "Type": "POSSIBLE-VALUES:[Test, Prod]. Not yet implemented in the solution. Intention was to have assignemts for testing and for production.",
+            "Description": "Description of the assignment. Just for documentation purposes for the administrator.",
+            "GroupID": "POSSIBLE-VALUES:[AllDevices, AllUsers or an Entra ID group object ID]. IMPORTANT: Be carefule when using AllDevices or AllUsers as it will assign the app to all users or devices in the tenant.",
+            "GroupName": "Name of the Entra ID group if a group is used. Not used, just for documentation purposes.",
+            "Intent": "POSSIBLE-VALUES:[available, required, uninstall]",
+            "Notification": "POSSIBLE-VALUES:[showAll, hideAll]",
+            "UseLocalTime": "POSSIBLE-VALUES:[true, false]. True meanst the local client time is used for scheduling. False means UTC time is used.",
+            "FilterID": "ID of an Intune filter to be used for the assignment. Not yet implemented in the solution.",
+            "FilterMode": "POSSIBLE-VALUES:[none, include, exclude]. Not yet implemented in the solution. New-IntuneWin32AppAssignment can use this as parameter -AssignmentFilterType ",
+            "AvailableTime": "POSSIBLE-VALUES:[either nothing for -as soon as possible- or a datetime in ISO 8601 format like 2026-01-31T12:00:00Z].",
+            "DeadlineTime": "POSSIBLE-VALUES:[either nothing -as soon as possible- or a datetime in ISO 8601 format like 2026-01-31T12:00:00Z].",
+            "DeliveryOptimizationPriority": "POSSIBLE-VALUES:[notConfigured, foreground, background]. No need to change this normally. Leave it as notConfigured.",
+            "EnableRestartGracePeriod": "Not yet implemented in the solution.",
+            "RestartGracePeriodInMinutes": "Not yet implemented in the solution.",
+            "RestartCountDownDisplayInMinutes": "Not yet implemented in the solution.",
+            "RestartNotificationSnoozeInMinutes": "Not yet implemented in the solution."
+        },
+        {
+            "Type": "Test",
+            "Description": "Example assignment to a test group. Add as many assignments as needed.",
+            "GroupID": "4d784caf-e371-4657-b541-835f5c7420cc",
+            "GroupName": "IN-App1-Install",
+            "Intent": "available",
+            "Notification": "showAll",
+            "UseLocalTime": "true",
+            "FilterName": "",
+            "FilterMode": "",
+            "AvailableTime": "",
+            "DeadlineTime": "",
+            "DeliveryOptimizationPriority": "notConfigured",
+            "EnableRestartGracePeriod": "false",
+            "RestartGracePeriodInMinutes": "",
+            "RestartCountDownDisplayInMinutes": "",
+            "RestartNotificationSnoozeInMinutes": ""
+        }
+    ],
+
+    "Dependencies": [
+        {
+            "Description": "Not yet implemented in the solution. Could be used to define app dependencies in the future."
+        }
+    ],
+
+    "Supersedence": [
+        {
+            "Description": "Not yet implemented in the solution. Could be used to define app supersedence in the future."
+        }
+    ]
+}

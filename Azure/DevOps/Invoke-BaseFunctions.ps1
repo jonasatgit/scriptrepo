@@ -1,4 +1,31 @@
-﻿#region Function Get-HashtablesFromScript
+﻿<#
+.SYNOPSIS
+Script with base functions used by other scripts.
+
+.DESCRIPTION
+#************************************************************************************************************
+# Disclaimer
+#
+# This sample script is not supported under any Microsoft standard support program or service. This sample
+# script is provided AS IS without warranty of any kind. Microsoft further disclaims all implied warranties
+# including, without limitation, any implied warranties of merchantability or of fitness for a particular
+# purpose. The entire risk arising out of the use or performance of this sample script and documentation
+# remains with you. In no event shall Microsoft, its authors, or anyone else involved in the creation,
+# production, or delivery of this script be liable for any damages whatsoever (including, without limitation,
+# damages for loss of business profits, business interruption, loss of business information, or other
+# pecuniary loss) arising out of the use of or inability to use this sample script or documentation, even
+# if Microsoft has been advised of the possibility of such damages.
+# 
+#************************************************************************************************************
+
+Most Functions are taken from:
+https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
+
+The solution is also inspired by: https://msendpointmgr.com/intune-app-factory
+#>
+
+
+#region Function Get-HashtablesFromScript
 <#
 .SYNOPSIS
     Function to read the hashtable data from an Invoke-AppDeployToolkit.ps1 or Deploy-Application.ps1 script.
@@ -59,9 +86,9 @@ function Get-HashtablesFromScript
             'ADT-AppScriptAuthor' = ''
             'ADT-InstallName' = ''
             'ADT-InstallTitle' = ''
-            'CompanyName' = ''
-            'RegistryBrandingPath' = ''
-            'AppFullName' = ''
+            #'CompanyName' = ''
+            #'RegistryBrandingPath' = ''
+            #'AppFullName' = ''
             'AppIconFound' = $false
             'StorageAccountFolderName' =  ($FilePath | Split-Path -Parent | Split-Path -Leaf).ToLower() -replace '\.', '-' -replace '_', '-'
             'StorageAccountFolderState' = 'Unknown' 
@@ -123,45 +150,6 @@ function Get-HashtablesFromScript
                 Write-Error "Failed to extract `$adtSession hashtable."
                 return
             }
-
-            # Extract the second hashtable called $customSessionData
-            # We will use the string to run Invoke-Expression to convert it to a hashtable and extract the values we need
-            # We need "DeployAppScriptVersion" come after any other hashtables for the regex to work
-            # Because the last } will be the one that closes the $adtSession hashtable and cannot close before
-            $customSessionPattern = '(?s)\$customSessionData\s*=\s*@\{.*?## DO NOT REMOVE THIS COMMENT - Custom Session Data Marker.*?\}'
-            $customSessionMatch = $null
-            $customSessionMatch = [regex]::Match($fileContent, $customSessionPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            if ($customSessionMatch.Success) 
-            {
-                # we will now have the content of the hashtable in $customSessionData
-                # and will use Invoke-Expression to convert it to an actual hashtable we can use in this script
-                $customSessionContent = $customSessionMatch.Value
-
-                Invoke-Expression -Command $customSessionContent -OutVariable customSessionData 
-
-                # Add values to $outObj from $customSessionData
-                foreach ($property in $adtPropertyList)
-                {
-                    if ($customSessionData.ContainsKey($property))
-                    {
-                        $outObj.$property = $customSessionData[$property]
-                    }
-                }
-            } 
-            else 
-            {
-                Write-Error "Failed to extract `$customSessionData hashtable."
-                return
-            }
-
-            if ($null -eq $customSessionContent) 
-            {
-                Write-Error "Failed to extract `$customSessionData hashtable."
-                return
-            }
-
-
-
         }
         elseif ($version -eq 'v3') 
         {
@@ -247,36 +235,40 @@ function Get-HashtablesFromScript
             $outObj.CheckResults.Add('InstallTitle', "InstallTitle is missing in file: $($FilePath | Split-Path -leaf)")
         }
 
-        if([string]::isNullOrEmpty($outObj.'CompanyName'))
-        {
-            $outObj.DataMissingOrWrong = $true
-            $outObj.CheckResults.Add('CompanyName', "CompanyName is missing in file: $($FilePath | Split-Path -leaf)")
-        }
-
-        if([string]::isNullOrEmpty($outObj.'RegistryBrandingPath'))
-        {
-            $outObj.DataMissingOrWrong = $true
-            $outObj.CheckResults.Add('RegistryBrandingPath', "RegistryBrandingPath is missing in file: $($FilePath | Split-Path -leaf)")
-        }
-
-        if([string]::isNullOrEmpty($outObj.'AppFullName'))
-        {
-            $outObj.DataMissingOrWrong = $true
-            $outObj.CheckResults.Add('AppFullName', "AppFullName is missing in file: $($FilePath | Split-Path -leaf)")
-        }
-
         # Do we have a requirement script?
-        $pathToRequirementScript = '{0}\requirement.ps1' -f ($FilePath | Split-Path -Parent)
+        $pathToRequirementScript = '{0}\Requirement.ps1' -f ($FilePath | Split-Path -Parent)
         if (Test-Path $pathToRequirementScript)
         {
             $outObj.'IntuneRequirementScriptFound' = $true
+
+            # Lets also check if we have a requiremet script defintion in the Intune metadata
+            if ($outObj.IntuneMetadata.DetectionAndRequirementRules | Where-Object { $_.Type -eq 'Script' -and $_.RuleType -eq 'requirement' } )
+            {
+                # all good
+            }
+            else 
+            {
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('RequirementScriptInMetadata', "Requirement script found in app folder but no corresponding definition found in IntuneAppMetadata.json file.")
+            }
         }
 
         # Do we have a detection script?
-        $pathToDetectionScript = '{0}\detection.ps1' -f ($FilePath | Split-Path -Parent)
+        $pathToDetectionScript = '{0}\Detection.ps1' -f ($FilePath | Split-Path -Parent)
         if (Test-Path $pathToDetectionScript)
         {
             $outObj.'IntuneDetectionScriptFound' = $true
+
+            # Lets also check if we have a detection script defintion in the Intune metadata
+            if ($outObj.IntuneMetadata.DetectionAndRequirementRules | Where-Object { $_.Type -eq 'Script' -and $_.RuleType -eq 'detection' } )
+            {
+                # all good
+            }
+            else 
+            {
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('DetectionScriptInMetadata', "Detection script found in app folder but no corresponding definition found in IntuneAppMetadata.json file.")
+            }
         }
 
         # Do we have the install and uninstall commands in the Intune metadata?
@@ -340,6 +332,21 @@ function Get-HashtablesFromScript
                 }
             }
 
+            if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.MaxRunTimeInMinutes))
+            {
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('MaxRunTimeInMinutes', "MaxRunTimeInMinutes is missing in IntuneMetadata")
+            }
+            else 
+            {
+                # must be an integer value greater than zero
+                if (-not [int]::TryParse($outObj.IntuneMetadata.InstallData.MaxRunTimeInMinutes, [ref]$null) -or [int]$outObj.IntuneMetadata.InstallData.MaxRunTimeInMinutes -le 0)
+                {
+                    $outObj.DataMissingOrWrong = $true
+                    $outObj.CheckResults.Add('MaxRunTimeInMinutesValue', "MaxRunTimeInMinutes has an invalid value in IntuneMetadata. It must be an integer greater than zero.")
+                }
+            }
+
             # AllowAvailableUninstall must be true or false
             if ([string]::isNullOrEmpty($outObj.IntuneMetadata.InstallData.AllowAvailableUninstall))
             {
@@ -354,11 +361,27 @@ function Get-HashtablesFromScript
                     $outObj.CheckResults.Add('AllowAvailableUninstallValue', "AllowAvailableUninstall has an invalid value in IntuneMetadata. Valid values are: true, false")
                 }
             }
+
+            # lets make sure we have at least one detection rule defined
+            if (-Not ($outObj.IntuneMetadata.DetectionAndRequirementRules | where-object { $_.RuleType -ieq 'detection' }))
+            {
+                $outObj.DataMissingOrWrong = $true
+                $outObj.CheckResults.Add('NoDetectionRules', "No detection rules defined in IntuneMetadata")
+            }
+
         }
         else 
         {
             $outObj.DataMissingOrWrong = $true
             $outObj.CheckResults.Add('InstallData', "InstallData section is missing in IntuneMetadata")
+        }
+
+        # lets validate the detection rules for duplicates in case of script detection rules
+        [array]$detectionItems = $outObj.IntuneMetadata.DetectionAndRequirementRules | Where-Object { $_.RuleType -ieq 'detection' } 
+        if ($detectionItems.Type.Count -gt 1 -and $detectionItems.Type -contains 'Script') 
+        {
+            $outObj.DataMissingOrWrong = $true
+            $outObj.CheckResults.Add('MultipleDetectionRulesWithScript', "Multiple detection rules found in IntuneMetadata including a script rule. Intune does not support multiple detection rules when a script rule is used at the moment.")
         }
 
         # lets check if we have an icon file in the app folder
@@ -715,10 +738,12 @@ function New-FileSystemRule() {
 
     $Rule = @{}
 
-    if ($null -ne $comparisonValue -and $comparisonValue -ne "") {
+    if ($null -ne $comparisonValue -and $comparisonValue -ne "") 
+    {
         $Rule.comparisonValue = $comparisonValue
     }
-    else {
+    else 
+    {
         $Rule.comparisonValue = $null
     }
 
@@ -771,8 +796,7 @@ function New-ProductCodeRule {
         [ValidateSet('notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual')]
         [string]$productVersionOperator,
 
-        [parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
+        [parameter(Mandatory = $false)]
         [string]$productVersion
     )
 
@@ -781,7 +805,15 @@ function New-ProductCodeRule {
     $Rule.ruleType = $ruleType
     $Rule.productCode = $productCode
     $Rule.productVersionOperator = $productVersionOperator
-    $Rule.productVersion = $productVersion
+    
+    if ($null -ne $productVersion -and $productVersion -ne "") 
+    {
+        $Rule.productVersion = $productVersion
+    }
+    else 
+    {
+        $Rule.productVersion = $null
+    }
 
     return $Rule
 }
@@ -789,6 +821,7 @@ function New-ProductCodeRule {
 <#
 .SYNOPSIS
 Creates a new registry rule.
+IMPORTANT: This function has been altered from the original sample
 
 .DESCRIPTION
 This function creates a new registry rule that you can use to specify a detection or requirement for a Win32 app.
@@ -830,27 +863,40 @@ function New-RegistryRule {
         [ValidateNotNullOrEmpty()]
         [string]$valueName,
 
-        [parameter(Mandatory = $true)]
-        [ValidateSet('notConfigured', 'exists', 'doesNotExist', 'string', 'integer', 'float', 'version')]
+        [parameter(Mandatory = $true, HelpMessage = "The operation data check type (data type returned from the registry entry).")]
+        [ValidateSet('notConfigured','exists', 'doesNotExist', 'string', 'integer', 'version')]
         [string]$operationType,
 
         [parameter(Mandatory = $true)]
-        [ValidateSet('notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual')]
+        [ValidateSet('notConfigured','equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual')]
         [string]$operator,
 
+        [parameter(Mandatory = $false)]
+        [string]$comparisonValue,
+
         [parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [string]$comparisonValue
+        [bool]$check32BitOn64System
     )
 
-    $Rule = @{}
+    $Rule = @{}   
     $Rule."@odata.type" = "#microsoft.graph.win32LobAppRegistryRule"
+
+    if ($null -ne $comparisonValue -and $comparisonValue -ne "") 
+    {
+        $Rule.comparisonValue = $comparisonValue
+    }
+    else 
+    {
+        $Rule.comparisonValue = $null
+    }
+
     $Rule.ruleType = $ruleType
     $Rule.keyPath = $keyPath
     $Rule.valueName = $valueName
     $Rule.operationType = $operationType
     $Rule.operator = $operator
     $Rule.comparisonValue = $comparisonValue
+    $Rule.check32BitOn64System = $check32BitOn64System
 
     return $Rule
 }
@@ -892,9 +938,10 @@ function New-ScriptDetectionRule{
         [bool]$RunAs32Bit
 
     )
-    if (!(Test-Path "$ScriptFile")) {
-        Write-Host "Could not find file '$ScriptFile'..." -ForegroundColor Red
-        Write-Host "Script can't continue..." -ForegroundColor Red
+
+    if (-Not (Test-Path "$ScriptFile")) 
+    {
+        Write-Warning "Could not find file '$ScriptFile'..." 
         break
     }
         
@@ -907,7 +954,7 @@ function New-ScriptDetectionRule{
     $Rule.runAs32Bit = $RunAs32Bit
     $Rule.scriptContent = "$ScriptContent"
     $Rule.operationType = "notConfigured"
-    $Rule.operator = "notConfigured"
+    $Rule.operator = "notConfigured"    
 
     return $Rule
 }
@@ -973,11 +1020,11 @@ function New-ScriptRequirementRule {
         [string]$RunAsAccount,
 
         [parameter(Mandatory = $true)]
-        [ValidateSet('notConfigured', 'string', 'dateTime', 'integer', 'float', 'version', 'boolean')]
+        [ValidateSet('string', 'dateTime', 'integer', 'float', 'version', 'boolean')]
         [string]$OperationType,
 
         [parameter(Mandatory = $true)]
-        [ValidateSet('notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual')]
+        [ValidateSet('equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual')]
         [string]$Operator,
 
         [parameter(Mandatory = $true)]
@@ -985,9 +1032,9 @@ function New-ScriptRequirementRule {
         [string]$ComparisonValue
     )
 
-    if (!(Test-Path "$ScriptFile")) {
-        Write-Host "Could not find file '$ScriptFile'..." -ForegroundColor Red
-        Write-Host "Script can't continue..." -ForegroundColor Red
+    if (-Not (Test-Path "$ScriptFile")) 
+    {
+        Write-Warning "Could not find file '$ScriptFile'..." 
         break
     }
 
@@ -1116,7 +1163,10 @@ function GetWin32AppBody() {
         $MsiUpgradeCode,
 
         [parameter(Mandatory = $false)]
-        [Bool]$AllowAvailableUninstall
+        [Bool]$AllowAvailableUninstall,
+
+        [parameter(Mandatory = $false, ParameterSetName = "EXE")]
+        [int]$MaxRunTimeInMinutes = 60
     )
     
     if ($MSI) {
@@ -1164,6 +1214,7 @@ function GetWin32AppBody() {
         $body.installCommandLine = $installCommandLine
         $body.installExperience = @{
             "runAsAccount"          = $RunAsAccount
+            "maxRunTimeInMinutes"   = $MaxRunTimeInMinutes
             "deviceRestartBehavior" = $DeviceRestartBehavior 
         }
         $body.informationUrl = $null
@@ -1622,12 +1673,29 @@ Function New-IntuneWin32AppAssignment
     if ($StartDateTime)
     {
         $installTimeSettings['startDateTime'] = $StartDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $installTimeSettings['useLocalTime'] = $UseLocalTime
+        if ($Intent -ieq "Available")
+        {
+            # use local time cannot be set when intent is Available
+            $installTimeSettings['useLocalTime'] = $false
+        }
+        else 
+        {
+            $installTimeSettings['useLocalTime'] = $UseLocalTime
+        }
+        
     }
 
     if ($DeadlineDateTime)
     {
-        $installTimeSettings['deadlineDateTime'] = $DeadlineDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        if ($Intent -ieq "Available")
+        {
+            # Deadline cannot be set when intent is Available
+            $installTimeSettings['deadlineDateTime'] = $null
+        }
+        else 
+        {
+            $installTimeSettings['deadlineDateTime'] = $DeadlineDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        }        
     }
 
     $settings['installTimeSettings'] = $installTimeSettings

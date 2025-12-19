@@ -21,6 +21,8 @@ Script to upload Intune Win32 applications to Intune using Microsoft Graph API.
 Most Functions are taken from:
 https://github.com/microsoft/mggraph-intune-samples/blob/main/LOB_Application/Win32_Application_Add.ps1
 
+The solution is also inspired by: https://msendpointmgr.com/intune-app-factory
+
 .PARAMETER AppFolderName
     The name of the folder containing the applications to upload.
 
@@ -212,11 +214,12 @@ foreach($app in $appMetadata)
         EXE                  = $true
         displayName          = $app.FolderName
         publisher            = $app.'ADT-AppVendor'
-        description          = 'Created via DevOps'
+        description          = $app.IntuneMetadata.General.Description
         filename             = ($intunewinFileFullName | Split-Path -Leaf)
         SetupFileName        = $app.IntuneMetadata.InstallData.SetupFile
         RunAsAccount         = $app.IntuneMetadata.InstallData.InstallExperience
         DeviceRestartBehavior= $app.IntuneMetadata.InstallData.DeviceRestartBehavior
+        MaxRunTimeInMinutes  = $app.IntuneMetadata.InstallData.MaxRunTimeInMinutes
         Version              = $app.'ADT-AppVersion'
         installCommandLine   = $app.IntuneMetadata.InstallData.InstallCommand
         uninstallCommandLine = $app.IntuneMetadata.InstallData.UninstallCommand
@@ -231,30 +234,111 @@ foreach($app in $appMetadata)
     $returnCodes = Get-DefaultReturnCodes
     $intuneAppBody.Add("returnCodes", @($returnCodes))
 
+    # Adding notes and owner info
+    $intuneAppBody.notes = $app.IntuneMetadata.General.Notes
+    $intuneAppBody.owner = $app.IntuneMetadata.General.Owner
 
     $Rules = @()
     # add detection rules
-    # Example detection rule: check if chrome.exe exists in the default installation path
-    <#
-    $paramSplatting = @{
-        ruleType                = "detection"
-        operator                = "notConfigured"
-        check32BitOn64System    = $false
-        operationType           = "exists"
-        comparisonValue         = $null
-        fileOrFolderName        = "chrome.exe"
-        path                    = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+    
+    # Lets make sure, that if we have a detection script, we only have that one and not other detection rules, since Intune does not support mixing detection rule types at the moment
+    $skipNonScriptDetections = $false
+    [array]$detectionItems = $app.IntuneMetadata.DetectionAndRequirementRules | Where-Object { $_.RuleType -ieq 'detection' } 
+    if ($detectionItems.Type.Count -gt 1 -and $detectionItems.Type -contains 'Script') 
+    {
+        Write-Warning "Multiple detection rules found including a script rule. Will only use the script detection rule(s) and skip other detection rules."
+        Write-Warning "Intune does not support mixing detection rule types at the moment."
+        $skipNonScriptDetections = $true
     }
-    $Rules += New-FileSystemRule @paramSplatting
-    #>
 
-    #$Rules += New-ScriptRequirementRule -ScriptFile "E:\VSCodeRequirement.ps1" -DisplayName "VS Code Requirement" -EnforceSignatureCheck $false -RunAs32Bit $false -RunAsAccount "system" -OperationType "integer" -Operator "equal" -ComparisonValue "0"
-    #$Rules += New-ScriptDetectionRule -ScriptFile "E:\VSCodeDetection.ps1" -EnforceSignatureCheck $false -RunAs32Bit $false 
-    #$Rules += New-RegistryRule -ruleType detection -keyPath "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\xyz" -valueName "DisplayName" -operationType string -operator equal -comparisonValue "VSCode"
+    foreach($ruleItem in $app.IntuneMetadata.DetectionAndRequirementRules)
+    {
 
-    # Custom detection rule based on registry key from the app metadata
-    $regPath = $app.'RegistryBrandingPath' -replace ':', ''
-    $Rules += New-RegistryRule -ruleType detection -keyPath $regPath -valueName "Installed" -operationType integer -operator equal -comparisonValue "1"
+        if (($ruleItem.RuleType -ieq 'detection') -and ($skipNonScriptDetections -eq $true) -and ($ruleItem.Type -ine 'Script')) 
+        {
+            Write-Warning "Skipping non-script detection rule due to presence of script detection rule."
+            continue
+        }
+
+        switch ($ruleItem.Type)
+        {
+            'File' 
+            {
+                $paramSplatting = @{
+                    ruleType                = $ruleItem.RuleType
+                    operationType           = $ruleItem.OperationType
+                    operator                = $ruleItem.Operator
+                    fileOrFolderName        = $ruleItem.FileOrFolderName
+                    path                    = $ruleItem.Path
+                    comparisonValue         = $ruleItem.ComparisonValue
+                    check32BitOn64System    = if($ruleItem.Check32BitOn64System -eq $true -or $ruleItem.Check32BitOn64System -ieq 'true') { $true } else { $false }
+                }
+
+                $Rules += New-FileSystemRule @paramSplatting
+            }
+            'Registry' 
+            {
+                $paramsplatting = @{
+                    ruleType                = $ruleItem.RuleType
+                    keyPath                 = $ruleItem.KeyPath
+                    valueName               = $ruleItem.ValueName
+                    operationType           = $ruleItem.OperationType
+                    operator                = $ruleItem.Operator
+                    comparisonValue         = $ruleItem.Value
+                    check32BitOn64System    = if($ruleItem.Check32BitOn64System -eq $true -or $ruleItem.Check32BitOn64System -ieq 'true') { $true } else { $false }
+                }
+
+                $Rules += New-RegistryRule @paramsplatting
+            }
+            'MSI'
+            {
+                $paramSplatting = @{
+                    ruleType                = $ruleItem.RuleType
+                    productCode             = $ruleItem.ProductCode
+                    productVersionOperator  = $ruleItem.ProductVersionOperator
+                    productVersion          = $ruleItem.ProductVersion
+                }
+
+                $Rules += New-ProductCodeRule @paramSplatting   
+
+            }
+            'Script' 
+            {
+                if ($ruleItem.RuleType -ieq 'detection')
+                {
+                    #New-ScriptDetectionRule
+
+                    $paramSplatting = @{
+                        ScriptFile              = "{0}\IntuneData\Detection.ps1" -f $tmpAppFolderPath
+                        EnforceSignatureCheck   = if($ruleItem.EnforceSignatureCheck -eq $true -or $ruleItem.EnforceSignatureCheck -ieq 'true') { $true } else { $false }
+                        RunAs32Bit              = if($ruleItem.RunAs32Bit -eq $true -or $ruleItem.RunAs32Bit -ieq 'true') { $true } else { $false }
+                    }
+
+                    $Rules += New-ScriptDetectionRule @paramSplatting
+                }
+                elseif ($ruleItem.RuleType -ieq 'requirement')
+                {
+                    #New-ScriptRequirementRule
+                    $paramSplatting = @{
+                        DisplayName             = "Requirement.ps1"
+                        ScriptFile              = "{0}\IntuneData\Requirement.ps1" -f $tmpAppFolderPath
+                        EnforceSignatureCheck   = if($ruleItem.EnforceSignatureCheck -eq $true -or $ruleItem.EnforceSignatureCheck -ieq 'true') { $true } else { $false }
+                        RunAs32Bit              = if($ruleItem.RunAs32Bit -eq $true -or $ruleItem.RunAs32Bit -ieq 'true') { $true } else { $false }
+                        RunAsAccount            = $ruleItem.RunAsAccount
+                        OperationType           = $ruleItem.OperationType
+                        Operator                = $ruleItem.Operator
+                        ComparisonValue         = $ruleItem.ComparisonValue
+                    }
+
+                    $Rules += New-ScriptRequirementRule @paramSplatting
+                }
+            }
+            default 
+            {
+                Write-Warning "Unknown detection rule type: $($ruleItem.Type). Skipping this rule."
+            }
+        }
+    }
 
     # Adding "rules" to the intune app body
     $intuneAppBody.Add("rules", @($Rules))
@@ -592,7 +676,7 @@ foreach($app in $appMetadata)
             $assignParamSplatting = @{
                 AppID = $Win32MobileAppRequest.id
                 TargetType = $targetType
-                AssigmentType = 'Include'
+                #AssigmentType = 'Include' # Filter assignment type
                 Intent = $assignmentDefinition.Intent
                 Notification = $assignmentDefinition.Notification
                 DeliveryOptimizationPriority = $assignmentDefinition.DeliveryOptimizationPriority

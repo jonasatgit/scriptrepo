@@ -1,0 +1,110 @@
+﻿{
+    "InstallData": {
+        "Description": "Descriptive text just for the administrator. Not used by the solution.",
+        "InstallCommand": "Invoke-AppDeployToolkit.exe Install",
+        "UninstallCommand": "Invoke-AppDeployToolkit.exe Uninstall",
+        "SetupFile": "Invoke-AppDeployToolkit.exe",
+        "InstallExperience": "system",
+        "MaxRunTimeInMinutes": 120,
+        "DeviceRestartBehavior": "basedOnReturnCode",
+        "AllowAvailableUninstall": true
+    },
+
+    "General": {
+        "Description": "Descriptive text about the app",
+        "Notes": "Notes about the app",
+        "Owner": "Contoso IT Department",
+        "ScopeTagName": "Not yet implemented in the solution. Could be the scope tag name to be used for the app in the future."
+    },
+
+    "DetectionAndRequirementRules": [
+        {
+            "Type": "Script",
+            "RuleType": "requirement",
+            "Description": "Custom requirement script. A Requirement.ps1 file needs to be in the root folder of the app package.",   
+            "EnforceSignatureCheck": true,
+            "RunAs32Bit": false,
+            "RunAsAccount": "system",
+            "OperationType": "string",
+            "Operator": "equal",
+            "ComparisonValue": "All-good-procced-with-installation"
+        },
+        {
+            "Type": "Registry",
+            "RuleType": "detection",
+            "Description": "Registry value COMPARISON rule. Can be used to test values like versionnumbers for example. Can either be used as a detection or requirement rule",
+            "OperationType": "version",
+            "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IntuneTools",
+            "ValueName": "DisplayVersion",
+            "Operator": "greaterThanOrEqual",
+            "Value": "1.0.0",
+            "Check32BitOn64System": false
+        },
+        {
+            "Type": "Registry",
+            "RuleType": "detection",
+            "Description": "Registry EXISTENCE rule. Can be used to test the existence of a registry entry. Can either be used as a detection or requirement rule",
+            "OperationType": "exists",
+            "KeyPath": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IntuneTools",
+            "ValueName": "Installed",
+            "Operator": "notConfigured",
+            "Value": "",
+            "Check32BitOn64System": false
+        },
+        {
+            "Type": "File",
+            "RuleType": "detection",
+            "Description": "File or folder COMPARISON rule. Can be used to test values like versionnumbers for example. Can either be used as a detection or requirement rule",
+            "OperationType": "version",
+            "Path": "C:\\Program Files\\IntuneTools",
+            "FileOrFolderName": "IntuneTools.exe",
+            "Operator": "greaterThanOrEqual",
+            "ComparisonValue": "1.0.0",
+            "Check32BitOn64System": false
+        },
+        {
+            "Type": "File",
+            "RuleType": "detection",
+            "Description": "File or folder EXISTENCE rule. Can be used to test the existence of a file or folder. Can either be used as a detection or requirement rule",
+            "OperationType": "exists",
+            "Path": "C:\\Program Files\\IntuneTools",
+            "FileOrFolderName": "ToolsBinaries",
+            "Operator": "notConfigured",
+            "ComparisonValue": "",
+            "Check32BitOn64System": false
+        }
+    ],
+
+    "Assignments": [
+        {
+            "Type": "Test",
+            "Description": "Example assignment to a test group. Add as many assignments as needed.",
+            "GroupID": "4d784caf-e371-4657-b541-835f5c7420cc",
+            "GroupName": "IN-App1-Install",
+            "Intent": "available",
+            "Notification": "showAll",
+            "UseLocalTime": "true",
+            "FilterName": "",
+            "FilterMode": "",
+            "AvailableTime": "2025-12-31T12:00:00Z",
+            "DeadlineTime": "",
+            "DeliveryOptimizationPriority": "notConfigured",
+            "EnableRestartGracePeriod": "false",
+            "RestartGracePeriodInMinutes": "",
+            "RestartCountDownDisplayInMinutes": "",
+            "RestartNotificationSnoozeInMinutes": ""
+        }
+    ],
+
+    "Dependencies": [
+        {
+            "Description": "Not yet implemented in the solution. Could be used to define app dependencies in the future."
+        }
+    ],
+
+    "Supersedence": [
+        {
+            "Description": "Not yet implemented in the solution. Could be used to define app supersedence in the future."
+        }
+    ]
+}
