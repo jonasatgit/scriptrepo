@@ -98,7 +98,7 @@ function Test-ConfigMgrLogTimestamp
 
             try 
             {
-                if ($lastLine -match 'time="(?<time>\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{3})"\s+date="(?<date>\d{2}-\d{2}-\d{4})"') 
+                if ($lastLine -match 'time="(?<time>\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2,3})"\s+date="(?<date>\d{2}-\d{2}-\d{4})"') 
                 {
                     $timeString = $matches['time']
                     $dateString = $matches['date']
