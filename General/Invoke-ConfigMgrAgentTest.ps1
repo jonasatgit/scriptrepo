@@ -23,7 +23,10 @@
 param
 (
     [Parameter(Mandatory=$false)]
-    [int]$SystemUptimeThresholdInMinutes = 15
+    [int]$SystemUptimeThresholdInMinutes = 15,
+
+    [Parameter(Mandatory=$false)]
+    [int]$LogCheckFailThresholdInMinutes = 300
 )
 
 $script:outObject = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -280,7 +283,7 @@ Out-Log -message "Testing Configuration Manager Agent Service."
 Test-ConfigMgrAgentService
 
 # Will test Configuration Manager Agent Log Timestamp
-'PolicyAgent.log' | Test-ConfigMgrLogTimestamp -LogCheckFailThresholdInMinutes 20
+'PolicyAgent.log' | Test-ConfigMgrLogTimestamp -LogCheckFailThresholdInMinutes $LogCheckFailThresholdInMinutes
 
 
 # Output results
