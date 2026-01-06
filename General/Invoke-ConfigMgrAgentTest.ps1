@@ -255,7 +255,6 @@ Function Invoke-WmiRepositoryCheck
         Out-Log -message "WMI check failed with exception: $($_.Exception.Message)"
         $outObject.Add([TestResult]::new("WMIRepositoryCheck","Warning","WMI check failed with exception: $($_.Exception.Message)"))
     }
-
 }
 #endregion
 
