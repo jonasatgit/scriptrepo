@@ -263,6 +263,7 @@ Function Invoke-WmiRepositoryCheck
 $script:logPath = '{0}\{1}-{2}.log' -f (Get-ConfigMgrLogsPath), ($MyInvocation.MyCommand.Name), (Get-Date -Format 'yyyyMMdd_HHmmss')
 
 # Will test WMI repository consistency
+Out-Log -message "Starting WMI Repository Check."
 Invoke-WmiRepositoryCheck
 
 # Will test system uptime
@@ -275,6 +276,7 @@ if ((Get-SystemUptimeInMinutes) -lt $SystemUptimeThresholdInMinutes)
 }
 
 # Will test Configuration Manager Agent Service
+Out-Log -message "Testing Configuration Manager Agent Service."
 Test-ConfigMgrAgentService
 
 # Will test Configuration Manager Agent Log Timestamp
@@ -290,7 +292,8 @@ foreach ($result in $script:outObject)
     Write-Output $logMessage
 }
 
-# Determine exit code based on test results
+# Determine exit code based on test results. 
+# The exit code 1 will trigger an Intune remediation if configured.
 if($script:outObject | Where-Object { $_.Status -in @("Fail") })
 {
     Out-Log -message "One or more tests have failed."
