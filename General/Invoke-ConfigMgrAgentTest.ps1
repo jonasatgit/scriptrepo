@@ -188,12 +188,24 @@ Function Get-ConfigMgrLogsPath
 Function Get-SystemUptimeInMinutes
 {
     [CmdletBinding()]
-    param()
+    param
+    ()
 
-    $os = Get-CimInstance -ClassName Win32_OperatingSystem
-    $lastBootUpTime = $os.LastBootUpTime
-    $uptime = (Get-Date) - $lastBootUpTime
-    return $uptime.totalminutes
+    try 
+    {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $lastBootUpTime = $os.LastBootUpTime
+        $uptime = (Get-Date) - $lastBootUpTime
+        return $uptime.totalminutes       
+    }
+    catch 
+    {
+        Out-Log -message "Not able to get system uptime: $($_.Exception.Message)"
+        Out-Log -message "Setting default uptime to 60 minutes."
+        $outObject.Add([TestResult]::new("WMIRepositoryCheck","Fail","Not able to get system uptime: $_.Exception.Message. Setting default uptime to 60 minutes."))
+        return 60 # default to 60 minutes if we cannot get the uptime
+    }
+
 }
 #endregion
 
@@ -212,12 +224,49 @@ Function Out-Log
     $logMessage = "{0} {1}" -f $timestamp, $message
     Add-Content -Path $logFilePath -Value $logMessage
 }
+#endregion
+
+
+#region Function Invoke-WmiRepositoryCheck
+Function Invoke-WmiRepositoryCheck
+{
+    [CmdletBinding()]
+    param()
+
+    # winmgmt /verifyrepository
+    # winmgmt /salvagerepository
+    try 
+    {
+        # Check WMI repository consistency
+        $wmicheck = & winmgmt /verifyrepository 2>&1
+        if ($wmicheck -imatch "WMI repository is consistent") 
+        {
+            Out-Log -message "WMI repository is consistent."
+            $outObject.Add([TestResult]::new("WMIRepositoryCheck","Pass","WMI repository is consistent."))
+        }
+        else 
+        {
+            Out-Log -message "Warning: WMI check failed: $($wmicheck -join ' ')"
+            $outObject.Add([TestResult]::new("WMIRepositoryCheck","Warning","WMI check failed: $($wmicheck -join ' ')"))
+        }        
+    }
+    catch 
+    {
+        Out-Log -message "WMI check failed with exception: $($_.Exception.Message)"
+        $outObject.Add([TestResult]::new("WMIRepositoryCheck","Warning","WMI check failed with exception: $($_.Exception.Message)"))
+    }
+
+}
+#endregion
 
 
 # MAIN FUNCTION
-
 $script:logPath = '{0}\{1}-{2}.log' -f (Get-ConfigMgrLogsPath), ($MyInvocation.MyCommand.Name), (Get-Date -Format 'yyyyMMdd_HHmmss')
 
+# Will test WMI repository consistency
+Invoke-WmiRepositoryCheck
+
+# Will test system uptime
 Out-Log -message "Starting Configuration Manager Agent Tests."
 if ((Get-SystemUptimeInMinutes) -lt $SystemUptimeThresholdInMinutes)
 {
@@ -226,8 +275,10 @@ if ((Get-SystemUptimeInMinutes) -lt $SystemUptimeThresholdInMinutes)
     exit 0
 }
 
-
+# Will test Configuration Manager Agent Service
 Test-ConfigMgrAgentService
+
+# Will test Configuration Manager Agent Log Timestamp
 'PolicyAgent.log' | Test-ConfigMgrLogTimestamp -LogCheckFailThresholdInMinutes 20
 
 
@@ -237,6 +288,7 @@ foreach ($result in $script:outObject)
 {
     $logMessage = "Test: {0}, Status: {1}, Message: {2}" -f $result.TestName, $result.Status, $result.Message
     Out-Log -message $logMessage
+    Write-Output $logMessage
 }
 
 # Determine exit code based on test results
