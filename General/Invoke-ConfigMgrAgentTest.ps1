@@ -239,16 +239,16 @@ Function Invoke-WmiRepositoryCheck
     {
         # Check WMI repository consistency
         $wmicheck = & winmgmt /verifyrepository 2>&1
-        if ($wmicheck -imatch "WMI repository is consistent") 
-        {
-            Out-Log -message "WMI repository is consistent."
-            $outObject.Add([TestResult]::new("WMIRepositoryCheck","Pass","WMI repository is consistent."))
-        }
-        else 
+        if ($wmicheck -imatch "Error|Fehler|Inconsistent|0x80") 
         {
             Out-Log -message "Warning: WMI check failed: $($wmicheck -join ' ')"
             $outObject.Add([TestResult]::new("WMIRepositoryCheck","Warning","WMI check failed: $($wmicheck -join ' ')"))
-        }        
+        }
+        else 
+        {
+            Out-Log -message "WMI repository is consistent."
+            $outObject.Add([TestResult]::new("WMIRepositoryCheck","Pass","WMI repository is consistent."))
+        }       
     }
     catch 
     {
