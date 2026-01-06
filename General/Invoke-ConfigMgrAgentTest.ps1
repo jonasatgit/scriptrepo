@@ -57,17 +57,20 @@ Function Test-ConfigMgrAgentService
         # we also need to check if the system was just started, because in that case the service may be not yet started
         if ($configMgrService.Status -ieq 'Running') 
         {
+            Out-Log -message "The Configuration Manager Agent Service (ccmexec) is running."
             $outObject.Add([TestResult]::new("ServiceCheck","Pass","The Configuration Manager Agent Service (ccmexec) is running."))
             return     
         }
         else 
         {
+            Out-Log -message "The Configuration Manager Agent Service (ccmexec) is not running. Current status: $($configMgrService.Status)."
             $outObject.Add([TestResult]::new("ServiceCheck","Fail","The Configuration Manager Agent Service (ccmexec) is not running. Current status: $($configMgrService.Status)."))        
             return   
         }
     }
     else 
     {
+        Out-Log -message "The Configuration Manager Agent Service (ccmexec) is not installed on this machine."
         $outObject.Add([TestResult]::new("ServiceCheck","Fail","The Configuration Manager Agent Service (ccmexec) is not installed on this machine."))
         return
     }
@@ -82,15 +85,25 @@ function Test-ConfigMgrLogTimestamp
     (
         [Parameter(ValueFromPipeline=$true)]
         [string]$logName,
+        [string]$logPath,
         [int]$LogCheckFailThresholdInMinutes = 300
     )
 
     process
     {
-        $logPath = '{0}\{1}' -f (Get-ConfigMgrLogsPath), $logName
+
+        if (-not $logPath) 
+        {
+            $logPath = '{0}\{1}' -f (Get-ConfigMgrLogsPath), $logName
+        }    
+        else 
+        {
+            $logPath = '{0}\{1}' -f $logPath, $logName
+        }    
 
         if (Test-Path -Path $logPath) 
         {
+            Out-Log -message "Checking log file: $logPath"
             # get the last line of the log file
             $lastLine = Get-Content -Path $logPath -Tail 1
             # date and time are in the following format in the log and need to be parsed accordingly
@@ -109,35 +122,42 @@ function Test-ConfigMgrLogTimestamp
                     $timeDifference = (Get-Date) - $logDateTime
                     if ($timeDifference.TotalMinutes -le $LogCheckFailThresholdInMinutes) 
                     {
+                        Out-Log -message "The log file '$logName' was updated recently at $logDateTime."
                         $outObject.Add([TestResult]::new("LogCheck","Pass","The log file '$logName' was updated recently at $logDateTime."))
                     }
                     else 
                     {
+                        Out-Log -message "The log file '$logName' was last updated at $logDateTime, which is more than $LogCheckFailThresholdInMinutes minutes ago."
                         $outObject.Add([TestResult]::new("LogCheck","Fail","The log file '$logName' was last updated at $logDateTime, which is more than $LogCheckFailThresholdInMinutes minutes ago."))
                     }
                 }
                 else 
                 {
+                    Out-Log -message "Could not parse the timestamp from the last line of the log file '$logName'."
                     $outObject.Add([TestResult]::new("LogCheck","Fail","Could not parse the timestamp from the last line of the log file '$logName'."))
                 }
             }
             catch 
             {
-                # covnersion failed. Lets use the last write time of the file instead
+                Out-Log -message "An error occurred while parsing the timestamp from the log file '$logName': $_. Exception.Message"
+                # conversion failed. Lets use the last write time of the file instead
                 $lastWriteTime = (Get-Item -Path $logPath).LastWriteTime
                 $timeDifference = (Get-Date) - $lastWriteTime
                 if ($timeDifference.TotalMinutes -le $LogCheckFailThresholdInMinutes)
                 {
+                    Out-Log -message "The log file '$logName' was updated recently at $lastWriteTime. Reading from the file direcly failed, but the last write time indicates recent activity."
                     $outObject.Add([TestResult]::new("LogCheck","Pass","The log file '$logName' was updated recently at $lastWriteTime. Reading from the file direcly failed, but the last write time indicates recent activity."))
                 }
                 else 
                 {
+                    Out-Log -message "The log file '$logName' was last updated at $lastWriteTime, which is more than $LogCheckFailThresholdInMinutes minutes ago. Reading from the file direcly failed."
                     $outObject.Add([TestResult]::new("LogCheck","Fail","The log file '$logName' was last updated at $lastWriteTime, which is more than $LogCheckFailThresholdInMinutes minutes ago. Reading from the file direcly failed, thats why we are using the last write time."))
                 }
             }
         }
         else 
         {
+            Out-Log -message "Log file not found: $logPath"
             $outObject.Add([TestResult]::new("LogCheck","Fail","File not found: $logPath"))
         }
     }
@@ -177,11 +197,31 @@ Function Get-SystemUptimeInMinutes
 }
 #endregion
 
+#region Function Out-Log
+Function Out-Log
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory=$true)]
+        [string]$message,
+        [string]$logFilePath = $script:logPath
+    )
+
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $logMessage = "{0} {1}" -f $timestamp, $message
+    Add-Content -Path $logFilePath -Value $logMessage
+}
+
 
 # MAIN FUNCTION
 
+$script:logPath = '{0}\{1}-{2}.log' -f (Get-ConfigMgrLogsPath), ($MyInvocation.MyCommand.Name), (Get-Date -Format 'yyyyMMdd_HHmmss')
+
+Out-Log -message "Starting Configuration Manager Agent Tests."
 if ((Get-SystemUptimeInMinutes) -lt $SystemUptimeThresholdInMinutes)
 {
+    Out-Log -message "The system was started less than $SystemUptimeThresholdInMinutes minutes ago. Skipping tests."
     $outObject.Add([TestResult]::new("General","Warning","The system was started less than $SystemUptimeThresholdInMinutes minutes ago"))
     exit 0
 }
@@ -191,15 +231,23 @@ Test-ConfigMgrAgentService
 'PolicyAgent.log' | Test-ConfigMgrLogTimestamp -LogCheckFailThresholdInMinutes 20
 
 
-$script:outObject #| Where-Object { $_.Status -in @("Fail") } 
+# Output results
+Out-Log -message "Configuration Manager Agent Tests completed. Results:"
+foreach ($result in $script:outObject)
+{
+    $logMessage = "Test: {0}, Status: {1}, Message: {2}" -f $result.TestName, $result.Status, $result.Message
+    Out-Log -message $logMessage
+}
 
-
+# Determine exit code based on test results
 if($script:outObject | Where-Object { $_.Status -in @("Fail") })
 {
+    Out-Log -message "One or more tests have failed."
     exit 1
 }
 else
 {
+    Out-Log -message "All tests have passed."
     exit 0
 }
           
