@@ -751,9 +751,7 @@ Write-CMTraceLog -Message "Starting script"
 #region check for required parameters
 if (-NOT ($ExportToSQL -or $ExportToFile))
 {
-    Write-CMTraceLog -Message "Either parameter -ExportToSQL or -ExportToFile is required" -Severity Error
-    Write-CMTraceLog -Message "End script"
-    break
+    Write-CMTraceLog -Message "Whithout parameter -ExportToSQL or -ExportToFile data will only be shown in a GridView" -Severity Warning
 }
 
 # Ensure that required parameters for ExportToSQL are specified
