@@ -101,10 +101,19 @@ Write-Host "Storage Account Name: $AppStorageAccountName" -ForegroundColor Cyan
 # load application metadata created by the Test-AppMetadata script
 $fileInPath = '{0}\AppsToProcess.xml' -f $artifactStagingDirectory
 
+if (-Not (Test-Path -Path $fileInPath)) 
+{
+    Write-Error "Apps to process file not found at path: `"$fileInPath`""
+    Exit 1
+}
+
 [array]$appMetadata = Import-Clixml -Path $fileInPath -ErrorAction "Stop"
 
 # process each application
 #Write-Host "##[section]Starting upload of $($appMetadata.Count) apps"
+write-host "Found $($appMetadata.Count) apps to process."
+
+#break
 foreach($app in $appMetadata)
 {
     # $app.'StorageAccountFolderName' does contain the appname, version etc. and makes more sense to show in the log as just the name
@@ -173,7 +182,7 @@ foreach($app in $appMetadata)
     }
     else 
     {
-        Write-Error "Invoke-AppDeployToolkit.ps1 not found for app $($app.FolderName)"
+        Write-Error "Invoke-AppDeployToolkit.ps1 not found in folder `"$appSourcePath`" for app $($app.FolderName)"
         Exit 1
     }
 

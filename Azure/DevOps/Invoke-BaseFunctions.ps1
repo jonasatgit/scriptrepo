@@ -402,6 +402,24 @@ function Get-HashtablesFromScript
 }
 #endregion
 
+<#
+.SYNOPSIS
+    Function to test if the storage account folder for the app exists, and create it if it does not exist.
+.DESCRIPTION
+    The function will test if the storage account folder for the app exists, and create it if it does not exist.
+    The function will return the app info object with the StorageAccountFolderState property set to 'Exists', 'Missing', or 'ErrorCreating'.
+.PARAMETER AppInfo
+    The app info object.
+.PARAMETER AppStorageAccountName
+    The name of the storage account.
+.PARAMETER CreateIfNotExists
+    Switch to create the storage account folder if it does not exist.
+.PARAMETER TempDirectory
+    The temporary directory to store azcopy.exe.
+.EXAMPLE
+    Test-StorageAccountFolder -AppInfo $appInfo -AppStorageAccountName "mystorageaccount" -CreateIfNotExists -TempDirectory "C:\Temp"
+    This example will test if the storage account folder for the app exists, and create it if it does not exist.
+#>
 #region Test-StorageAccountFolder
 function Test-StorageAccountFolder
 {
@@ -1751,5 +1769,73 @@ Function New-IntuneWin32AppAssignment
     $result = Invoke-MgGraphRequest -Uri $uri -Method Post -Body ($assignment | ConvertTo-Json -Depth 10) -ContentType "application/json" -ErrorAction Stop           
     
     return $result
+}
+#endregion
+
+#region Test-IfAppExistsInIntune
+<#
+.SYNOPSIS
+    Function to test if an app exists in Intune by its display name.
+.DESCRIPTION
+    This function checks if an app with the specified display name already exists in Intune using the Microsoft Graph API.
+    If the app exists, it updates the AppInfo object to indicate that data is missing or wrong and adds a check result.
+.PARAMETER AppInfo
+    An object containing information about the app, including the FolderName property which is used as the
+    display name to check in Intune.
+.EXAMPLE
+    Test-IfAppExistsInIntune -AppInfo $appInfo
+    This will check if an app with the display name specified in $appInfo.FolderName exists in Intune.
+#>
+Function Test-IfAppExistsInIntune
+{
+    [CmdletBinding()]
+    param 
+    (
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [object]$AppInfo
+    )
+
+    Begin
+    {
+        # making sure we are connected to Microsoft Graph by getting the graph context
+        if($null -eq (Get-MgContext))
+        {
+            try
+            {
+                Write-Host "Not connected to Microsoft Graph. Trying to connect using existing session..."
+                $null = Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop
+                Write-Host "Connected to Microsoft Graph."
+            }
+            catch 
+            {
+                Write-Host "Microsoft Graph connection failed."
+                Write-Host "Error details: $($_)"
+                exit 1
+            }
+        }
+    }
+    Process
+    {
+        $AppDisplayName = $AppInfo.FolderName
+
+        Write-Host "Will check if app with displayName `"$AppDisplayName`" already exists in Intune"
+        $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$filter=displayName eq '$AppDisplayName'&`$select=id,displayName"
+        [array]$appResult = Invoke-MgGraphRequest -Uri $uri -Method Get -ErrorAction Stop -OutputType PSObject       
+
+        if ($appResult.value.count -eq 0)
+        {
+            # app does not exist
+            Write-Host "No app found in Intune with displayName `"$AppDisplayName`""
+        }
+        elseif ($appResult.value.count -ge 1) 
+        {
+            $AppInfo.DataMissingOrWrong = $true
+            $AppInfo.CheckResults.Add("AppExistance", "Application already exists in Intune")
+        }
+        return $AppInfo
+    }
+    End
+    {        
+    }
 }
 #endregion

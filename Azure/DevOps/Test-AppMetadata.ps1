@@ -47,12 +47,9 @@ param
     [string]$AppsToProcessFile,
     [string]$AppStorageAccountName,
     [switch]$TestStorageAccountFolder,
-    $FailIfDataMissingOrWrong
+    $FailIfDataMissingOrWrong, 
+    $CheckIfAppAlreadyExistsInIntune
 )
-
-
-
-
 
 #******************************************************************#
 #region                   Main script
@@ -176,6 +173,13 @@ if ($TestStorageAccountFolder)
 {
     $appList = $appList | Test-StorageAccountFolder -AppStorageAccountName $AppStorageAccountName -CreateIfNotExists
 }
+
+
+if(($CheckIfAppAlreadyExistsInIntune -ieq 'true') -or ($CheckIfAppAlreadyExistsInIntune -eq $true))
+{
+    $appList = $appList | Test-IfAppExistsInIntune
+}
+
 
 # Save the app list to an xml file for later steps in the pipeline
 $fileOutPath = '{0}\AppsToProcess.xml' -f $artifactStagingDirectory
