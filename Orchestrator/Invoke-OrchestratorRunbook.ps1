@@ -92,6 +92,14 @@
     and not just the ones defined in the RunbookOutParamsList parameter.
     The RunbookOutParamsList parameter will be ignored if this switch is set.
 
+.PARAMETER RetryCount
+    How many times the script will retry to connect to the Orchestrator web service in case of connection issues or temporary unavailability of the Orchestrator web service. 
+    Default is 3 times.   
+
+.PARAMETER RetryDelaySec
+    The delay in seconds between retries to connect to the Orchestrator web service. 
+    Default is 6 seconds.
+
 .EXAMPLE
     Run a runbook without runbook parameters
     .\Invoke-OrchestratorRunbook.ps1 -ScorchURI 'https://orch.contoso.local:8181' -RunbookName 'New Runbook 02'
@@ -171,7 +179,15 @@ param(
     
     [Parameter(Mandatory = $false)]
     # If not specified, the script will prompt for a username
-    [string]$UserName
+    [string]$UserName,
+
+    [Parameter(Mandatory = $false)]
+    # How many times the script will retry to connect to the Orchestrator web service. Default is 3 times. 
+    [int]$RetryCount = 3,
+
+    [Parameter(Mandatory = $false)]
+    # The delay in seconds between retries. Default is 6 seconds.
+    [int]$RetryDelaySec = 6
 )
 
 
@@ -245,20 +261,50 @@ Function Get-OrchestratorRunbookByName
     (
         [Parameter(Mandatory = $true)]
         [string]$ScorchURI,
+
         [Parameter(Mandatory = $true)]
         [string]$RunbookName,
+
         [Parameter(Mandatory = $true)]
-        [PSCredential]$credential
+        [PSCredential]$credential,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryCount = 3,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryDelaySec = 6
     )
 
-    $parmSplat = @{
-        Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $ScorchURI, $RunbookName
-        Method = 'Get'
-        Credential = $credential
-        ErrorAction = 'Stop'
+    # we need to use a retry mechanism here in case the Orchestrator web service is not responsive or we have a temporary network issue
+    $attempt = 0
+    $lastError = $null
+    do 
+    {
+        try 
+        {
+            $parmSplat = @{
+                Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $ScorchURI, $RunbookName
+                Method = 'Get'
+                Credential = $credential
+                ErrorAction = 'Stop'
+            }
+            $runbooksList = Invoke-RestMethod @parmSplat    
+            return $runbooksList.value
+        }
+        catch 
+        {
+            $lastError = $_
+            Write-Host "Attempt $($attempt + 1) of $RetryCount failed to get runbook by name. Will retry in $RetryDelaySec seconds."
+            Write-Host $_
+            Start-Sleep -Seconds $RetryDelaySec
+            $attempt++
+        }
     }
-    $runbooksList = Invoke-RestMethod @parmSplat    
-    return $runbooksList.value
+    until ($attempt -ge $RetryCount)
+
+    # the function will return the error from the last attempt if all attempts fail
+    throw $lastError
+
 }
 #endregion
 
@@ -288,7 +334,13 @@ Function Invoke-OrchestratorRunbookJob
         [PSCredential]$Credential,
 
         [Parameter(Mandatory = $false)]
-        [hashtable]$RunbookParams
+        [hashtable]$RunbookParams,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryCount = 3,
+        
+        [Parameter(Mandatory = $false)]
+        [int]$RetryDelaySec = 6
     )
 
     $body = [ordered]@{
@@ -313,18 +365,40 @@ Function Invoke-OrchestratorRunbookJob
         }
     }
 
-    $invokeRunbookParamSplat = @{
-        Uri = '{0}/api/Jobs' -f $ScorchURI
-        Body = ($body | ConvertTo-Json -Depth 10)
-        Method = 'Post'
-        ContentType = 'application/json'
-        Credential = $credential
-        ErrorAction = 'Stop'
+
+    # we need to use a retry mechanism here in case the Orchestrator web service is not responsive or we have a temporary network issue
+    $attempt = 0
+    $lastError = $null
+    do 
+    {
+        try 
+        {
+            $invokeRunbookParamSplat = @{
+                Uri = '{0}/api/Jobs' -f $ScorchURI
+                Body = ($body | ConvertTo-Json -Depth 10)
+                Method = 'Post'
+                ContentType = 'application/json'
+                Credential = $credential
+                ErrorAction = 'Stop'
+            }
+
+            $runbookJobResult = Invoke-RestMethod @invokeRunbookParamSplat
+
+            return $runbookJobResult
+        }
+        catch 
+        {
+            $lastError = $_
+            Write-Host "Attempt $($attempt + 1) of $RetryCount failed to invoke runbook job. Will retry in $RetryDelaySec seconds."
+            Write-Host $_
+            Start-Sleep -Seconds $RetryDelaySec
+            $attempt++
+        }
     }
+    until ($attempt -ge $RetryCount)
 
-    $runbookJobResult = Invoke-RestMethod @invokeRunbookParamSplat
-
-    return $runbookJobResult
+    # the function will return the error from the last attempt if all attempts fail
+    throw $lastError
 }
 #endregion
 
@@ -334,11 +408,26 @@ Function Get-OrchestratorRunbookJobStatus
     [CmdletBinding()]
     param
     (
+        [Parameter(Mandatory = $true)]
         [string]$ScorchURI,
+
+        [Parameter(Mandatory = $true)]
         [string]$JobID,
+
+        [Parameter(Mandatory = $true)]
         [PSCredential]$Credential,
+
+        [Parameter(Mandatory = $false)]
         [int]$MaxJobRuntimeSec = 30,
-        [switch]$WaitForCompletion
+
+        [Parameter(Mandatory = $false)]
+        [switch]$WaitForCompletion,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryCount = 3,
+        
+        [Parameter(Mandatory = $false)]
+        [int]$RetryDelaySec = 6
     )
 
     $outObject = [PSCustomObject]@{
@@ -349,6 +438,7 @@ Function Get-OrchestratorRunbookJobStatus
     }
 
     Write-Host "Getting status of runbook job with ID: $jobID"
+    $attempt = 0
     $stoptWatch = New-Object System.Diagnostics.Stopwatch
     $stoptWatch.Start()
     do
@@ -361,7 +451,28 @@ Function Get-OrchestratorRunbookJobStatus
             Credential = $Credential
             ErrorAction = 'Stop'
         }
-        $runbookJobResult = Invoke-RestMethod @runbookJobParamSplat
+
+        try 
+        {
+            $runbookJobResult = Invoke-RestMethod @runbookJobParamSplat   
+        }
+        catch 
+        {
+            $attempt++
+            if ($attempt -ge $RetryCount)
+            {
+                Write-Host "Attempt $attempt of $RetryCount failed to get runbook job status. Will no longer retry."
+                throw $_
+            }
+
+            Write-Host "Attempt $attempt of $RetryCount to get runbook job status failed. Will retry in $RetryDelaySec seconds."
+            Write-Host $_
+            Start-Sleep -Seconds $RetryDelaySec
+            # will reset the stopwatch to give some extra time for the runbook job to complete in case of temporary issues with the Orchestrator web service
+            $stoptWatch.Restart()
+            # skip the status logging below since $runbookJobResult may be null or stale
+            continue
+        }        
 
         $jobsStateString = 'Runbook job: {0} in state: {1}' -f $runbookJobResult.Id, $runbookJobResult.Status
         Write-host $jobsStateString
@@ -391,7 +502,7 @@ Function Get-OrchestratorRunbookJobStatus
     }
     else 
     {
-        Write-Host "Runbook: `"$($RunbookName)`" completed successfully"
+        Write-Host "Runbook completed successfully with instance status: $($outObject.RunbookInstanceStatus)"
     }
     # Return the output object with job ID and status
     return $outObject 
@@ -419,19 +530,50 @@ Function Get-OrchestratorRunbookOutputParameters
         [Parameter(Mandatory = $false)]
         # The type of the runbook output parameters to return. Default is 'Object'. Possible values are 'Hashtable', 'JSON' and 'Object'.
         [ValidateSet("Hashtable", "JSON", "Object")]
-        [string]$RunbookOutParamType = 'Object'
+        [string]$RunbookOutParamType = 'Object',
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryCount = 3,
+        
+        [Parameter(Mandatory = $false)]
+        [int]$RetryDelaySec = 6
     )
 
-    $runbookInstanceParamSplat = @{
-        Uri = '{0}/api/RunbookInstances/{1}?&$expand=RunBookInstanceParameters' -f $ScorchURI, $runbookInstanceID
-        Method = 'Get' 
-        ContentType = 'application/json'
-        Credential = $credential
-        ErrorAction = 'Stop'
-    }
+    # we need to use a retry mechanism here in case the Orchestrator web service is not responsive or we have a temporary network issue
+    $attempt = 0
+    $runbookInstance = $null
+    do 
+    {
+        try 
+        {
+            $runbookInstanceParamSplat = @{
+                Uri = '{0}/api/RunbookInstances/{1}?&$expand=RunBookInstanceParameters' -f $ScorchURI, $runbookInstanceID
+                Method = 'Get' 
+                ContentType = 'application/json'
+                Credential = $credential
+                ErrorAction = 'Stop'
+            }
 
-    Write-Host "Will get runbook instance parameters for runbook instance ID: $runbookInstanceID"
-    $runbookInstance = Invoke-RestMethod @runbookInstanceParamSplat
+            Write-Host "Will get runbook instance parameters for runbook instance ID: $runbookInstanceID"
+            $runbookInstance = Invoke-RestMethod @runbookInstanceParamSplat
+            # Break out of the retry loop on success
+            break
+        }
+        catch 
+        {
+            $attempt++
+            if ($attempt -ge $RetryCount)
+            {
+                Write-Host "Attempt $attempt of $RetryCount failed to get runbook instance parameters. Will no longer retry."
+                throw $_
+            }
+
+            Write-Host "Attempt $attempt of $RetryCount to get runbook instance parameters failed. Will retry in $RetryDelaySec seconds."
+            Write-Host $_
+            Start-Sleep -Seconds $RetryDelaySec
+        }
+    }
+    until ($attempt -ge $RetryCount)
 
     $runbookOutParams = @{}
     Write-Host "Getting runbook out parameter values"
@@ -528,7 +670,7 @@ else
 Write-Host "Will try to get RunbookID for runbook: `"$($RunbookName)`""
 try 
 {
-    [array]$runbooksList = Get-OrchestratorRunbookByName -ScorchURI $ScorchURI -RunbookName $RunbookName -credential $credential
+    [array]$runbooksList = Get-OrchestratorRunbookByName -ScorchURI $ScorchURI -RunbookName $RunbookName -credential $credential -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
     Write-Host "Runbook list returned with $($runbooksList.count) runbooks"
 }
 catch 
@@ -543,26 +685,15 @@ if ($runbooksList.count -eq 0)
     Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
     Exit 1 # to let a task sequence step fail
 }
+elseif($runbooksList.count -gt 1)
+{
+    Write-Host "Found $($runbooksList.count) runbooks with same name. The name must be unique. Will stop script." 
+    Exit 1 # to let a task sequence step fail
+}
 else 
 {
-    Write-Host "Will test if we have just one runbook with the name: `"$($RunbookName)`""
-    Write-Host "Found $($runbooksList.count) runbooks with the name: `"$($RunbookName)`""
-    if ($runbooksList.count -eq 0)
-    {
-        Write-Host "No runbook found with name: `"$($RunbookName)`"."
-        Write-Host "Either the runbook does not exist or the user does not have read permissions. Will stop script."
-        Exit 1 # to let a task sequence step fail
-    }    
-    elseif($runbooksList.count -gt 1)
-    {
-        Write-Host "Found $($runbooksList.count) runbooks with same name. The name must be unique. Will stop script." 
-        Exit 1 # to let a task sequence step fail
-    }
-    else 
-    {
-        $runbookID = $runbooksList.ID
-        Write-Host "Found runbook: `"$($RunbookName)`" with ID: `"$($runbookID)`""
-    }
+    $runbookID = $runbooksList.ID
+    Write-Host "Found runbook: `"$($RunbookName)`" with ID: `"$($runbookID)`""
 }
 #endregion
 
@@ -574,11 +705,11 @@ try
 
     if($RunbookParams)
     {
-        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential -RunbookParams $RunbookParams
+        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential -RunbookParams $RunbookParams -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
     }
     else 
     {
-        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential
+        $runbookJob = Invoke-OrchestratorRunbookJob -ScorchURI $ScorchURI -RunbookID $runbookID -Credential $credential -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
     }    
 
     Write-Host "Runbook job created with ID: $($runbookJob.Id)"
@@ -600,7 +731,7 @@ Write-Host "Runbook job created"
 #endregion
 
 
-#region Wait for the runbook resul
+#region Wait for the runbook result
 Write-Host "Waiting for runbook job result"
 # start timer and loop until the runbook job is completed or the maximum wait time is reached
 
@@ -614,7 +745,7 @@ do
     {
         Write-Host "Will get runbook job status after 5 seconds"
         Start-Sleep -Seconds 5 # Give the orchestrator web service some time to start the runbook job
-        $runbookJobResult = Get-OrchestratorRunbookJobStatus -ScorchURI $ScorchURI -JobID $runbookJob.Id -Credential $credential -MaxJobRuntimeSec $MaxJobRuntimeSec -WaitForCompletion
+        $runbookJobResult = Get-OrchestratorRunbookJobStatus -ScorchURI $ScorchURI -JobID $runbookJob.Id -Credential $credential -MaxJobRuntimeSec $MaxJobRuntimeSec -WaitForCompletion -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
 
         if ($runbookJobResult.RunbookInstanceStatus -inotmatch 'Success')
         {
@@ -642,13 +773,19 @@ until
     ($runbookJobResult.RunbookInstanceStatus -imatch 'Success') -or  ($timeoutTimer.Elapsed.TotalSeconds -ge $timeoutValue)
 )
 $timeoutTimer.Stop()
+
+if ($runbookJobResult.RunbookInstanceStatus -inotmatch 'Success')
+{
+    Write-Host "Runbook job did not complete successfully within the allowed time. Final status: $($runbookJobResult.RunbookInstanceStatus)"
+    Exit 1 # to let a task sequence step fail
+}
 #endregion
 
 # region Get runbook output parameters
 $runbookInstanceID = $runbookJobResult.RunbookInstanceID
 if ($OutputAllOutParameters)
 {
-    $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential
+    $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential -RunbookOutParamType $RunbookOutParamType -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
     return $runbookoutParams
 }
 elseif ($RunbookOutParamsList.count -gt 0)
@@ -656,7 +793,7 @@ elseif ($RunbookOutParamsList.count -gt 0)
     Write-Host "Will try to get runbook output parameters"
     try 
     {
-        $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential -RunbookOutParamsList $RunbookOutParamsList -RunbookOutParamType $RunbookOutParamType
+        $runbookoutParams = Get-OrchestratorRunbookOutputParameters -ScorchURI $ScorchURI -runbookInstanceID $runbookInstanceID -credential $credential -RunbookOutParamsList $RunbookOutParamsList -RunbookOutParamType $RunbookOutParamType -RetryCount $RetryCount -RetryDelaySec $RetryDelaySec
         return $runbookoutParams
     }
     catch 
