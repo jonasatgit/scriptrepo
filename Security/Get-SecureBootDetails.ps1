@@ -241,7 +241,7 @@ if($customWMIClass)
 }
 else
 {
-    New-SecureBootStatusWmiClass -RootPath $WMIRootPath -ClassName $WMISecureBootStatusClassName #-ErrorAction SilentlyContinue
+    $null = New-SecureBootStatusWmiClass -RootPath $WMIRootPath -ClassName $WMISecureBootStatusClassName #-ErrorAction SilentlyContinue
 }
 
 # Additional classes for events
@@ -252,7 +252,7 @@ if($customWMIClass)
 }
 else
 {
-    New-SecureBootEventsWmiClass -RootPath $WMIRootPath -ClassName $WMISecureBootEventsClassName #-ErrorAction SilentlyContinue
+    $null = New-SecureBootEventsWmiClass -RootPath $WMIRootPath -ClassName $WMISecureBootEventsClassName #-ErrorAction SilentlyContinue
 }
 
 
