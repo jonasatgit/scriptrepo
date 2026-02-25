@@ -387,4 +387,5 @@ else
     }
 }
 
+Write-Output "Script done"
 #endregion
