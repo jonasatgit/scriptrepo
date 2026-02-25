@@ -82,6 +82,10 @@
     That means that the script will read the credentials from task sequence variables.
     If not set, the script will prompt for credentials.
 
+.PARAMETER UseDefaultCredentials
+    A switch to use default credentials of the running user context to connect to the Orchestrator web service. 
+    If not set, the script will prompt for credentials or read credentials from task sequence variables if TaskSequenceMode is set.
+
 .PARAMETER UserName
     If not specified, the script will prompt for a username.
     If set, the script will use the given username to prompt for the password.
@@ -176,6 +180,10 @@ param(
     [Parameter(Mandatory = $false)]
     # A switch to read the credentials from task sequence variables. If not set, the script will prompt for credentials.
     [switch]$TaskSequenceMode, 
+
+    [Parameter(Mandatory = $false)]
+    # A switch to use default credentials of the running user context to connect to the Orchestrator web service. If not set, the script will prompt for credentials or read credentials from task sequence variables if TaskSequenceMode is set.
+    [switch]$UseDefaultCredentials,
     
     [Parameter(Mandatory = $false)]
     # If not specified, the script will prompt for a username
@@ -265,7 +273,7 @@ Function Get-OrchestratorRunbookByName
         [Parameter(Mandatory = $true)]
         [string]$RunbookName,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [PSCredential]$credential,
 
         [Parameter(Mandatory = $false)]
@@ -285,9 +293,19 @@ Function Get-OrchestratorRunbookByName
             $parmSplat = @{
                 Uri = '{0}/api/Runbooks?$filter=name eq ''{1}''' -f $ScorchURI, $RunbookName
                 Method = 'Get'
-                Credential = $credential
                 ErrorAction = 'Stop'
             }
+
+            # add credential if provided. If not provided, the function will try to connect to the Orchestrator web service with deafault credentials of the running user context. 
+            if ($credential)
+            {
+                $parmSplat.Credential = $credential
+            }
+            else 
+            {
+                $parmSplat.UseDefaultCredentials = $true
+            }
+
             $runbooksList = Invoke-RestMethod @parmSplat    
             return $runbooksList.value
         }
@@ -330,7 +348,7 @@ Function Invoke-OrchestratorRunbookJob
         [Parameter(Mandatory = $true)]
         [string]$RunbookID,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [PSCredential]$Credential,
 
         [Parameter(Mandatory = $false)]
@@ -378,8 +396,17 @@ Function Invoke-OrchestratorRunbookJob
                 Body = ($body | ConvertTo-Json -Depth 10)
                 Method = 'Post'
                 ContentType = 'application/json'
-                Credential = $credential
                 ErrorAction = 'Stop'
+            }
+
+            # add credential if provided. If not provided, the function will try to connect to the Orchestrator web service with deafault credentials of the running user context. 
+            if ($credential)
+            {
+                $invokeRunbookParamSplat.Credential = $credential
+            }
+            else 
+            {
+                $invokeRunbookParamSplat.UseDefaultCredentials = $true
             }
 
             $runbookJobResult = Invoke-RestMethod @invokeRunbookParamSplat
@@ -414,7 +441,7 @@ Function Get-OrchestratorRunbookJobStatus
         [Parameter(Mandatory = $true)]
         [string]$JobID,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [PSCredential]$Credential,
 
         [Parameter(Mandatory = $false)]
@@ -448,8 +475,17 @@ Function Get-OrchestratorRunbookJobStatus
             Uri = '{0}/api/Jobs/{1}?&$expand=RunbookInstances' -f $ScorchURI, $jobID
             Method = 'Get' 
             ContentType = 'application/json'
-            Credential = $Credential
             ErrorAction = 'Stop'
+        }
+
+        # add credential if provided. If not provided, the function will try to connect to the Orchestrator web service with deafault credentials of the running user context. 
+        if ($credential)
+        {
+            $runbookJobParamSplat.Credential = $credential
+        }
+        else 
+        {
+            $runbookJobParamSplat.UseDefaultCredentials = $true
         }
 
         try 
@@ -521,7 +557,7 @@ Function Get-OrchestratorRunbookOutputParameters
         [Parameter(Mandatory = $true)]
         [string]$runbookInstanceID,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [PSCredential]$credential,
 
         [Parameter(Mandatory = $false)]
@@ -550,8 +586,17 @@ Function Get-OrchestratorRunbookOutputParameters
                 Uri = '{0}/api/RunbookInstances/{1}?&$expand=RunBookInstanceParameters' -f $ScorchURI, $runbookInstanceID
                 Method = 'Get' 
                 ContentType = 'application/json'
-                Credential = $credential
                 ErrorAction = 'Stop'
+            }
+
+            # add credential if provided. If not provided, the function will try to connect to the Orchestrator web service with deafault credentials of the running user context. 
+            if ($credential)
+            {
+                $runbookInstanceParamSplat.Credential = $credential
+            }
+            else 
+            {
+                $runbookInstanceParamSplat.UseDefaultCredentials = $true
             }
 
             Write-Host "Will get runbook instance parameters for runbook instance ID: $runbookInstanceID"
@@ -639,13 +684,28 @@ if (-NOT $TaskSequenceMode)
 {
     Write-Host "Running in manual mode. Will prompt for credentials."
     Write-host "Add parameter -TaskSequenceMode if the script needs to run in a ConfigMgr task sequence"
-    if ([string]::IsNullOrEmpty($UserName))
+
+    If ($UseDefaultCredentials)
     {
-        $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
+        Write-Host "Using default credentials of the running user context to connect to the Orchestrator web service"
+        $credential = $null
     }
     else 
     {
-        $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $UserName
+        if ([string]::IsNullOrEmpty($UserName))
+        {
+            $credential = Get-Credential -Message 'Please enter credentials to start a runbook'
+        }
+        else 
+        {
+            $credential = Get-Credential -Message 'Please enter the password to start a runbook' -UserName $UserName
+        }
+
+        if ($null -eq $credential)
+        {
+            Write-host "No credentials provided. Will stop script."
+            Exit 1 
+        }
     }
 }
 else 
