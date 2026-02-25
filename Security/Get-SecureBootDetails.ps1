@@ -363,16 +363,28 @@ $allEventIds = @(1032, 1033, 1034, 1036, 1037, 1043, 1044, 1045, 1795, 1796, 179
 
 [array]$eventList = @(Get-WinEvent -FilterHashtable @{LogName='System'; ID=$allEventIds} -MaxEvents 100 -ErrorAction Stop)
 
-$eventList | Group-Object -Property Id | Select-Object Name, Count | ForEach-Object {
-
-    $latestEvent = $eventList | Select-Object -First 1
-
-    $classEntry = @{KeyName="SecureBootEvent_$($_.Name)";
-        EventID = $_.Name;
-        EventCount = $_.Count;
-        EventLatest = if($latestEvent.Id -eq $_.Name) { 1 } else { 0 }
+if ($eventList.count -eq 0)
+{
+    $classEntry = @{KeyName="SecureBootEvent_0";
+        EventID = 0;
+        EventCount = 0;
+        EventLatest = 0
     }
     Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMISecureBootEventsClassName)" -Arguments $classEntry | Out-Null
+}
+else 
+{
+    $eventList | Group-Object -Property Id | Select-Object Name, Count | ForEach-Object {
+
+        $latestEvent = $eventList | Select-Object -First 1
+
+        $classEntry = @{KeyName="SecureBootEvent_$($_.Name)";
+            EventID = $_.Name;
+            EventCount = $_.Count;
+            EventLatest = if($latestEvent.Id -eq $_.Name) { 1 } else { 0 }
+        }
+        Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMISecureBootEventsClassName)" -Arguments $classEntry | Out-Null
+    }
 }
 
 #endregion
