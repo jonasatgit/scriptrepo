@@ -784,28 +784,48 @@ $collectionList | Group-Object -Property LimitToCollectionID | ForEach-Object {
     }
 }
 
-Write-Verbose "Add each collection item to treeview"
+Write-Verbose "Add each collection item to treeview (iterative stack-based)"
 $script:progressCounter = 0
+$totalCollections = $global:collectionList.Count
 $rootCollections = $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name
+
+# Use a stack to avoid recursive function call overhead
+$stack = [System.Collections.Generic.Stack[PSCustomObject]]::new()
+
 foreach($collection in $rootCollections)
 {
-
     $item = New-Object System.Windows.Controls.TreeViewItem
     $item.Header = $collection.Name
     $item.Tag = $collection
 
-    # Lets now find sub-members
     $subMembers = $childrenHashTable[($collection.CollectionID)]
-
-    $script:progressCounter++
-    Write-Progress -Activity "Building collection tree" -Status "Processing: $($collection.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $global:collectionList.Count * 100), 100))
-
     if ($subMembers)
     {
-        Get-TreeViewSubmember -parent $item -sub $subMembers
+        $stack.Push([PSCustomObject]@{ Parent = $item; Children = $subMembers })
     }
     [void]$treeView.Items.Add($item)
+}
 
+# Process all children iteratively instead of recursively
+while ($stack.Count -gt 0)
+{
+    $current = $stack.Pop()
+    foreach ($subMember in $current.Children)
+    {
+        $script:progressCounter++
+        # Throttle Write-Progress to every 50th item to avoid overhead
+        if ($script:progressCounter % 50 -eq 0)
+        {
+            Write-Progress -Activity "Building collection tree" -Status "Processing: $($subMember.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $totalCollections * 100), 100))
+        }
+        [void]$current.Parent.Items.Add(($collectionItems[($subMember.CollectionID)]))
+
+        $grandChildren = $childrenHashTable[($subMember.CollectionID)]
+        if ($grandChildren)
+        {
+            $stack.Push([PSCustomObject]@{ Parent = $collectionItems[($subMember.CollectionID)]; Children = $grandChildren })
+        }
+    }
 }
 Write-Progress -Activity "Building collection tree" -Completed
 
