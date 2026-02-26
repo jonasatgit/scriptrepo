@@ -16,11 +16,14 @@
 <#
 .Synopsis
    Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
+
 .DESCRIPTION
    Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
    The code was written ~40% by Bing/GPT, GitHub CoPilot and ~60% by a human
+
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
+
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
@@ -28,11 +31,11 @@
 [CmdletBinding()]
 param
 (
-    $siteCode = 'P02',
-    $providerServer = 'CM02.contoso.local'
+    $siteCode,
+    $providerServer
 )
 
-$version = 'v0.3'
+$version = 'v0.4'
 
 #region Get-TreeViewSubmember
 <#
@@ -42,8 +45,6 @@ $version = 'v0.3'
    Get-TreeViewSubmember
 .EXAMPLE
    Get-TreeViewSubmember -parent [System.Windows.Controls.TreeViewItem] -sub [items of [System.Windows.Controls.TreeViewItem]]
-.EXAMPLE
-   Another example of how to use this cmdlet
 #>
 function Get-TreeViewSubmember
 {
@@ -55,6 +56,8 @@ function Get-TreeViewSubmember
     Write-Verbose "work on parent: $($parent.tag.Name)"
     foreach($subMember in ($sub | Sort-Object -Property Name))
     {
+        $script:progressCounter++
+        Write-Progress -Activity "Building collection tree" -Status "Processing: $($subMember.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $global:collectionList.Count * 100), 100))
         Write-Verbose "work on sub: $($subMember.Name)"
         [void]$parent.Items.Add(($collectionItems[($subMember.CollectionID)]))
 
@@ -773,6 +776,7 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
 }
 
 Write-Verbose "Add each collection item to treeview"
+$script:progressCounter = 0
 foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name)
 {
 
@@ -783,6 +787,9 @@ foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitTo
     # Lets now find sub-members
     $subMembers = $collectionList.where({$_.LimitToCollectionID -eq $collection.CollectionID}) | Sort-Object -Property Name
 
+    $script:progressCounter++
+    Write-Progress -Activity "Building collection tree" -Status "Processing: $($collection.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $global:collectionList.Count * 100), 100))
+
     if ($subMembers)
     {
         Get-TreeViewSubmember -parent $item -sub $subMembers
@@ -790,6 +797,7 @@ foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitTo
     [void]$treeView.Items.Add($item)
 
 }
+Write-Progress -Activity "Building collection tree" -Completed
 
 
 # Add the main grid to the window
