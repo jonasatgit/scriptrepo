@@ -262,21 +262,21 @@ catch
     Exit
 }
 
-Write-Verbose "Get all collections"
+Write-Host "Get all collections" -ForegroundColor Green
 $collectionHashTable = @{}
 [array]$global:collectionList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "Select * from SMS_Collection"
 $global:collectionList | ForEach-Object {
     $collectionHashTable.add($_.CollectionID, $_.Name)
 }
 
-Write-Verbose "Get all client settings deployments"
+Write-Host "Get all client settings deployments" -ForegroundColor Green
 $clientSettingsHashTable = @{}
 [array]$clientSettings = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT ClientSettingsID, CollectionID FROM SMS_ClientSettingsAssignment"
 $clientSettings | Group-Object -Property CollectionID | ForEach-Object {
     [void]$clientSettingsHashTable.add($_.Name, $_.Count)
 }
 
-Write-Verbose "Get all deployments"
+Write-Host "Get all deployments" -ForegroundColor Green
 $collectionDeploymentsHashTable = @{}
 [array]$global:collectionDeployments = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "SELECT SoftwareName, DeploymentID, CollectionID FROM SMS_DeploymentSummary"
 $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
@@ -284,7 +284,7 @@ $collectionDeployments | Group-Object -Property CollectionID | ForEach-Object {
 }
 
 
-Write-Verbose "Get all ConfigMgr admins"
+Write-Host "Get all ConfigMgr admins" -ForegroundColor Green
 [array]$adminList = Get-CimInstance -CimSession $cimSession -Namespace "root\sms\site_$siteCode" -Query "Select * from SMS_Admin"
 
 # Load lazy properties to be able to access permissions
@@ -317,7 +317,7 @@ foreach($groupItem in $adminPermissionListGrouped)
 
 
 
-Write-Verbose "Get all included or excluded collections"
+Write-Host "Get all included or excluded collections" -ForegroundColor Green
 # Get all include collection rules
 $includeCollectionHashTable = @{}
 $query = "Select * from SMS_CollectionDependencies where RelationshipType = 2"
@@ -785,8 +785,6 @@ $collectionList | Group-Object -Property LimitToCollectionID | ForEach-Object {
 }
 
 Write-Verbose "Add each collection item to treeview (iterative stack-based)"
-$script:progressCounter = 0
-$totalCollections = $global:collectionList.Count
 $rootCollections = $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name
 
 # Use a stack to avoid recursive function call overhead
@@ -812,12 +810,6 @@ while ($stack.Count -gt 0)
     $current = $stack.Pop()
     foreach ($subMember in $current.Children)
     {
-        $script:progressCounter++
-        # Throttle Write-Progress to every 50th item to avoid overhead
-        if ($script:progressCounter % 50 -eq 0)
-        {
-            Write-Progress -Activity "Building collection tree" -Status "Processing: $($subMember.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $totalCollections * 100), 100))
-        }
         [void]$current.Parent.Items.Add(($collectionItems[($subMember.CollectionID)]))
 
         $grandChildren = $childrenHashTable[($subMember.CollectionID)]
@@ -827,7 +819,6 @@ while ($stack.Count -gt 0)
         }
     }
 }
-Write-Progress -Activity "Building collection tree" -Completed
 
 
 # Add the main grid to the window
