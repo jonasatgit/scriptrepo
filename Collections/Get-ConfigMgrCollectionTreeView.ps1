@@ -54,14 +54,14 @@ function Get-TreeViewSubmember
         $sub
     )
     Write-Verbose "work on parent: $($parent.tag.Name)"
-    foreach($subMember in ($sub | Sort-Object -Property Name))
+    foreach($subMember in $sub)
     {
         $script:progressCounter++
         Write-Progress -Activity "Building collection tree" -Status "Processing: $($subMember.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $global:collectionList.Count * 100), 100))
         Write-Verbose "work on sub: $($subMember.Name)"
         [void]$parent.Items.Add(($collectionItems[($subMember.CollectionID)]))
 
-        $subMembers = $collectionList.where({$_.LimitToCollectionID -eq $subMember.CollectionID}) | Sort-Object -Property Name
+        $subMembers = $childrenHashTable[($subMember.CollectionID)]
 
         if ($subMembers)
         {
@@ -775,9 +775,19 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
   
 }
 
+Write-Verbose "Build children lookup hashtable for fast tree building"
+$childrenHashTable = @{}
+$collectionList | Group-Object -Property LimitToCollectionID | ForEach-Object {
+    if (-NOT([string]::IsNullOrEmpty($_.Name)))
+    {
+        $childrenHashTable[$_.Name] = @($_.Group | Sort-Object -Property Name)
+    }
+}
+
 Write-Verbose "Add each collection item to treeview"
 $script:progressCounter = 0
-foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name)
+$rootCollections = $collectionList.where({[string]::IsNullOrEmpty($_.LimitToCollectionID)}) | Sort-Object -Property Name
+foreach($collection in $rootCollections)
 {
 
     $item = New-Object System.Windows.Controls.TreeViewItem
@@ -785,7 +795,7 @@ foreach($collection in $collectionList.where({[string]::IsNullOrEmpty($_.LimitTo
     $item.Tag = $collection
 
     # Lets now find sub-members
-    $subMembers = $collectionList.where({$_.LimitToCollectionID -eq $collection.CollectionID}) | Sort-Object -Property Name
+    $subMembers = $childrenHashTable[($collection.CollectionID)]
 
     $script:progressCounter++
     Write-Progress -Activity "Building collection tree" -Status "Processing: $($collection.Name)" -PercentComplete ([math]::Min(($script:progressCounter / $global:collectionList.Count * 100), 100))
