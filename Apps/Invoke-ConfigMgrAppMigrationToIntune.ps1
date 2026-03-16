@@ -1542,38 +1542,68 @@ if ($Step1GetConfigMgrAppInfo -or $RunAllActions)
                     $Matches = $null
                     if ($dtInstallCommandLine -match "powershell" -and $dtInstallCommandLine -match "\.ps1") 
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.ps1)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.ps1)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.ps1)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.exe" -and $dtInstallCommandLine -notmatch "msiexec\.exe" -and $dtInstallCommandLine -notmatch "cscript\.exe" -and $dtInstallCommandLine -notmatch "wscript\.exe")
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.exe)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.exe)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.exe)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.msi") 
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.msi)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.msi)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.msi)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.vbs") 
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.vbs)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.vbs)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.vbs)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.cmd") 
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.cmd)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.cmd)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.cmd)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     elseif ($dtInstallCommandLine -match "\.bat") 
                     {
-                        $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.bat)"
-                        $intuneWinAppUtilSetupFile = $Matches[1]
+                        # Try quoted filename first to handle spaces in filenames
+                        if ($dtInstallCommandLine -match '[''"]([^''"]*\.bat)[''"]') {
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        } else {
+                            $null = $dtInstallCommandLine -match "(?:.*[\\|\s|`"|'])?(.*\.bat)"
+                            $intuneWinAppUtilSetupFile = $Matches[1]
+                        }
                         $Matches = $null
                     }
                     else 
