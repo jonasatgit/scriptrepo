@@ -33,6 +33,12 @@ Script to create Intune Win32 application packages and upload them to a storage 
 .PARAMETER TestStorageAccountFolder
     Switch to test the storage account folder existance. (Important: Will also create the folder if it does not exist)
 
+.PARAMETER FileShareUrl
+    The URL of the Azure File Share folder to copy from (e.g., https://mystorageaccount.file.core.windows.net/myshare/myfolder).
+
+.PARAMETER LocalDownloadPath
+    The local path where the content from the storage account should be downloaded to be able to test the application installation from the local path. (e.g., C:\Temp\AppTestDownload)
+
 #>
 [CmdletBinding()]
 param
@@ -41,7 +47,10 @@ param
     [string]$TemplateFolderName,
     [string]$AppsToProcessFile,
     [string]$AppStorageAccountName,
-    [switch]$TestStorageAccountFolder
+    [switch]$TestStorageAccountFolder,
+    [string]$FileShareUrl,
+    [string]$LocalDownloadPath='C:\Temp\AppTestDownload',
+    $CopyAppsFromFileShare
 )
 
 
@@ -246,6 +255,86 @@ foreach($app in $appMetadata)
     {
         Write-Warning 'Copy AppState.json failed.'
         Exit 1
+    }
+
+    if(($CopyAppsFromFileShare -eq $true) -or ($CopyAppsFromFileShare -ieq 'true'))
+    {
+        # copy content from file share to blob storage if FileShareUrl parameter is provided
+        if (-NOT ([string]::IsNullOrEmpty($FileShareUrl)))
+        {
+            Write-Host "Copying content from file share to blob storage as FileShareUrl parameter is provided..."
+            $source = '{0}/Upload/{1}/*' -f $FileShareUrl, $app.FolderName 
+            $destination = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/App/Files"
+
+            $result = Copy-DataFromOrToStorageAccount -Source $source -Destination $destination -TempDirectory $tempDirectory
+            if ($result -ne $true) 
+            {
+                Write-Error "Failed to copy content from file share `"$source`" to storage account `"$destination`"."
+                Exit 1
+            }
+
+            # create a file called "$app.FolderName".txt which contains azcopy command to login and copy the whole app from the storage account
+            $destinationDownloadPath = Join-Path -Path $LocalDownloadPath -ChildPath "$($app.FolderName)"
+            $contentSource = "https://$AppStorageAccountName.blob.core.windows.net/$ContainerName/*"
+
+            # first create temp path to store the txt file in
+            $tempTxtPath = Join-Path -Path $tempDirectory -ChildPath (Get-Date -Format 'yyyyMMddHHmmss')
+            if (-not (Test-Path -Path $tempTxtPath)) 
+            {
+                New-Item -Path $tempTxtPath -ItemType Directory -ErrorAction "Stop" | Out-Null
+                Write-Host "Created temporary folder for azcopy command file: $tempTxtPath"
+            }
+
+            # create a file called uploaded.txt in the file share to indicate that the content has been uploaded to blob storage and can be deleted from the file share
+            $uploadedFilePath = '{0}/Upload/{1}/_Uploaded.txt' -f $FileShareUrl, $app.FolderName
+            $source = "$tempTxtPath\_Uploaded.txt"
+            "$(Get-Date -Format 'yyyyMMdd-HH:mm:ss') Content uploaded to blob storage, file share content can be deleted." | Out-File -FilePath $source -Encoding utf8 -Force -ErrorAction "Stop"
+            # upload the file to the share into the upload folder
+            $destination = $uploadedFilePath
+            $result = Copy-DataFromOrToStorageAccount -Source $source -Destination $destination -TempDirectory $tempDirectory
+            if ($result -ne $true) 
+            {
+                Write-Error "Failed to copy uploaded.txt file from `"$source`" to file share `"$destination`"."
+                Exit 1
+            }
+
+            # create the txt file with the azcopy command to download the content from the storage account to a local path for testing purposes
+            $tempTxtFile = '{0}\{1}.txt' -f $tempTxtPath, $app.FolderName
+            
+            # then output the azcopy login command to the txt file
+            'azcopy login' | Out-File -FilePath $tempTxtFile -Encoding utf8 -Force -ErrorAction "Stop"
+            # then output the azcopy copy command to the txt file
+            $azCopyCommand = "azcopy copy `"$contentSource`" `"$destinationDownloadPath`" --recursive"
+            $azCopyCommand | Out-File -FilePath $tempTxtFile -Encoding utf8 -Append -ErrorAction "Stop"
+
+            Write-Host "Generated azcopy command to download the app content from the storage account to local path: $tempTxtFile"
+
+            # we now need to copy the file to the share into the download folder
+            $source = $tempTxtFile
+            $destination = '{0}/Download/{1}.txt' -f $FileShareUrl, $app.FolderName
+            $result = Copy-DataFromOrToStorageAccount -Source $source -Destination $destination -TempDirectory $tempDirectory
+            if ($result -ne $true)
+            {
+                Write-Error "Failed to copy azcopy command file from `"$source`" to file share `"$destination`"."
+                Exit 1
+            }
+
+            # remove temp azcopy command file
+            if (Test-Path -Path $tempTxtPath)
+            {
+                Remove-Item -Path $tempTxtPath -Recurse -Force -ErrorAction "Stop"
+                Write-Host "Removed temporary folder for azcopy command file: $tempTxtPath"
+            }
+
+        }
+        else 
+        {
+            Write-Warning "FileShareUrl parameter not provided. Skipping copy of content from file share to blob storage."
+        }
+    }
+    else 
+    {
+        Write-Host "Skipping copy of content from file share to blob storage as CopyAppsFromFileShare switch is not set."
     }
 
     # remove temp app folder
