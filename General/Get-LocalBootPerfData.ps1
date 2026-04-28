@@ -138,180 +138,180 @@ function New-CustomWmiClass
     # Boot timings (milliseconds) and times
     $newWMIClass.Properties.Add("BootStartTime", [System.Management.CimType]::DateTime, $false)
     $newWMIClass.Properties["BootStartTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootStartTime"].Qualifiers.Add("Description", "Event 100 BootStartTime")
+    $newWMIClass.Properties["BootStartTime"].Qualifiers.Add("Description", "BootStartTime: time the boot started (firmware/OS loader hand-off), UTC FILETIME")
 
     $newWMIClass.Properties.Add("BootEndTime", [System.Management.CimType]::DateTime, $false)
     $newWMIClass.Properties["BootEndTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootEndTime"].Qualifiers.Add("Description", "Event 100 BootEndTime")
+    $newWMIClass.Properties["BootEndTime"].Qualifiers.Add("Description", "BootEndTime: time boot was considered complete (PostBoot ended, system idle), UTC FILETIME")
 
     $newWMIClass.Properties.Add("BootTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootTime"].Qualifiers.Add("Description", "Event 100 BootTime in milliseconds (total boot time)")
+    $newWMIClass.Properties["BootTime"].Qualifiers.Add("Description", "BootTime (ms): total boot time = MainPathBootTime + BootPostBootTime; end-user perceived time from power-on to idle desktop")
 
     $newWMIClass.Properties.Add("MainPathBootTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["MainPathBootTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["MainPathBootTime"].Qualifiers.Add("Description", "Event 100 MainPathBootTime in milliseconds")
+    $newWMIClass.Properties["MainPathBootTime"].Qualifiers.Add("Description", "MainPathBootTime (ms): visible boot path from OS loader through to desktop being shown to the user")
 
     $newWMIClass.Properties.Add("BootKernelInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootKernelInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootKernelInitTime"].Qualifiers.Add("Description", "Event 100 BootKernelInitTime in milliseconds")
+    $newWMIClass.Properties["BootKernelInitTime"].Qualifiers.Add("Description", "BootKernelInitTime (ms): early kernel initialization (executive, HAL, memory manager) before driver init")
 
     $newWMIClass.Properties.Add("BootDriverInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootDriverInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootDriverInitTime"].Qualifiers.Add("Description", "Event 100 BootDriverInitTime in milliseconds")
+    $newWMIClass.Properties["BootDriverInitTime"].Qualifiers.Add("Description", "BootDriverInitTime (ms): time spent initializing boot/start drivers during kernel init")
 
     $newWMIClass.Properties.Add("BootPostBootTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootPostBootTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootPostBootTime"].Qualifiers.Add("Description", "Event 100 BootPostBootTime in milliseconds")
+    $newWMIClass.Properties["BootPostBootTime"].Qualifiers.Add("Description", "BootPostBootTime (ms): time after the desktop is shown until the system is considered idle; high values usually indicate heavy startup apps")
 
     $newWMIClass.Properties.Add("BootImprovementDelta", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootImprovementDelta"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootImprovementDelta"].Qualifiers.Add("Description", "Event 100 BootImprovementDelta in milliseconds")
+    $newWMIClass.Properties["BootImprovementDelta"].Qualifiers.Add("Description", "BootImprovementDelta (ms): magnitude of improvement vs. baseline when this boot is faster than expected")
 
     $newWMIClass.Properties.Add("BootDegradationDelta", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootDegradationDelta"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootDegradationDelta"].Qualifiers.Add("Description", "Event 100 BootDegradationDelta in milliseconds")
+    $newWMIClass.Properties["BootDegradationDelta"].Qualifiers.Add("Description", "BootDegradationDelta (ms): magnitude of regression vs. baseline when this boot is slower than expected")
 
     $newWMIClass.Properties.Add("BootIsDegradation", [System.Management.CimType]::Boolean, $false)
     $newWMIClass.Properties["BootIsDegradation"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootIsDegradation"].Qualifiers.Add("Description", "Event 100 BootIsDegradation flag")
+    $newWMIClass.Properties["BootIsDegradation"].Qualifiers.Add("Description", "BootIsDegradation: true if this boot is classified as a degradation vs. the device baseline")
 
     $newWMIClass.Properties.Add("BootIsStepDegradation", [System.Management.CimType]::Boolean, $false)
     $newWMIClass.Properties["BootIsStepDegradation"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootIsStepDegradation"].Qualifiers.Add("Description", "Event 100 BootIsStepDegradation flag")
+    $newWMIClass.Properties["BootIsStepDegradation"].Qualifiers.Add("Description", "BootIsStepDegradation: true if degradation is a sudden step change (e.g. after install)")
 
     $newWMIClass.Properties.Add("BootIsGradualDegradation", [System.Management.CimType]::Boolean, $false)
     $newWMIClass.Properties["BootIsGradualDegradation"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootIsGradualDegradation"].Qualifiers.Add("Description", "Event 100 BootIsGradualDegradation flag")
+    $newWMIClass.Properties["BootIsGradualDegradation"].Qualifiers.Add("Description", "BootIsGradualDegradation: true if degradation is a gradual trend over multiple boots")
 
     $newWMIClass.Properties.Add("BootIsRootCauseIdentified", [System.Management.CimType]::Boolean, $false)
     $newWMIClass.Properties["BootIsRootCauseIdentified"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootIsRootCauseIdentified"].Qualifiers.Add("Description", "Event 100 BootIsRootCauseIdentified flag")
+    $newWMIClass.Properties["BootIsRootCauseIdentified"].Qualifiers.Add("Description", "BootIsRootCauseIdentified: true if diagnostics attributed the deviation to specific component(s); see *Bits fields")
 
     $newWMIClass.Properties.Add("BootIsRebootAfterInstall", [System.Management.CimType]::Boolean, $false)
     $newWMIClass.Properties["BootIsRebootAfterInstall"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootIsRebootAfterInstall"].Qualifiers.Add("Description", "Event 100 BootIsRebootAfterInstall flag")
+    $newWMIClass.Properties["BootIsRebootAfterInstall"].Qualifiers.Add("Description", "BootIsRebootAfterInstall: true if boot followed a Windows Update / driver install requiring post-install work (causes longer boot)")
 
     $newWMIClass.Properties.Add("BootRootCauseStepImprovementBits", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootRootCauseStepImprovementBits"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootRootCauseStepImprovementBits"].Qualifiers.Add("Description", "Event 100 BootRootCauseStepImprovementBits")
+    $newWMIClass.Properties["BootRootCauseStepImprovementBits"].Qualifiers.Add("Description", "BootRootCauseStepImprovementBits: opaque bitmask identifying components that caused a sudden (step) boot-time improvement")
 
     $newWMIClass.Properties.Add("BootRootCauseGradualImprovementBits", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootRootCauseGradualImprovementBits"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootRootCauseGradualImprovementBits"].Qualifiers.Add("Description", "Event 100 BootRootCauseGradualImprovementBits")
+    $newWMIClass.Properties["BootRootCauseGradualImprovementBits"].Qualifiers.Add("Description", "BootRootCauseGradualImprovementBits: opaque bitmask of components contributing to a gradual boot-time improvement trend")
 
     $newWMIClass.Properties.Add("BootRootCauseStepDegradationBits", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootRootCauseStepDegradationBits"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootRootCauseStepDegradationBits"].Qualifiers.Add("Description", "Event 100 BootRootCauseStepDegradationBits")
+    $newWMIClass.Properties["BootRootCauseStepDegradationBits"].Qualifiers.Add("Description", "BootRootCauseStepDegradationBits: opaque bitmask identifying components that caused a sudden (step) boot-time regression")
 
     $newWMIClass.Properties.Add("BootRootCauseGradualDegradationBits", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootRootCauseGradualDegradationBits"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootRootCauseGradualDegradationBits"].Qualifiers.Add("Description", "Event 100 BootRootCauseGradualDegradationBits")
+    $newWMIClass.Properties["BootRootCauseGradualDegradationBits"].Qualifiers.Add("Description", "BootRootCauseGradualDegradationBits: opaque bitmask of components contributing to a gradual boot-time regression trend")
 
     # Detailed boot timings and counters (Event 100 extended fields)
     $newWMIClass.Properties.Add("BootTsVersion", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootTsVersion"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootTsVersion"].Qualifiers.Add("Description", "Event 100 BootTsVersion")
+    $newWMIClass.Properties["BootTsVersion"].Qualifiers.Add("Description", "BootTsVersion: schema/telemetry version of the boot timing record; indicates which set of fields is present")
 
     $newWMIClass.Properties.Add("SystemBootInstance", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["SystemBootInstance"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["SystemBootInstance"].Qualifiers.Add("Description", "Event 100 SystemBootInstance counter")
+    $newWMIClass.Properties["SystemBootInstance"].Qualifiers.Add("Description", "SystemBootInstance: monotonic counter of system boots since the OS was installed")
 
     $newWMIClass.Properties.Add("UserBootInstance", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["UserBootInstance"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["UserBootInstance"].Qualifiers.Add("Description", "Event 100 UserBootInstance counter")
+    $newWMIClass.Properties["UserBootInstance"].Qualifiers.Add("Description", "UserBootInstance: monotonic counter of interactive (user-facing) boots; differs from SystemBootInstance when no user signs in")
 
     $newWMIClass.Properties.Add("BootDevicesInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootDevicesInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootDevicesInitTime"].Qualifiers.Add("Description", "Event 100 BootDevicesInitTime in milliseconds")
+    $newWMIClass.Properties["BootDevicesInitTime"].Qualifiers.Add("Description", "BootDevicesInitTime (ms): time spent enumerating and initializing PnP devices during boot")
 
     $newWMIClass.Properties.Add("BootPrefetchInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootPrefetchInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootPrefetchInitTime"].Qualifiers.Add("Description", "Event 100 BootPrefetchInitTime in milliseconds")
+    $newWMIClass.Properties["BootPrefetchInitTime"].Qualifiers.Add("Description", "BootPrefetchInitTime (ms): time spent processing the boot prefetcher (reading prefetch trace files)")
 
     $newWMIClass.Properties.Add("BootPrefetchBytes", [System.Management.CimType]::UInt64, $false)
     $newWMIClass.Properties["BootPrefetchBytes"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootPrefetchBytes"].Qualifiers.Add("Description", "Event 100 BootPrefetchBytes")
+    $newWMIClass.Properties["BootPrefetchBytes"].Qualifiers.Add("Description", "BootPrefetchBytes: number of bytes read by the boot prefetcher")
 
     $newWMIClass.Properties.Add("BootAutoChkTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootAutoChkTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootAutoChkTime"].Qualifiers.Add("Description", "Event 100 BootAutoChkTime in milliseconds")
+    $newWMIClass.Properties["BootAutoChkTime"].Qualifiers.Add("Description", "BootAutoChkTime (ms): time spent running autochk/chkdsk during boot (usually 0)")
 
     $newWMIClass.Properties.Add("BootSmssInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootSmssInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootSmssInitTime"].Qualifiers.Add("Description", "Event 100 BootSmssInitTime in milliseconds")
+    $newWMIClass.Properties["BootSmssInitTime"].Qualifiers.Add("Description", "BootSmssInitTime (ms): time spent in the Session Manager (smss.exe) phase")
 
     $newWMIClass.Properties.Add("BootCriticalServicesInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootCriticalServicesInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootCriticalServicesInitTime"].Qualifiers.Add("Description", "Event 100 BootCriticalServicesInitTime in milliseconds")
+    $newWMIClass.Properties["BootCriticalServicesInitTime"].Qualifiers.Add("Description", "BootCriticalServicesInitTime (ms): time to start critical/auto-start services that block the boot path")
 
     $newWMIClass.Properties.Add("BootUserProfileProcessingTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootUserProfileProcessingTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootUserProfileProcessingTime"].Qualifiers.Add("Description", "Event 100 BootUserProfileProcessingTime in milliseconds")
+    $newWMIClass.Properties["BootUserProfileProcessingTime"].Qualifiers.Add("Description", "BootUserProfileProcessingTime (ms): time to load/apply the user profile (registry hive load, GP, etc.) during sign-in")
 
     $newWMIClass.Properties.Add("BootMachineProfileProcessingTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootMachineProfileProcessingTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootMachineProfileProcessingTime"].Qualifiers.Add("Description", "Event 100 BootMachineProfileProcessingTime in milliseconds")
+    $newWMIClass.Properties["BootMachineProfileProcessingTime"].Qualifiers.Add("Description", "BootMachineProfileProcessingTime (ms): time to apply machine policy / machine profile components during boot")
 
     $newWMIClass.Properties.Add("BootExplorerInitTime", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootExplorerInitTime"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootExplorerInitTime"].Qualifiers.Add("Description", "Event 100 BootExplorerInitTime in milliseconds")
+    $newWMIClass.Properties["BootExplorerInitTime"].Qualifiers.Add("Description", "BootExplorerInitTime (ms): from explorer.exe start until the shell is ready (desktop visible / responsive)")
 
     $newWMIClass.Properties.Add("BootNumStartupApps", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootNumStartupApps"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootNumStartupApps"].Qualifiers.Add("Description", "Event 100 BootNumStartupApps count")
+    $newWMIClass.Properties["BootNumStartupApps"].Qualifiers.Add("Description", "BootNumStartupApps: count of startup apps launched (Run keys, Startup folder, AtLogon scheduled tasks, etc.)")
 
     $newWMIClass.Properties.Add("OSLoaderDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["OSLoaderDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["OSLoaderDuration"].Qualifiers.Add("Description", "Event 100 OSLoaderDuration in milliseconds")
+    $newWMIClass.Properties["OSLoaderDuration"].Qualifiers.Add("Description", "OSLoaderDuration (ms): duration in the Windows Boot Loader phase (winload.exe) before kernel init")
 
     $newWMIClass.Properties.Add("BootPNPInitStartTimeMS", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootPNPInitStartTimeMS"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootPNPInitStartTimeMS"].Qualifiers.Add("Description", "Event 100 BootPNPInitStartTimeMS in milliseconds")
+    $newWMIClass.Properties["BootPNPInitStartTimeMS"].Qualifiers.Add("Description", "BootPNPInitStartTimeMS (ms): offset from boot start at which boot-time PnP initialization began")
 
     $newWMIClass.Properties.Add("BootPNPInitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["BootPNPInitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["BootPNPInitDuration"].Qualifiers.Add("Description", "Event 100 BootPNPInitDuration in milliseconds")
+    $newWMIClass.Properties["BootPNPInitDuration"].Qualifiers.Add("Description", "BootPNPInitDuration (ms): duration of the boot-phase PnP initialization")
 
     $newWMIClass.Properties.Add("OtherKernelInitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["OtherKernelInitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["OtherKernelInitDuration"].Qualifiers.Add("Description", "Event 100 OtherKernelInitDuration in milliseconds")
+    $newWMIClass.Properties["OtherKernelInitDuration"].Qualifiers.Add("Description", "OtherKernelInitDuration (ms): remainder of kernel-init time not accounted for by the explicit kernel sub-phases")
 
     $newWMIClass.Properties.Add("SystemPNPInitStartTimeMS", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["SystemPNPInitStartTimeMS"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["SystemPNPInitStartTimeMS"].Qualifiers.Add("Description", "Event 100 SystemPNPInitStartTimeMS in milliseconds")
+    $newWMIClass.Properties["SystemPNPInitStartTimeMS"].Qualifiers.Add("Description", "SystemPNPInitStartTimeMS (ms): offset at which the system-phase PnP init started (post kernel-init)")
 
     $newWMIClass.Properties.Add("SystemPNPInitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["SystemPNPInitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["SystemPNPInitDuration"].Qualifiers.Add("Description", "Event 100 SystemPNPInitDuration in milliseconds")
+    $newWMIClass.Properties["SystemPNPInitDuration"].Qualifiers.Add("Description", "SystemPNPInitDuration (ms): duration of the system-phase PnP init")
 
     $newWMIClass.Properties.Add("SessionInitStartTimeMS", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["SessionInitStartTimeMS"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["SessionInitStartTimeMS"].Qualifiers.Add("Description", "Event 100 SessionInitStartTimeMS in milliseconds")
+    $newWMIClass.Properties["SessionInitStartTimeMS"].Qualifiers.Add("Description", "SessionInitStartTimeMS (ms): offset at which session initialization (smss creating sessions) started")
 
     $newWMIClass.Properties.Add("Session0InitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["Session0InitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["Session0InitDuration"].Qualifiers.Add("Description", "Event 100 Session0InitDuration in milliseconds")
+    $newWMIClass.Properties["Session0InitDuration"].Qualifiers.Add("Description", "Session0InitDuration (ms): time spent initializing Session 0 (services session)")
 
     $newWMIClass.Properties.Add("Session1InitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["Session1InitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["Session1InitDuration"].Qualifiers.Add("Description", "Event 100 Session1InitDuration in milliseconds")
+    $newWMIClass.Properties["Session1InitDuration"].Qualifiers.Add("Description", "Session1InitDuration (ms): time spent initializing Session 1 (first interactive session)")
 
     $newWMIClass.Properties.Add("SessionInitOtherDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["SessionInitOtherDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["SessionInitOtherDuration"].Qualifiers.Add("Description", "Event 100 SessionInitOtherDuration in milliseconds")
+    $newWMIClass.Properties["SessionInitOtherDuration"].Qualifiers.Add("Description", "SessionInitOtherDuration (ms): session-init activity not attributed to Session 0 / Session 1")
 
     $newWMIClass.Properties.Add("WinLogonStartTimeMS", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["WinLogonStartTimeMS"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["WinLogonStartTimeMS"].Qualifiers.Add("Description", "Event 100 WinLogonStartTimeMS in milliseconds")
+    $newWMIClass.Properties["WinLogonStartTimeMS"].Qualifiers.Add("Description", "WinLogonStartTimeMS (ms): offset at which winlogon.exe started")
 
     $newWMIClass.Properties.Add("OtherLogonInitActivityDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["OtherLogonInitActivityDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["OtherLogonInitActivityDuration"].Qualifiers.Add("Description", "Event 100 OtherLogonInitActivityDuration in milliseconds")
+    $newWMIClass.Properties["OtherLogonInitActivityDuration"].Qualifiers.Add("Description", "OtherLogonInitActivityDuration (ms): logon-init work other than the user-credential wait (services, GP processing, etc.)")
 
     $newWMIClass.Properties.Add("UserLogonWaitDuration", [System.Management.CimType]::UInt32, $false)
     $newWMIClass.Properties["UserLogonWaitDuration"].Qualifiers.Add("read", $true)
-    $newWMIClass.Properties["UserLogonWaitDuration"].Qualifiers.Add("Description", "Event 100 UserLogonWaitDuration in milliseconds")
+    $newWMIClass.Properties["UserLogonWaitDuration"].Qualifiers.Add("Description", "UserLogonWaitDuration (ms): time waiting for the user to complete credential entry; depends on user behavior, often filtered out for hardware/OS comparisons")
 
     # Network snapshot (current state at script run time)
     $newWMIClass.Properties.Add("NetAdapterName", [System.Management.CimType]::String, $false)
