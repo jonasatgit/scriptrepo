@@ -159,9 +159,18 @@ if (-not $RunAsSystem) {
                 $pairs = foreach ($f in $picked.FileList) {
                     $url = $f.RemoteName
                     if ($UseHttps) { $url = $url -replace '^http://','https://' -replace '(https://[^/:]+):80(/|$)','$1$2' }
-                    $name = Resolve-FileNameFromUrl $url
+                    if ($f.LocalName) {
+                        $name = Split-Path -Path $f.LocalName -Leaf
+                    } else {
+                        $name = Resolve-FileNameFromUrl $url
+                    }
+                    $name = ($name -replace '[\\/:*?"<>|]', '_')
                     $base = $name; $n = 1
-                    while ($usedNames.ContainsKey($name)) { $name = ($base -replace '\.bin$', "_$n.bin"); $n++ }
+                    while ($usedNames.ContainsKey($name)) {
+                        if ($base -match '^(.*?)(\.[^.]+)$') { $name = "$($Matches[1])_$n$($Matches[2])" }
+                        else                                  { $name = "${base}_$n" }
+                        $n++
+                    }
                     $usedNames[$name] = $true
                     [pscustomobject]@{ Url = $url; LocalFile = (Join-Path $Destination $name) }
                 }
