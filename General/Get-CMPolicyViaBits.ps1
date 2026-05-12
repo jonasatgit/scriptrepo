@@ -252,12 +252,23 @@ if (-not $RunAsSystem) {
         if (-not $totalSize) { $totalSize = 0 }
         $totalMb   = [math]::Round($totalSize / 1MB, 2)
 
+        # Use SYSTEM-recorded download-only time when present (excludes post-processing/unpack)
+        $runtimeFile = Join-Path $Destination '_runtime.txt'
+        if (Test-Path -LiteralPath $runtimeFile) {
+            try {
+                $secs = [double](Get-Content -LiteralPath $runtimeFile -Raw -ErrorAction Stop).Trim()
+                $dlSpan = [TimeSpan]::FromSeconds($secs)
+                Remove-Item -LiteralPath $runtimeFile -Force -ErrorAction SilentlyContinue
+            } catch { $dlSpan = $tot }
+        } else { $dlSpan = $tot }
+
         $stats = @(
             ''
             '==================== STATISTICS ===================='
             ("Files downloaded : {0}" -f $downloaded.Count)
             ("Total size       : {0} MB ({1:N0} bytes)" -f $totalMb, $totalSize)
-            ("Total runtime    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds)
+            ("Download time    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $dlSpan, $dlSpan.TotalSeconds)
+            ("Total runtime    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)  (incl. post-processing)" -f $tot, $tot.TotalSeconds)
             '===================================================='
         )
         $stats | ForEach-Object { Write-Host $_ -ForegroundColor Green }
@@ -436,6 +447,12 @@ $results = foreach ($w in $workList) {
 
 $jobEnd  = Get-Date
 $elapsed = $jobEnd - $jobStart
+
+# Persist pure download time so the user-side dispatcher can show it (excluding post-processing)
+try {
+    Set-Content -LiteralPath (Join-Path $Destination '_runtime.txt') `
+                -Value ([string]$elapsed.TotalSeconds) -Encoding ASCII -ErrorAction SilentlyContinue
+} catch {}
 
 Write-Host ""
 Write-Host "==============================================================" -ForegroundColor Green
