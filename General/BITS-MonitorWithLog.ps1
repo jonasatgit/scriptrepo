@@ -121,6 +121,25 @@ function Save-BitsLog
     }
 }
 
+function ConvertTo-ValidDateTimeString
+{
+    # BITS can return DateTime.MinValue (year 0001) for fields that have not been set yet
+    # (e.g. TransferCompletionTime while the job is still running). Treat those as $null
+    # so they do not poison the runtime calculation.
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    try
+    {
+        $dt = [datetime]$Value
+        if ($dt -le [datetime]::MinValue.AddYears(1)) { return $null }
+        return $dt.ToString('o')
+    }
+    catch
+    {
+        return $null
+    }
+}
+
 function ConvertTo-UInt64Safe
 {
     # BITS reports UInt64.MaxValue (18446744073709551615) for unknown sizes,
@@ -128,6 +147,21 @@ function ConvertTo-UInt64Safe
     param($Value)
     if ($null -eq $Value) { return $null }
     try   { return [uint64]$Value }
+    catch { return $null }
+}
+
+function ConvertTo-MegaBytes
+{
+    # Returns the value in MB rounded to 2 decimals, or $null if the input
+    # is missing / equals UInt64.MaxValue (BITS "unknown size" sentinel).
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    try
+    {
+        $u = [uint64]$Value
+        if ($u -eq [uint64]::MaxValue) { return $null }
+        return [math]::Round(([double]$u / 1MB), 2)
+    }
     catch { return $null }
 }
 
@@ -141,10 +175,12 @@ function ConvertTo-SerializableFileList
     foreach ($file in $FileList)
     {
         $result += [PSCustomObject]@{
-            RemoteName       = $file.RemoteName
-            LocalName        = $file.LocalName
-            BytesTotal       = ConvertTo-UInt64Safe -Value $file.BytesTotal
-            BytesTransferred = ConvertTo-UInt64Safe -Value $file.BytesTransferred
+            RemoteName         = $file.RemoteName
+            LocalName          = $file.LocalName
+            BytesTotal         = ConvertTo-UInt64Safe -Value $file.BytesTotal
+            BytesTotalMB       = ConvertTo-MegaBytes  -Value $file.BytesTotal
+            BytesTransferred   = ConvertTo-UInt64Safe -Value $file.BytesTransferred
+            BytesTransferredMB = ConvertTo-MegaBytes  -Value $file.BytesTransferred
         }
     }
     return $result
@@ -195,8 +231,10 @@ while ($true)
                 $entry.JobState     = "$($job.JobState)"
                 $entry.OwnerAccount = $job.OwnerAccount
                 $entry.Priority     = "$($job.Priority)"
-                $entry.BytesTotal       = ConvertTo-UInt64Safe -Value $job.BytesTotal
-                $entry.BytesTransferred = ConvertTo-UInt64Safe -Value $job.BytesTransferred
+                $entry.BytesTotal         = ConvertTo-UInt64Safe -Value $job.BytesTotal
+                $entry.BytesTotalMB       = ConvertTo-MegaBytes  -Value $job.BytesTotal
+                $entry.BytesTransferred   = ConvertTo-UInt64Safe -Value $job.BytesTransferred
+                $entry.BytesTransferredMB = ConvertTo-MegaBytes  -Value $job.BytesTransferred
                 $entry.FilesTotal       = [int]$job.FilesTotal
                 $entry.FilesTransferred = [int]$job.FilesTransferred
                 $entry.ErrorCondition   = "$($job.ErrorCondition)"
@@ -205,9 +243,12 @@ while ($true)
                 $entry.FileList         = ConvertTo-SerializableFileList -FileList $job.FileList
 
                 # CreationTime / ModificationTime / TransferCompletionTime from BITS itself
-                if ($job.CreationTime)              { $entry.CreationTime              = ([datetime]$job.CreationTime).ToString('o') }
-                if ($job.ModificationTime)          { $entry.ModificationTime          = ([datetime]$job.ModificationTime).ToString('o') }
-                if ($job.TransferCompletionTime)    { $entry.TransferCompletionTime    = ([datetime]$job.TransferCompletionTime).ToString('o') }
+                $ct  = ConvertTo-ValidDateTimeString -Value $job.CreationTime
+                $mt  = ConvertTo-ValidDateTimeString -Value $job.ModificationTime
+                $tct = ConvertTo-ValidDateTimeString -Value $job.TransferCompletionTime
+                if ($ct)  { $entry.CreationTime           = $ct }
+                if ($mt)  { $entry.ModificationTime       = $mt }
+                if ($tct) { $entry.TransferCompletionTime = $tct }
             }
             else
             {
@@ -222,16 +263,18 @@ while ($true)
                     JobState         = "$($job.JobState)"
                     OwnerAccount     = $job.OwnerAccount
                     Priority         = "$($job.Priority)"
-                    BytesTotal       = ConvertTo-UInt64Safe -Value $job.BytesTotal
-                    BytesTransferred = ConvertTo-UInt64Safe -Value $job.BytesTransferred
+                    BytesTotal         = ConvertTo-UInt64Safe -Value $job.BytesTotal
+                    BytesTotalMB       = ConvertTo-MegaBytes  -Value $job.BytesTotal
+                    BytesTransferred   = ConvertTo-UInt64Safe -Value $job.BytesTransferred
+                    BytesTransferredMB = ConvertTo-MegaBytes  -Value $job.BytesTransferred
                     FilesTotal       = [int]$job.FilesTotal
                     FilesTransferred = [int]$job.FilesTransferred
                     ErrorCondition   = "$($job.ErrorCondition)"
                     HttpStatus       = $job.HttpStatus
                     ProxyList        = ($job.ProxyList -join ';')
-                    CreationTime         = if ($job.CreationTime)           { ([datetime]$job.CreationTime).ToString('o') }           else { $null }
-                    ModificationTime     = if ($job.ModificationTime)       { ([datetime]$job.ModificationTime).ToString('o') }       else { $null }
-                    TransferCompletionTime = if ($job.TransferCompletionTime) { ([datetime]$job.TransferCompletionTime).ToString('o') } else { $null }
+                    CreationTime         = ConvertTo-ValidDateTimeString -Value $job.CreationTime
+                    ModificationTime     = ConvertTo-ValidDateTimeString -Value $job.ModificationTime
+                    TransferCompletionTime = ConvertTo-ValidDateTimeString -Value $job.TransferCompletionTime
                     FileList         = ConvertTo-SerializableFileList -FileList $job.FileList
                 }
                 $log[$jobId] = [PSCustomObject]$entry
@@ -239,7 +282,7 @@ while ($true)
         }
     }
 
-    # Refresh derived fields (TotalRunTimeSeconds / AverageBytesPerSecond) for every entry in the log
+    # Refresh derived field (TotalRunTimeSeconds) for every entry in the log
     foreach ($jobId in @($log.Keys))
     {
         $entry = $log[$jobId]
@@ -259,25 +302,23 @@ while ($true)
             if ($start -and $end)
             {
                 $duration = ($end - $start).TotalSeconds
+
+                # If the job started and finished between two refresh cycles we can only
+                # say the runtime is shorter than the refresh interval. Clamp negative or
+                # tiny values to the refresh interval and flag them.
+                $belowRefresh = $false
+                if ($duration -lt $TimeoutSeconds)
+                {
+                    $duration     = $TimeoutSeconds
+                    $belowRefresh = $true
+                }
+
                 $entry | Add-Member -NotePropertyName TotalRunTimeSeconds -NotePropertyValue ([math]::Round($duration, 2)) -Force
+                $entry | Add-Member -NotePropertyName TotalRunTimeDisplay -NotePropertyValue $(if ($belowRefresh) { "<${TimeoutSeconds}s" } else { Format-Duration -Seconds $duration }) -Force
 
-                $bytes = 0.0
-                if ($entry.BytesTransferred -ne $null)
-                {
-                    try { $bytes = [double]$entry.BytesTransferred } catch { $bytes = 0.0 }
-                }
-
-                if ($duration -gt 0 -and $bytes -gt 0)
-                {
-                    $bps = $bytes / $duration
-                    $entry | Add-Member -NotePropertyName AverageBytesPerSecond -NotePropertyValue ([math]::Round($bps, 2)) -Force
-                    $entry | Add-Member -NotePropertyName AverageSpeedDisplay   -NotePropertyValue ("{0}/s" -f (Format-Bytes -Bytes $bps)) -Force
-                }
-                else
-                {
-                    $entry | Add-Member -NotePropertyName AverageBytesPerSecond -NotePropertyValue 0 -Force
-                    $entry | Add-Member -NotePropertyName AverageSpeedDisplay   -NotePropertyValue '0 B/s' -Force
-                }
+                # Make sure the previously stored speed fields are removed if they exist
+                if ($entry.PSObject.Properties['AverageBytesPerSecond']) { $entry.PSObject.Properties.Remove('AverageBytesPerSecond') }
+                if ($entry.PSObject.Properties['AverageSpeedDisplay'])   { $entry.PSObject.Properties.Remove('AverageSpeedDisplay') }
             }
         }
         catch
@@ -301,18 +342,15 @@ while ($true)
                                    @{Expression={$_.JobState};Label="Jobstate"},
                                    @{Expression={
                                         $id = $_.JobId.ToString()
-                                        if ($log.ContainsKey($id) -and $log[$id].PSObject.Properties['TotalRunTimeSeconds'])
+                                        if ($log.ContainsKey($id) -and $log[$id].PSObject.Properties['TotalRunTimeDisplay'])
+                                        {
+                                            $log[$id].TotalRunTimeDisplay
+                                        }
+                                        elseif ($log.ContainsKey($id) -and $log[$id].PSObject.Properties['TotalRunTimeSeconds'])
                                         {
                                             Format-Duration -Seconds ([double]$log[$id].TotalRunTimeSeconds)
                                         } else { '' }
                                      };Label="RunTime"},
-                                   @{Expression={
-                                        $id = $_.JobId.ToString()
-                                        if ($log.ContainsKey($id) -and $log[$id].PSObject.Properties['AverageSpeedDisplay'])
-                                        {
-                                            $log[$id].AverageSpeedDisplay
-                                        } else { '' }
-                                     };Label="AvgSpeed"},
                                    @{Expression={$_.FileList[0].RemoteName};Label="FirstURL"}
     }
 
