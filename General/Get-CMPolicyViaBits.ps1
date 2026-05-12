@@ -34,7 +34,7 @@
 #      (-RunAsSystem). This matches the security context of the real CM client and is
 #      required for client-certificate based HTTPS (E-HTTP).
 #   3. In SYSTEM context the script creates the BITS transfer(s), waits for them, and
-#      writes a transcript to <Destination>\bits.log.
+#      writes a transcript to <Destination>\_Script.log.
 #
 # Parameter sets
 # --------------
@@ -45,7 +45,7 @@
 #
 # Common parameters
 # -----------------
-#   -Destination  Output folder (created if missing). Also receives bits.log.
+#   -Destination  Output folder (created if missing). Also receives _Script.log.
 #   -UseHttps     Force HTTPS (port 443). Requires a client cert in LocalMachine\SMS or My.
 #
 # Examples
@@ -80,7 +80,7 @@ param(
     [Parameter(Mandatory, ParameterSetName='FromJson')]
     [string]$JobsJsonPath,                    # path to a JSON file with one or more BITS job objects
 
-    [string]$Destination = "C:\Temp\PolicyTest",   # output folder (also holds bits.log)
+    [string]$Destination = "C:\Temp\PolicyTest",   # output folder (also holds _Script.log)
     [switch]$UseHttps,                        # force E-HTTP (port 443, requires client cert)
 
     [Parameter(Mandatory, ParameterSetName='Cleanup')]
@@ -93,6 +93,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ScriptStart = Get-Date
+Write-Host ("Script start : {0}" -f $ScriptStart.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
 
 function Resolve-FileNameFromUrl {
     param([string]$Url)
@@ -129,7 +131,7 @@ if (-not $RunAsSystem) {
                 # Dictionary form: { "<guid>": { ...job... }, ... }
                 $jobs = @($jsonRaw.PSObject.Properties | ForEach-Object { $_.Value })
             }
-            Write-Host "Loaded $($jobs.Count) job(s) from $JobsJsonPath"
+            Write-Host "Loaded $($jobs.Count) job(s) from $JobsJsonPath" -ForegroundColor Green
 
             # Show selection UI (multi-select)
             $choices = $jobs |
@@ -150,7 +152,7 @@ if (-not $RunAsSystem) {
                 $pickedIds  = $choices | ForEach-Object { $_.JobId }
                 $pickedJobs = $jobs | Where-Object { $pickedIds -contains $_.JobId }
             }
-            Write-Host "Selected $($pickedJobs.Count) job(s):"
+            Write-Host "Selected $($pickedJobs.Count) job(s):" -ForegroundColor Green
             $pickedJobs | ForEach-Object { Write-Host "  - $($_.JobId)  $($_.DisplayName)  files=$($_.FileList.Count)" }
 
             # Build the multi-job manifest: array of { JobName, Pairs:[{Url,LocalFile},...] }
@@ -184,7 +186,7 @@ if (-not $RunAsSystem) {
 
             $BatchFile = Join-Path $Destination "_batch_$jobTimestamp.json"
             ConvertTo-Json -InputObject ([object[]]$multi) -Depth 6 | Set-Content -Path $BatchFile -Encoding UTF8
-            Write-Host "Wrote batch manifest: $BatchFile  ($($multi.Count) job(s), $(($multi.Pairs | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) file(s) total)"
+            Write-Host "Wrote batch manifest: $BatchFile  ($($multi.Count) job(s), $(($multi.Pairs | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) file(s) total)" -ForegroundColor Green
         }
         else {
             # Single-URL flow
@@ -215,7 +217,7 @@ if (-not $RunAsSystem) {
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
     Start-ScheduledTask -TaskName $taskName
-    Write-Host "Started SYSTEM task '$taskName'. Waiting for completion..."
+    Write-Host "Started SYSTEM task '$taskName'. Waiting for completion..." -ForegroundColor Green
     do { Start-Sleep 2 } while ((Get-ScheduledTask -TaskName $taskName).State -ne 'Ready')
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     if ($CleanupJobs) {
@@ -224,9 +226,37 @@ if (-not $RunAsSystem) {
             Write-Host " Removing stale task: $($t.TaskName)"
             Unregister-ScheduledTask -TaskName $t.TaskName -Confirm:$false
         }
-        Write-Host "Done. Cleanup performed."
+        Write-Host "Done. Cleanup performed." -ForegroundColor Green
     }
-    else { Write-Host "Done. Output folder: $Destination" }
+    else { Write-Host "Done. Output folder: $Destination" -ForegroundColor Green }
+
+    $ScriptEnd = Get-Date
+    $tot = $ScriptEnd - $ScriptStart
+
+    # ---- Final statistics (console + log) ----
+    if (-not $CleanupJobs) {
+        $downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' }
+        $totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
+        if (-not $totalSize) { $totalSize = 0 }
+        $totalMb   = [math]::Round($totalSize / 1MB, 2)
+
+        $stats = @(
+            ''
+            '==================== STATISTICS ===================='
+            ("Files downloaded : {0}" -f $downloaded.Count)
+            ("Total size       : {0} MB ({1:N0} bytes)" -f $totalMb, $totalSize)
+            ("Total runtime    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds)
+            '===================================================='
+        )
+        $stats | ForEach-Object { Write-Host $_ -ForegroundColor Green }
+
+        $logPath = Join-Path $Destination '_Script.log'
+        try { Add-Content -LiteralPath $logPath -Value $stats -ErrorAction SilentlyContinue } catch {}
+    } else {
+        Write-Host ("Script end   : {0}" -f $ScriptEnd.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
+        Write-Host ("Script total : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds) -ForegroundColor Green
+    }
     return
 }
 
@@ -234,29 +264,29 @@ if (-not $RunAsSystem) {
 
 if ($CleanupJobs) {
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    Start-Transcript -Path (Join-Path $Destination 'bits.log') -Append | Out-Null
-    Write-Host "Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
-    Write-Host "Cleaning up 'CMPolicyTest_*' / 'CM Policy Test*' BITS jobs..."
+    Start-Transcript -Path (Join-Path $Destination '_Script.log') -Append | Out-Null
+    Write-Host "Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Green
+    Write-Host "Cleaning up 'CMPolicyTest_*' / 'CM Policy Test*' BITS jobs..." -ForegroundColor Green
     $jobs = Get-BitsTransfer -AllUsers -ErrorAction SilentlyContinue |
         Where-Object { $_.DisplayName -like 'CMPolicyTest_*' -or $_.DisplayName -like 'CM Policy Test*' }
     if (-not $jobs) {
-        Write-Host "No matching jobs."
+        Write-Host "No matching jobs." -ForegroundColor Yellow
     } else {
         foreach ($j in $jobs) {
             Write-Host (" Removing {0}  state={1}  owner={2}" -f $j.JobId, $j.JobState, $j.OwnerAccount)
             Remove-BitsTransfer -BitsJob $j -ErrorAction Continue
         }
-        Write-Host ("Removed {0} job(s)." -f $jobs.Count)
+        Write-Host ("Removed {0} job(s)." -f $jobs.Count) -ForegroundColor Green
     }
     Stop-Transcript | Out-Null
     return
 }
 
-Start-Transcript -Path (Join-Path $Destination 'bits.log') -Append | Out-Null
-Write-Host "Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
-Write-Host "Mode    : $(if ($UseHttps) { 'HTTPS + client cert' } else { 'HTTP anonymous' })"
+Start-Transcript -Path (Join-Path $Destination '_Script.log') -Append | Out-Null
+Write-Host "Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Green
+Write-Host "Mode    : $(if ($UseHttps) { 'HTTPS + client cert' } else { 'HTTP anonymous' })" -ForegroundColor Green
 $jobStart = Get-Date
-Write-Host "Started : $($jobStart.ToString('yyyy-MM-dd HH:mm:ss.fff'))"
+Write-Host "Started : $($jobStart.ToString('yyyy-MM-dd HH:mm:ss.fff'))" -ForegroundColor Green
 
 # Resolve client cert once (HTTPS only)
 $clientCert = $null
@@ -276,10 +306,10 @@ if ($UseHttps) {
         Stop-Transcript | Out-Null; return
     }
     $physStoreName = if ($foundStore -like '*\SMS') { 'SMS' } else { 'MY' }
-    Write-Host "ClientCert: $($clientCert.Subject)"
-    Write-Host "  Issuer  : $($clientCert.Issuer)"
-    Write-Host "  Store   : $foundStore"
-    Write-Host "  Thumb   : $($clientCert.Thumbprint)"
+    Write-Host "ClientCert: $($clientCert.Subject)" -ForegroundColor Green
+    Write-Host "  Issuer  : $($clientCert.Issuer)" -ForegroundColor Green
+    Write-Host "  Store   : $foundStore" -ForegroundColor Green
+    Write-Host "  Thumb   : $($clientCert.Thumbprint)" -ForegroundColor Green
 }
 
 # Helper: run one BITS job for a set of pairs, return a stats object
@@ -295,9 +325,9 @@ function Invoke-OneBitsJob {
     foreach ($p in $Pairs) { if (Test-Path $p.LocalFile) { Remove-Item $p.LocalFile -Force } }
 
     Write-Host ""
-    Write-Host "=============================================================="
-    Write-Host "Job: $Name   Files: $($Pairs.Count)   Mode: $(if ($Https) {'HTTPS+cert'} else {'HTTP'})"
-    Write-Host "=============================================================="
+    Write-Host "==============================================================" -ForegroundColor Green
+    Write-Host "Job: $Name   Files: $($Pairs.Count)   Mode: $(if ($Https) {'HTTPS+cert'} else {'HTTP'})" -ForegroundColor Green
+    Write-Host "==============================================================" -ForegroundColor Green
     $start = Get-Date
 
     $bytes = 0; $state = 'UNKNOWN'; $info = ''
@@ -316,7 +346,7 @@ function Invoke-OneBitsJob {
             Complete-BitsTransfer -BitsJob $job
             $state = 'TRANSFERRED'
         } else {
-            Write-Host "FAILED: $($job.JobState) - $($job.ErrorDescription)"
+            Write-Host "FAILED: $($job.JobState) - $($job.ErrorDescription)" -ForegroundColor Red
             $state = $job.JobState.ToString().ToUpper()
             Remove-BitsTransfer -BitsJob $job
         }
@@ -341,7 +371,8 @@ function Invoke-OneBitsJob {
         $mb = [regex]::Match($info, '(?i)\bBYTES:\s*(\d+)\s*/')
         if ($mb.Success) { $bytes = [int64]$mb.Groups[1].Value }
 
-        Write-Host "Final state: $state"
+        $color = if ($state -eq 'TRANSFERRED') { 'Green' } else { 'Red' }
+        Write-Host "Final state: $state" -ForegroundColor $color
         if ($state -eq 'TRANSFERRED') {
             & $bitsadmin /complete $Name | Out-Host
         } else {
@@ -378,12 +409,12 @@ if ($BatchFile) {
     } else {
         $workList = @([pscustomobject]@{ JobName = $JobName; Pairs = @($manifest) })
     }
-    Write-Host "Batch  : $BatchFile  ($($workList.Count) BITS job(s), $(($workList.Pairs | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) file(s) total)"
+    Write-Host "Batch  : $BatchFile  ($($workList.Count) BITS job(s), $(($workList.Pairs | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum) file(s) total)" -ForegroundColor Green
 } else {
     $pairs = ,([pscustomobject]@{ Url = $PolicyUrl; LocalFile = (Join-Path $Destination (Resolve-FileNameFromUrl $PolicyUrl)) })
     $workList = @([pscustomobject]@{ JobName = $JobName; Pairs = $pairs })
-    Write-Host "URL    : $PolicyUrl"
-    Write-Host "Output : $($pairs[0].LocalFile)"
+    Write-Host "URL    : $PolicyUrl" -ForegroundColor Green
+    Write-Host "Output : $($pairs[0].LocalFile)" -ForegroundColor Green
 }
 
 # Execute and collect stats
@@ -395,9 +426,9 @@ $jobEnd  = Get-Date
 $elapsed = $jobEnd - $jobStart
 
 Write-Host ""
-Write-Host "=============================================================="
-Write-Host " SUMMARY"
-Write-Host "=============================================================="
+Write-Host "==============================================================" -ForegroundColor Green
+Write-Host " SUMMARY" -ForegroundColor Green
+Write-Host "==============================================================" -ForegroundColor Green
 $results |
     Select-Object @{n='JobName';e={$_.JobName}},
                   @{n='State';e={$_.State}},
@@ -411,8 +442,77 @@ $results |
 
 $totalBytes = ($results | Measure-Object Bytes -Sum).Sum
 $okCount    = ($results | Where-Object State -eq 'TRANSFERRED').Count
+$sumColor   = if ($okCount -eq $results.Count) { 'Green' } else { 'Yellow' }
 Write-Host ("Totals : {0}/{1} job(s) OK   {2} file(s)   {3:N0} bytes" -f `
-    $okCount, $results.Count, ($results | Measure-Object Files -Sum).Sum, $totalBytes)
-Write-Host ("Finished: {0}" -f $jobEnd.ToString('yyyy-MM-dd HH:mm:ss.fff'))
-Write-Host ("Overall : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $elapsed, $elapsed.TotalSeconds)
+    $okCount, $results.Count, ($results | Measure-Object Files -Sum).Sum, $totalBytes) -ForegroundColor $sumColor
+Write-Host ("Finished: {0}" -f $jobEnd.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
+Write-Host ("Overall : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $elapsed, $elapsed.TotalSeconds) -ForegroundColor Green
+$ScriptEnd = Get-Date
+$tot       = $ScriptEnd - $ScriptStart
+Write-Host ("Script start : {0}" -f $ScriptStart.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
+Write-Host ("Script end   : {0}" -f $ScriptEnd.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
+Write-Host ("Script total : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds) -ForegroundColor Green
+
+# --- Post-processing: rename downloaded files to .xml when content is XML --------------
+Write-Host ""
+Write-Host "Post-processing: sniffing downloaded files for XML content..." -ForegroundColor Green
+$allFiles = $workList | ForEach-Object { $_.Pairs } | ForEach-Object { $_.LocalFile } | Sort-Object -Unique
+$renamed = 0; $skipped = 0; $missing = 0; $errors = 0
+foreach ($f in $allFiles) {
+    try {
+        if (-not (Test-Path -LiteralPath $f -ErrorAction SilentlyContinue)) { $missing++; continue }
+        # Read up to 1024 bytes and decode using BOM if present, else UTF-8
+        $buf = $null; $read = 0
+        try {
+            $stream = [System.IO.File]::Open($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try {
+                $buf  = New-Object byte[] 1024
+                $read = $stream.Read($buf, 0, $buf.Length)
+            } finally { $stream.Dispose() }
+        } catch {
+            Write-Host ("  SKIP (read failed): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+            $errors++; continue
+        }
+        if ($read -le 0) { $skipped++; continue }
+
+        $enc = [System.Text.Encoding]::UTF8
+        $off = 0
+        if     ($read -ge 3 -and $buf[0] -eq 0xEF -and $buf[1] -eq 0xBB -and $buf[2] -eq 0xBF)            { $enc = [System.Text.Encoding]::UTF8;    $off = 3 }
+        elseif ($read -ge 2 -and $buf[0] -eq 0xFF -and $buf[1] -eq 0xFE)                                  { $enc = [System.Text.Encoding]::Unicode; $off = 2 }   # UTF-16 LE
+        elseif ($read -ge 2 -and $buf[0] -eq 0xFE -and $buf[1] -eq 0xFF)                                  { $enc = [System.Text.Encoding]::BigEndianUnicode; $off = 2 }
+        elseif ($read -ge 4 -and $buf[0] -eq 0x3C -and $buf[1] -eq 0x00 -and $buf[2] -eq 0x3F -and $buf[3] -eq 0x00) { $enc = [System.Text.Encoding]::Unicode; $off = 0 }   # UTF-16 LE no BOM
+
+        $text  = $enc.GetString($buf, $off, $read - $off).TrimStart(' ', "`r", "`n", "`t")
+        $isXml = $text.StartsWith('<?xml', [StringComparison]::OrdinalIgnoreCase) -or
+                 ($text.StartsWith('<') -and $text -match '^<[A-Za-z_!?][^>]*>')
+        if (-not $isXml) { $skipped++; continue }
+
+        $dir   = Split-Path -Path $f -Parent
+        $base  = [IO.Path]::GetFileNameWithoutExtension($f)
+        $newP  = Join-Path $dir "$base.xml"
+        if ($newP -ieq $f) { $skipped++; continue }   # already .xml
+        if (Test-Path -LiteralPath $newP -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $newP -Force -ErrorAction SilentlyContinue }
+        try {
+            [System.IO.File]::Move($f, $newP)
+            Write-Host ("  XML : {0}  ->  {1}" -f (Split-Path $f -Leaf), (Split-Path $newP -Leaf)) -ForegroundColor Green
+            $renamed++
+        } catch {
+            Write-Host ("  ERR (rename): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+            $errors++
+        }
+    } catch {
+        Write-Host ("  ERR : {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+        $errors++
+    }
+}
+Write-Host ("Post-processing: renamed={0}  kept={1}  missing={2}  errors={3}" -f $renamed, $skipped, $missing, $errors) -ForegroundColor Green
+
+# --- Total size of downloaded files (exclude _Script.log and _batch_*.json) ---
+$downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' }
+$totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
+if (-not $totalSize) { $totalSize = 0 }
+Write-Host ("Total downloaded: {0} file(s)   {1:N0} bytes   {2:N2} MB" -f `
+    $downloaded.Count, $totalSize, ($totalSize / 1MB)) -ForegroundColor Green
+
 Stop-Transcript | Out-Null
