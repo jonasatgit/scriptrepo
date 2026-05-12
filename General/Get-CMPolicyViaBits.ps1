@@ -83,6 +83,9 @@ param(
     [string]$Destination = "C:\Temp\PolicyTest",   # output folder (also holds _Script.log)
     [switch]$UseHttps,                        # force E-HTTP (port 443, requires client cert)
 
+    [ValidateSet('Foreground','High','Normal','Low')]
+    [string]$Priority = 'Foreground',         # BITS priority for the created job(s)
+
     [Parameter(Mandatory, ParameterSetName='Cleanup')]
     [switch]$CleanupJobs,                     # remove all 'CMPolicyTest_*' BITS jobs (runs as SYSTEM)
 
@@ -132,6 +135,14 @@ if (-not $RunAsSystem) {
                 $jobs = @($jsonRaw.PSObject.Properties | ForEach-Object { $_.Value })
             }
             Write-Host "Loaded $($jobs.Count) job(s) from $JobsJsonPath" -ForegroundColor Green
+
+            # Filter out upload jobs (BITS uploads aren't replayable as downloads)
+            $beforeCount = $jobs.Count
+            $jobs = @($jobs | Where-Object { $_.DisplayName -notmatch '(?i)upload' -and $_.TransferType -ne 'Upload' })
+            $skippedUploads = $beforeCount - $jobs.Count
+            if ($skippedUploads -gt 0) {
+                Write-Host "Filtered out $skippedUploads upload job(s)." -ForegroundColor Yellow
+            }
 
             # Show selection UI (multi-select)
             $choices = $jobs |
@@ -205,10 +216,10 @@ if (-not $RunAsSystem) {
     if ($CleanupJobs) {
         $argLine += " -CleanupJobs"
     } elseif ($BatchFile) {
-        $argLine += " -BatchFile `"$BatchFile`" -Destination `"$Destination`" -JobName `"$jobName`""
+        $argLine += " -BatchFile `"$BatchFile`" -Destination `"$Destination`" -JobName `"$jobName`" -Priority $Priority"
         if ($UseHttps) { $argLine += " -UseHttps" }
     } else {
-        $argLine += " -PolicyUrl `"$PolicyUrl`" -Destination `"$Destination`" -JobName `"$jobName`""
+        $argLine += " -PolicyUrl `"$PolicyUrl`" -Destination `"$Destination`" -JobName `"$jobName`" -Priority $Priority"
         if ($UseHttps) { $argLine += " -UseHttps" }
     }
 
@@ -236,7 +247,7 @@ if (-not $RunAsSystem) {
     # ---- Final statistics (console + log) ----
     if (-not $CleanupJobs) {
         $downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
-                      Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' }
+                      Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' -and $_.Name -notlike '*-unpacked.*' }
         $totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
         if (-not $totalSize) { $totalSize = 0 }
         $totalMb   = [math]::Round($totalSize / 1MB, 2)
@@ -284,7 +295,7 @@ if ($CleanupJobs) {
 
 Start-Transcript -Path (Join-Path $Destination '_Script.log') -Append | Out-Null
 Write-Host "Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)" -ForegroundColor Green
-Write-Host "Mode    : $(if ($UseHttps) { 'HTTPS + client cert' } else { 'HTTP anonymous' })" -ForegroundColor Green
+Write-Host "Mode    : $(if ($UseHttps) { 'HTTPS + client cert' } else { 'HTTP anonymous' })   Priority: $Priority" -ForegroundColor Green
 $jobStart = Get-Date
 Write-Host "Started : $($jobStart.ToString('yyyy-MM-dd HH:mm:ss.fff'))" -ForegroundColor Green
 
@@ -319,14 +330,15 @@ function Invoke-OneBitsJob {
         [object[]]$Pairs,
         [bool]$Https,
         [object]$Cert,
-        [string]$CertStore
+        [string]$CertStore,
+        [string]$Priority = 'Foreground'
     )
     $bitsadmin = "$env:WINDIR\System32\bitsadmin.exe"
     foreach ($p in $Pairs) { if (Test-Path $p.LocalFile) { Remove-Item $p.LocalFile -Force } }
 
     Write-Host ""
     Write-Host "==============================================================" -ForegroundColor Green
-    Write-Host "Job: $Name   Files: $($Pairs.Count)   Mode: $(if ($Https) {'HTTPS+cert'} else {'HTTP'})" -ForegroundColor Green
+    Write-Host "Job: $Name   Files: $($Pairs.Count)   Mode: $(if ($Https) {'HTTPS+cert'} else {'HTTP'})   Priority: $Priority" -ForegroundColor Green
     Write-Host "==============================================================" -ForegroundColor Green
     $start = Get-Date
 
@@ -336,7 +348,7 @@ function Invoke-OneBitsJob {
         $sources = @($Pairs | ForEach-Object { $_.Url })
         $dests   = @($Pairs | ForEach-Object { $_.LocalFile })
         $job = Start-BitsTransfer -Source $sources -Destination $dests -TransferType Download `
-                -Priority Foreground -DisplayName $Name -Asynchronous
+                -Priority $Priority -DisplayName $Name -Asynchronous
         while ($job.JobState -in 'Connecting','Transferring','Queued','TransientError') {
             Start-Sleep -Milliseconds 500
             $job = Get-BitsTransfer -JobId $job.JobId
@@ -356,7 +368,7 @@ function Invoke-OneBitsJob {
         foreach ($p in $Pairs) {
             & $bitsadmin /addfile $Name $p.Url $p.LocalFile | Out-Host
         }
-        & $bitsadmin /setpriority $Name FOREGROUND | Out-Host
+        & $bitsadmin /setpriority $Name $Priority.ToUpper() | Out-Host
         & $bitsadmin /setclientcertificatebyid $Name 2 $CertStore $Cert.Thumbprint | Out-Host
         & $bitsadmin /resume $Name | Out-Host
 
@@ -419,7 +431,7 @@ if ($BatchFile) {
 
 # Execute and collect stats
 $results = foreach ($w in $workList) {
-    Invoke-OneBitsJob -Name $w.JobName -Pairs $w.Pairs -Https:$UseHttps -Cert $clientCert -CertStore $physStoreName
+    Invoke-OneBitsJob -Name $w.JobName -Pairs $w.Pairs -Https:$UseHttps -Cert $clientCert -CertStore $physStoreName -Priority $Priority
 }
 
 $jobEnd  = Get-Date
@@ -507,9 +519,140 @@ foreach ($f in $allFiles) {
 }
 Write-Host ("Post-processing: renamed={0}  kept={1}  missing={2}  errors={3}" -f $renamed, $skipped, $missing, $errors) -ForegroundColor Green
 
-# --- Total size of downloaded files (exclude _Script.log and _batch_*.json) ---
+# --- Decompress zlib-packed policy bodies -> *-unpacked.xml ---
+function Expand-CMZlib {
+    param([Parameter(Mandatory)][string]$HexBlob)
+    $hex = ($HexBlob -replace '[\s\r\n]','')
+    if ($hex.Length -lt 12 -or ($hex.Length % 2)) { throw "Invalid hex blob length: $($hex.Length)" }
+    $raw = New-Object byte[] ($hex.Length / 2)
+    for ($i = 0; $i -lt $raw.Length; $i++) { $raw[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16) }
+    # Strip 2-byte zlib header + trailing 4-byte Adler32 -> raw DEFLATE
+    $deflate = New-Object byte[] ($raw.Length - 6)
+    [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
+    $in  = New-Object System.IO.MemoryStream(,$deflate)
+    $out = New-Object System.IO.MemoryStream
+    $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+    try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
+    return ,$out.ToArray()
+}
+
+Write-Host ""
+Write-Host "Post-processing: decompressing zlib policy bodies..." -ForegroundColor Green
+$unpacked = 0; $unpackErr = 0
+$xmlFiles = Get-ChildItem -LiteralPath $Destination -File -Filter *.xml -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike '*-unpacked.xml' }
+foreach ($xf in $xmlFiles) {
+    try {
+        # Load the XML using BOM-aware decoding
+        $xml = $null
+        try { $xml = [xml](Get-Content -LiteralPath $xf.FullName -Raw -ErrorAction Stop) } catch { $xml = $null }
+        if (-not $xml) { continue }
+
+        # Find any element with Compression="zlib"
+        $nodes = $xml.SelectNodes("//*[@Compression='zlib']")
+        if (-not $nodes -or $nodes.Count -eq 0) { continue }
+
+        foreach ($n in $nodes) {
+            $hex = $n.InnerText
+            if ([string]::IsNullOrWhiteSpace($hex)) { continue }
+            try {
+                $bytes = Expand-CMZlib -HexBlob $hex
+                # Decode: try UTF-16 LE BOM, then UTF-16 LE no-BOM, then UTF-8
+                $text = $null
+                if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
+                } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                    $text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+                } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+                } else {
+                    $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+                    if ($text -notmatch '<') { $text = [System.Text.Encoding]::UTF8.GetString($bytes) }
+                }
+
+                $outName = "{0}-unpacked.xml" -f [IO.Path]::GetFileNameWithoutExtension($xf.Name)
+                $outPath = Join-Path $xf.DirectoryName $outName
+                Set-Content -LiteralPath $outPath -Value $text -Encoding UTF8
+                Write-Host ("  UNPACK: {0}  ->  {1}  ({2:N0} bytes)" -f $xf.Name, $outName, $bytes.Length) -ForegroundColor Green
+                $unpacked++
+                break   # one unpack per file
+            } catch {
+                Write-Host ("  ERR (unpack): {0} - {1}" -f $xf.Name, $_.Exception.Message)
+                $unpackErr++
+            }
+        }
+    } catch {
+        Write-Host ("  ERR (xml): {0} - {1}" -f $xf.Name, $_.Exception.Message)
+        $unpackErr++
+    }
+}
+Write-Host ("Post-processing: unpacked={0}  errors={1}" -f $unpacked, $unpackErr) -ForegroundColor Green
+
+# --- Decompress raw zlib binary files (e.g. CM .zip CIs that are actually zlib streams) ---
+Write-Host ""
+Write-Host "Post-processing: decompressing raw zlib binary files..." -ForegroundColor Green
+$binUnpacked = 0; $binErr = 0
+$candidates = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+              Where-Object {
+                  $_.Name -ne '_Script.log' -and
+                  $_.Name -notlike '_batch_*.json' -and
+                  $_.Name -notlike '*-unpacked.xml' -and
+                  $_.Length -ge 6
+              }
+foreach ($cf in $candidates) {
+    try {
+        $fs = [System.IO.File]::Open($cf.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $hdr = New-Object byte[] 2
+            [void]$fs.Read($hdr, 0, 2)
+        } finally { $fs.Dispose() }
+
+        # zlib magic: 0x78 (CMF) followed by one of 01/5E/9C/DA (FLG)
+        if ($hdr[0] -ne 0x78) { continue }
+        if ($hdr[1] -notin 0x01,0x5E,0x9C,0xDA) { continue }
+
+        $raw = [System.IO.File]::ReadAllBytes($cf.FullName)
+        if ($raw.Length -lt 6) { continue }
+        $deflate = New-Object byte[] ($raw.Length - 6)
+        [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
+        $in  = New-Object System.IO.MemoryStream(,$deflate)
+        $out = New-Object System.IO.MemoryStream
+        $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+        try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
+        $bytes = $out.ToArray()
+        if ($bytes.Length -eq 0) { continue }
+
+        # Decide output extension by sniffing decompressed content
+        $isXml = $false
+        $sample = if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+                      [System.Text.Encoding]::Unicode.GetString($bytes, 2, [Math]::Min(256, $bytes.Length - 2))
+                  } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                      [System.Text.Encoding]::UTF8.GetString($bytes, 3, [Math]::Min(256, $bytes.Length - 3))
+                  } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
+                      [System.Text.Encoding]::Unicode.GetString($bytes, 0, [Math]::Min(512, $bytes.Length))
+                  } else {
+                      [System.Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(256, $bytes.Length))
+                  }
+        $sample = $sample.TrimStart(' ',"`r","`n","`t",[char]0xFEFF)
+        if ($sample.StartsWith('<?xml',[StringComparison]::OrdinalIgnoreCase) -or
+            ($sample.StartsWith('<') -and $sample -match '^<[A-Za-z_!?][^>]*>')) { $isXml = $true }
+
+        $base    = [IO.Path]::GetFileNameWithoutExtension($cf.Name)
+        $ext     = if ($isXml) { '-unpacked.xml' } else { '-unpacked.bin' }
+        $outPath = Join-Path $cf.DirectoryName ("$base$ext")
+        [System.IO.File]::WriteAllBytes($outPath, $bytes)
+        Write-Host ("  UNZIP : {0}  ->  {1}  ({2:N0} bytes)" -f $cf.Name, (Split-Path $outPath -Leaf), $bytes.Length) -ForegroundColor Green
+        $binUnpacked++
+    } catch {
+        Write-Host ("  ERR (unzip): {0} - {1}" -f $cf.Name, $_.Exception.Message)
+        $binErr++
+    }
+}
+Write-Host ("Post-processing: zlib binaries unpacked={0}  errors={1}" -f $binUnpacked, $binErr) -ForegroundColor Green
+
+# --- Total size of downloaded files (exclude _Script.log, _batch_*.json, *-unpacked.*) ---
 $downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' }
+              Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' -and $_.Name -notlike '*-unpacked.*' }
 $totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
 if (-not $totalSize) { $totalSize = 0 }
 Write-Host ("Total downloaded: {0} file(s)   {1:N0} bytes   {2:N2} MB" -f `
