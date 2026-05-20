@@ -29,6 +29,7 @@
     - Scripts
     - Client Settings
     - Configuration Policies
+    - Automatic Deployment Rules
     - CD.Latest folder content to a wim file
 
     Use parameters to select which items to export or export all items with parameter -ExportAllItemTypes.
@@ -89,6 +90,9 @@
 .PARAMETER ExportConfigurationPolicies
     Export configuration policies
 
+.PARAMETER ExportAutomaticDeploymentRules
+    Export automatic deployment rules (ADRs)
+
 .PARAMETER ExportCDLatest
     Export the latest version of the content of the CD.Latest folder to be able to restore ConfigMgr.
     The CD.Latest folder will be captured into a wim file and stored in the export folder.
@@ -134,6 +138,7 @@ param
     [Switch]$ExportScripts,
     [Switch]$ExportClientSettings,
     [Switch]$ExportConfigurationPolicies,
+    [Switch]$ExportAutomaticDeploymentRules,
     [switch]$ExportCDLatest,
     [switch]$BackupConfigMgrUserDatabases,
     [switch]$BackupWSUSUSusdb
@@ -901,6 +906,15 @@ function Export-CMItemCustomFunction
                 }          
             
             }
+            'SMS_AutoDeployment'
+            {
+                # We need a folder to store Automatic Deployment Rules in
+                $itemExportRootFolder = '{0}\AutomaticDeploymentRules' -f $script:FullExportFolderName
+                $itemModelName = $item.AutoDeploymentID
+                $itemFileExtension = '.xml'
+                $itemFileName = (Get-SanitizedFileName -FileName ($item.Name))
+                $skipConfigMgrFolderSearch = $true
+            }
             Default 
             {
                 # Happens typically for antimalwarepolicies, since the default policy has a different type
@@ -1139,6 +1153,14 @@ function Export-CMItemCustomFunction
 
                         Get-CMConfigurationPolicy -Id $item.CI_ID -AsXml -WarningAction Ignore | Out-File -FilePath $itemFullName -Append
                     
+                    }
+                    'SMS_AutoDeployment'
+                    {
+                        Write-CMTraceLog -Message "Will export Automatic Deployment Rule: $($itemFullName)"
+                        Export-CMAutoDeploymentRule -Id $item.AutoDeploymentID -Path $itemFullName -Force
+
+                        # Lets also export metadata
+                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
                     }
                     Default {}
                 }
@@ -2515,9 +2537,9 @@ Function Get-SQLVersionInfo
 
 
 # Check if none of the switch parameters are set
-if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportCDLatest)) 
+if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportAutomaticDeploymentRules -or $ExportCDLatest)) 
 {
-    Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportCDLatest" -Severity Warning
+    Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportAutomaticDeploymentRules, -ExportCDLatest" -Severity Warning
     Exit 1 
 }
 
@@ -2673,6 +2695,15 @@ try
         Write-CMTraceLog -Message " -> Will export configurations..."
         Write-CMTraceLog -Message "---------------------------------"
         Get-CMConfigurationPolicy -Fast | Export-CMItemCustomFunction
+    }
+
+    # Export automatic deployment rules
+    if ($ExportAutomaticDeploymentRules -or $ExportAllItemTypes)
+    {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will export automatic deployment rules..."
+        Write-CMTraceLog -Message "---------------------------------"
+        Get-CMAutoDeploymentRule -Fast | Export-CMItemCustomFunction
     }
     
     # Export collections
