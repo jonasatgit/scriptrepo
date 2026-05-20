@@ -1157,10 +1157,7 @@ function Export-CMItemCustomFunction
                     'SMS_AutoDeployment'
                     {
                         Write-CMTraceLog -Message "Will export Automatic Deployment Rule: $($itemFullName)"
-                        Export-CMAutoDeploymentRule -Id $item.AutoDeploymentID -Path $itemFullName -Force
-
-                        # Lets also export metadata
-                        $item | Export-Clixml -Depth 100 -Path $metadataFileName
+                        $item | Export-Clixml -Depth 100 -Path $itemFullName
                     }
                     Default {}
                 }
@@ -2703,7 +2700,8 @@ try
         Write-CMTraceLog -Message "---------------------------------"
         Write-CMTraceLog -Message " -> Will export automatic deployment rules..."
         Write-CMTraceLog -Message "---------------------------------"
-        Get-CMAutoDeploymentRule -Fast | Export-CMItemCustomFunction
+        # No -Fast so the lazy XML properties of the SMS_AutoDeployment object are loaded
+        Get-CMAutoDeploymentRule | Export-CMItemCustomFunction
     }
     
     # Export collections
@@ -2908,6 +2906,29 @@ catch
 
 $stoptWatch.Stop()
 $scriptDurationString = "Script runtime: {0}h:{1}m:{2}s" -f $stoptWatch.Elapsed.Hours, $stoptWatch.Elapsed.Minutes, $stoptWatch.Elapsed.Seconds
+
+# Log the parameters that were used to start the script. Helps to replicate a run or troubleshoot errors later.
+Write-CMTraceLog -Message "---------------------------------"
+Write-CMTraceLog -Message " -> Script was started with the following parameters:"
+Write-CMTraceLog -Message "---------------------------------"
+if ($PSBoundParameters.Count -gt 0)
+{
+    foreach ($paramName in ($PSBoundParameters.Keys | Sort-Object))
+    {
+        $paramValue = $PSBoundParameters[$paramName]
+        if ($paramValue -is [switch])
+        {
+            $paramValue = $paramValue.IsPresent
+        }
+        Write-CMTraceLog -Message ("    -{0} = {1}" -f $paramName, $paramValue)
+    }
+}
+else
+{
+    Write-CMTraceLog -Message "    No parameters were passed to the script."
+}
+
+# Log the script runtime
 Write-CMTraceLog -Message $scriptDurationString
 
 if ($script:ExitWithError)
