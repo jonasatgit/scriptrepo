@@ -232,7 +232,7 @@ function Compare-TwoArrays
 
 <#
 .SYNOPSIS
-    Function to export MECM site server information into a JSON file
+    Function to export ConfigMgr site server information into a JSON file
 #>
 Function Export-SystemRoleInformation
 {
@@ -695,13 +695,13 @@ Function Export-SystemRoleInformation
     $tmpRuleArrayList = New-Object System.Collections.ArrayList
     $servicesList = @("RPC","RPCUDP","RPCServicesDynamic","HTTPS")
     $exampleRule = [ordered]@{
-                RuleName = "MECM Console to SMS provider"
-                Source = "MECMConsole"
+                RuleName = "ConfigMgr Console to SMS provider"
+                Source = "ConfigMgrConsole"
                 Destination = "SiteServer"
                 Direction = "Inbound"
                 Action = "Allow"
                 Profile = "Any"
-                Group = "MECM"
+                Group = "ConfigMgr"
                 Description = "Console to WMI SMS provider connection. HTTPS for AdminService"
                 Services = $servicesList
             }
@@ -928,7 +928,7 @@ foreach ($firewallRule in $requiredRules)
     Write-Verbose "$(Get-date -Format u): Getting data for rule: $($firewallRule.RuleName)"
 
     # Ignoring client communication to CAS
-    if (($firewallRule.RuleName -like 'MECM Client*') -and ($destinationSystemObject.RoleList -contains 'CentralAdministrationSite'))
+    if (($firewallRule.RuleName -like 'ConfigMgr Client*') -and ($destinationSystemObject.RoleList -contains 'CentralAdministrationSite'))
     {
         $status = "NOT OK"
         $statusDescription = 'Clients to CAS not allowed'
@@ -1139,7 +1139,7 @@ if ($MergeSimilarRules)
         $tmpObj = New-Object pscustomobject | Select-Object Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress, Protocol, LocalPort, Profile, Action, Group, Program, Description
         $tmpObj.Status = $ruleGroup.Group[0].Status
         $tmpObj.StatusDescription = $ruleGroup.Group[0].StatusDescription
-        $tmpObj.DisplayName = 'MECM {0} {1}' -f ($ruleGroup.Group[0].Direction), ($ruleGroup.Group[0].LocalPort) # Create new rule name
+        $tmpObj.DisplayName = 'ConfigMgr {0} {1}' -f ($ruleGroup.Group[0].Direction), ($ruleGroup.Group[0].LocalPort) # Create new rule name
         $tmpObj.Direction = $ruleGroup.Group[0].Direction
         $tmpObj.LocalName = $ruleGroup.Group[0].LocalName
         $tmpObj.LocalAddress = $ruleGroup.Group[0].LocalAddress
