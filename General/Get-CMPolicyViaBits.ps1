@@ -89,6 +89,9 @@ param(
     [Parameter(Mandatory, ParameterSetName='Cleanup')]
     [switch]$CleanupJobs,                     # remove all 'CMPolicyTest_*' BITS jobs (runs as SYSTEM)
 
+    [Parameter(Mandatory, ParameterSetName='PostProcessOnly')]
+    [switch]$PostProcessOnly,                 # skip download; run only post-processing on $Destination
+
     [string]$JobName,                         # internal: BITS DisplayName carried into SYSTEM context
     [Parameter(Mandatory, ParameterSetName='Batch')]
     [string]$BatchFile,                       # internal: path to a JSON file of {Url, LocalFile} pairs
@@ -109,8 +112,268 @@ function Resolve-FileNameFromUrl {
     return "$leaf.bin"
 }
 
+# --- Post-processing: rename downloaded files to .xml when content is XML --------------
+function Invoke-CMPolicyPostProcessing {
+    param(
+        [Parameter(Mandatory)][string]$Destination,
+        [string[]]$KnownFiles
+    )
+
+    Write-Host ""
+    Write-Host "Post-processing: sniffing downloaded files for XML content..." -ForegroundColor Green
+    if ($KnownFiles -and $KnownFiles.Count -gt 0) {
+        $allFiles = $KnownFiles | Sort-Object -Unique
+    } else {
+        $allFiles = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        $_.Name -ne '_Script.log' -and
+                        $_.Name -ne '_runtime.txt' -and
+                        $_.Name -notlike '_batch_*.json' -and
+                        $_.Name -notlike '*-unpacked.*'
+                    } | ForEach-Object { $_.FullName }
+    }
+    $renamed = 0; $skipped = 0; $missing = 0; $errors = 0
+    foreach ($f in $allFiles) {
+        try {
+            if (-not (Test-Path -LiteralPath $f -ErrorAction SilentlyContinue)) { $missing++; continue }
+            # Read up to 1024 bytes and decode using BOM if present, else UTF-8
+            $buf = $null; $read = 0
+            try {
+                $stream = [System.IO.File]::Open($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                try {
+                    $buf  = New-Object byte[] 1024
+                    $read = $stream.Read($buf, 0, $buf.Length)
+                } finally { $stream.Dispose() }
+            } catch {
+                Write-Host ("  SKIP (read failed): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+                $errors++; continue
+            }
+            if ($read -le 0) { $skipped++; continue }
+
+            $enc = [System.Text.Encoding]::UTF8
+            $off = 0
+            if     ($read -ge 3 -and $buf[0] -eq 0xEF -and $buf[1] -eq 0xBB -and $buf[2] -eq 0xBF)            { $enc = [System.Text.Encoding]::UTF8;    $off = 3 }
+            elseif ($read -ge 2 -and $buf[0] -eq 0xFF -and $buf[1] -eq 0xFE)                                  { $enc = [System.Text.Encoding]::Unicode; $off = 2 }   # UTF-16 LE
+            elseif ($read -ge 2 -and $buf[0] -eq 0xFE -and $buf[1] -eq 0xFF)                                  { $enc = [System.Text.Encoding]::BigEndianUnicode; $off = 2 }
+            elseif ($read -ge 4 -and $buf[0] -eq 0x3C -and $buf[1] -eq 0x00 -and $buf[2] -eq 0x3F -and $buf[3] -eq 0x00) { $enc = [System.Text.Encoding]::Unicode; $off = 0 }   # UTF-16 LE no BOM
+
+            $text  = $enc.GetString($buf, $off, $read - $off).TrimStart(' ', "`r", "`n", "`t")
+            $isXml = $text.StartsWith('<?xml', [StringComparison]::OrdinalIgnoreCase) -or
+                     ($text.StartsWith('<') -and $text -match '^<[A-Za-z_!?][^>]*>')
+            if (-not $isXml) { $skipped++; continue }
+
+            $dir   = Split-Path -Path $f -Parent
+            $base  = [IO.Path]::GetFileNameWithoutExtension($f)
+            $newP  = Join-Path $dir "$base.xml"
+            if ($newP -ieq $f) { $skipped++; continue }   # already .xml
+            if (Test-Path -LiteralPath $newP -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $newP -Force -ErrorAction SilentlyContinue }
+            try {
+                [System.IO.File]::Move($f, $newP)
+                Write-Host ("  XML : {0}  ->  {1}" -f (Split-Path $f -Leaf), (Split-Path $newP -Leaf)) -ForegroundColor Green
+                $renamed++
+            } catch {
+                Write-Host ("  ERR (rename): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+                $errors++
+            }
+        } catch {
+            Write-Host ("  ERR : {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
+            $errors++
+        }
+    }
+    Write-Host ("Post-processing: renamed={0}  kept={1}  missing={2}  errors={3}" -f $renamed, $skipped, $missing, $errors) -ForegroundColor Green
+
+    # --- Decompress zlib-packed policy bodies -> *-unpacked.xml ---
+    function Expand-CMZlib {
+        param([Parameter(Mandatory)][string]$HexBlob)
+        $hex = ($HexBlob -replace '[\s\r\n]','')
+        if ($hex.Length -lt 12 -or ($hex.Length % 2)) { throw "Invalid hex blob length: $($hex.Length)" }
+        $raw = New-Object byte[] ($hex.Length / 2)
+        for ($i = 0; $i -lt $raw.Length; $i++) { $raw[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16) }
+        # Strip 2-byte zlib header + trailing 4-byte Adler32 -> raw DEFLATE
+        $deflate = New-Object byte[] ($raw.Length - 6)
+        [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
+        $in  = New-Object System.IO.MemoryStream(,$deflate)
+        $out = New-Object System.IO.MemoryStream
+        $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+        try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
+        return ,$out.ToArray()
+    }
+
+    Write-Host ""
+    Write-Host "Post-processing: decompressing zlib policy bodies..." -ForegroundColor Green
+    $unpacked = 0; $unpackErr = 0
+    $xmlFiles = Get-ChildItem -LiteralPath $Destination -File -Filter *.xml -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notlike '*-unpacked.xml' }
+    foreach ($xf in $xmlFiles) {
+        try {
+            # Load the XML using BOM-aware decoding
+            $xml = $null
+            try { $xml = [xml](Get-Content -LiteralPath $xf.FullName -Raw -ErrorAction Stop) } catch { $xml = $null }
+            if (-not $xml) { continue }
+
+            # Find any element with Compression="zlib"
+            $nodes = $xml.SelectNodes("//*[@Compression='zlib']")
+            if (-not $nodes -or $nodes.Count -eq 0) { continue }
+
+            foreach ($n in $nodes) {
+                $hex = $n.InnerText
+                if ([string]::IsNullOrWhiteSpace($hex)) { continue }
+                try {
+                    $bytes = Expand-CMZlib -HexBlob $hex
+                    # Decode: try UTF-16 LE BOM, then UTF-16 LE no-BOM, then UTF-8
+                    $text = $null
+                    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+                        $text = [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
+                    } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                        $text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+                    } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
+                        $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+                    } else {
+                        $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+                        if ($text -notmatch '<') { $text = [System.Text.Encoding]::UTF8.GetString($bytes) }
+                    }
+
+                    $outName = "{0}-unpacked.xml" -f [IO.Path]::GetFileNameWithoutExtension($xf.Name)
+                    $outPath = Join-Path $xf.DirectoryName $outName
+                    Set-Content -LiteralPath $outPath -Value $text -Encoding UTF8
+                    Write-Host ("  UNPACK: {0}  ->  {1}  ({2:N0} bytes)" -f $xf.Name, $outName, $bytes.Length) -ForegroundColor Green
+                    $unpacked++
+                    break   # one unpack per file
+                } catch {
+                    Write-Host ("  ERR (unpack): {0} - {1}" -f $xf.Name, $_.Exception.Message)
+                    $unpackErr++
+                }
+            }
+        } catch {
+            Write-Host ("  ERR (xml): {0} - {1}" -f $xf.Name, $_.Exception.Message)
+            $unpackErr++
+        }
+    }
+    Write-Host ("Post-processing: unpacked={0}  errors={1}" -f $unpacked, $unpackErr) -ForegroundColor Green
+
+    # --- Decompress raw zlib binary files (e.g. CM .zip CIs that are actually zlib streams) ---
+    Write-Host ""
+    Write-Host "Post-processing: decompressing raw zlib binary files..." -ForegroundColor Green
+    $binUnpacked = 0; $binErr = 0
+    $candidates = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+                  Where-Object {
+                      $_.Name -ne '_Script.log' -and
+                      $_.Name -notlike '_batch_*.json' -and
+                      $_.Name -notlike '*-unpacked.xml' -and
+                      $_.Length -ge 6
+                  }
+    foreach ($cf in $candidates) {
+        try {
+            $fs = [System.IO.File]::Open($cf.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            try {
+                $hdr = New-Object byte[] 2
+                [void]$fs.Read($hdr, 0, 2)
+            } finally { $fs.Dispose() }
+
+            # zlib magic: 0x78 (CMF) followed by one of 01/5E/9C/DA (FLG)
+            if ($hdr[0] -ne 0x78) { continue }
+            if ($hdr[1] -notin 0x01,0x5E,0x9C,0xDA) { continue }
+
+            $raw = [System.IO.File]::ReadAllBytes($cf.FullName)
+            if ($raw.Length -lt 6) { continue }
+            $deflate = New-Object byte[] ($raw.Length - 6)
+            [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
+            $in  = New-Object System.IO.MemoryStream(,$deflate)
+            $out = New-Object System.IO.MemoryStream
+            $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+            try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
+            $bytes = $out.ToArray()
+            if ($bytes.Length -eq 0) { continue }
+
+            # Decide output extension by sniffing decompressed content
+            $isXml = $false
+            $sample = if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+                          [System.Text.Encoding]::Unicode.GetString($bytes, 2, [Math]::Min(256, $bytes.Length - 2))
+                      } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                          [System.Text.Encoding]::UTF8.GetString($bytes, 3, [Math]::Min(256, $bytes.Length - 3))
+                      } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
+                          [System.Text.Encoding]::Unicode.GetString($bytes, 0, [Math]::Min(512, $bytes.Length))
+                      } else {
+                          [System.Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(256, $bytes.Length))
+                      }
+            $sample = $sample.TrimStart(' ',"`r","`n","`t",[char]0xFEFF)
+            if ($sample.StartsWith('<?xml',[StringComparison]::OrdinalIgnoreCase) -or
+                ($sample.StartsWith('<') -and $sample -match '^<[A-Za-z_!?][^>]*>')) { $isXml = $true }
+
+            $base    = [IO.Path]::GetFileNameWithoutExtension($cf.Name)
+            $ext     = if ($isXml) { '-unpacked.xml' } else { '-unpacked.bin' }
+            $outPath = Join-Path $cf.DirectoryName ("$base$ext")
+            [System.IO.File]::WriteAllBytes($outPath, $bytes)
+            Write-Host ("  UNZIP : {0}  ->  {1}  ({2:N0} bytes)" -f $cf.Name, (Split-Path $outPath -Leaf), $bytes.Length) -ForegroundColor Green
+            $binUnpacked++
+        } catch {
+            Write-Host ("  ERR (unzip): {0} - {1}" -f $cf.Name, $_.Exception.Message)
+            $binErr++
+        }
+    }
+    Write-Host ("Post-processing: zlib binaries unpacked={0}  errors={1}" -f $binUnpacked, $binErr) -ForegroundColor Green
+
+    # --- Total size of downloaded files (exclude _Script.log, _batch_*.json, *-unpacked.*) ---
+    $downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' -and $_.Name -notlike '*-unpacked.*' }
+    $totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
+    if (-not $totalSize) { $totalSize = 0 }
+    Write-Host ("Total downloaded: {0} file(s)   {1:N0} bytes   {2:N2} MB" -f `
+        $downloaded.Count, $totalSize, ($totalSize / 1MB)) -ForegroundColor Green
+
+    # --- Build "Final" folder: unpacked files + originals that were not packed ---
+    Write-Host ""
+    Write-Host "Post-processing: assembling 'Final' folder..." -ForegroundColor Green
+    $finalDir = Join-Path $Destination 'Final'
+    New-Item -ItemType Directory -Force -Path $finalDir | Out-Null
+
+    $allInDest = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -ne '_Script.log' -and $_.Name -ne '_runtime.txt' -and $_.Name -notlike '_batch_*.json' }
+
+    # Collect base names (without -unpacked suffix) of every file that produced an unpacked output
+    $unpackedBases = @{}
+    foreach ($u in $allInDest | Where-Object { $_.Name -like '*-unpacked.*' }) {
+        $n = $u.Name
+        # Strip "-unpacked<ext>" to get the source base name
+        $base = $n -replace '-unpacked\.[^.]+$',''
+        $unpackedBases[$base] = $true
+    }
+
+    $copiedUnpacked = 0; $copiedOriginal = 0
+    foreach ($f in $allInDest) {
+        if ($f.Name -like '*-unpacked.*') {
+            # Copy the unpacked file as-is
+            Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
+            $copiedUnpacked++
+        }
+        else {
+            # Skip originals that have an unpacked counterpart
+            $thisBase = [IO.Path]::GetFileNameWithoutExtension($f.Name)
+            if ($unpackedBases.ContainsKey($thisBase)) { continue }
+            Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
+            $copiedOriginal++
+        }
+    }
+    Write-Host ("Final folder: {0}  (unpacked copied={1}, originals copied={2})" -f $finalDir, $copiedUnpacked, $copiedOriginal) -ForegroundColor Green
+}
+
 # ---------- USER-CONTEXT (not RunAsSystem): prepare and dispatch ----------
 if (-not $RunAsSystem) {
+    if ($PostProcessOnly) {
+        if (-not (Test-Path -LiteralPath $Destination)) {
+            throw "Destination folder not found: $Destination"
+        }
+        $Destination = (Resolve-Path $Destination).Path
+        Write-Host "PostProcessOnly: running post-processing on $Destination" -ForegroundColor Green
+        $ppStart = Get-Date
+        Invoke-CMPolicyPostProcessing -Destination $Destination
+        $ppSpan = (Get-Date) - $ppStart
+        Write-Host ("Post-process time: {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $ppSpan, $ppSpan.TotalSeconds) -ForegroundColor Green
+        $ScriptEnd = Get-Date
+        $tot = $ScriptEnd - $ScriptStart
+        Write-Host ("Script total : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds) -ForegroundColor Green
+        return
+    }
     if (-not $CleanupJobs) {
         New-Item -ItemType Directory -Force -Path $Destination | Out-Null
         $Destination  = (Resolve-Path $Destination).Path
@@ -171,6 +434,7 @@ if (-not $RunAsSystem) {
             $multi = foreach ($picked in $pickedJobs) {
                 $pairs = foreach ($f in $picked.FileList) {
                     $url = $f.RemoteName
+                    if ([string]::IsNullOrWhiteSpace($url)) { continue }   # skip entries without a source URL
                     if ($UseHttps) { $url = $url -replace '^http://','https://' -replace '(https://[^/:]+):80(/|$)','$1$2' }
                     if ($f.LocalName) {
                         $name = Split-Path -Path $f.LocalName -Leaf
@@ -187,13 +451,20 @@ if (-not $RunAsSystem) {
                     $usedNames[$name] = $true
                     [pscustomobject]@{ Url = $url; LocalFile = (Join-Path $Destination $name) }
                 }
+                $pairs = @($pairs)
+                if ($pairs.Count -eq 0) {
+                    Write-Host ("  Skipping job {0} ({1}) - no downloadable file entries." -f $picked.JobId, $picked.DisplayName) -ForegroundColor Yellow
+                    continue
+                }
                 [pscustomobject]@{
                     JobName    = "CMPolicyTest_${jobTimestamp}_$($picked.JobId.Substring(0,8))"
                     SourceId   = $picked.JobId
                     SourceName = $picked.DisplayName
-                    Pairs      = @($pairs)
+                    Pairs      = $pairs
                 }
             }
+            $multi = @($multi)
+            if ($multi.Count -eq 0) { throw "None of the selected jobs contain downloadable files. Aborting." }
 
             $BatchFile = Join-Path $Destination "_batch_$jobTimestamp.json"
             ConvertTo-Json -InputObject ([object[]]$multi) -Depth 6 | Set-Content -Path $BatchFile -Encoding UTF8
@@ -241,6 +512,18 @@ if (-not $RunAsSystem) {
     }
     else { Write-Host "Done. Output folder: $Destination" -ForegroundColor Green }
 
+    # Run post-processing in user context, after the SYSTEM scheduled task has finished.
+    $ppSpan = [TimeSpan]::Zero
+    if (-not $CleanupJobs) {
+        $ppStart = Get-Date
+        try {
+            Invoke-CMPolicyPostProcessing -Destination $Destination
+        } catch {
+            Write-Host ("Post-processing failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+        $ppSpan = (Get-Date) - $ppStart
+    }
+
     $ScriptEnd = Get-Date
     $tot = $ScriptEnd - $ScriptStart
 
@@ -268,6 +551,7 @@ if (-not $RunAsSystem) {
             ("Files downloaded : {0}" -f $downloaded.Count)
             ("Total size       : {0} MB ({1:N0} bytes)" -f $totalMb, $totalSize)
             ("Download time    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $dlSpan, $dlSpan.TotalSeconds)
+            ("Post-process time: {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $ppSpan, $ppSpan.TotalSeconds)
             ("Total runtime    : {0:hh\:mm\:ss\.fff}  ({1:N3} s)  (incl. post-processing)" -f $tot, $tot.TotalSeconds)
             '===================================================='
         )
@@ -442,7 +726,16 @@ if ($BatchFile) {
 
 # Execute and collect stats
 $results = foreach ($w in $workList) {
-    Invoke-OneBitsJob -Name $w.JobName -Pairs $w.Pairs -Https:$UseHttps -Cert $clientCert -CertStore $physStoreName -Priority $Priority
+    $jobPairs = @($w.Pairs | Where-Object { $_ -and -not [string]::IsNullOrWhiteSpace($_.Url) -and -not [string]::IsNullOrWhiteSpace($_.LocalFile) })
+    if ($jobPairs.Count -eq 0) {
+        Write-Host ("Skipping job '{0}' - no valid Url/LocalFile pairs." -f $w.JobName) -ForegroundColor Yellow
+        [pscustomobject]@{
+            JobName = $w.JobName; Files = 0; Bytes = 0; State = 'SKIPPED_EMPTY'
+            Start = (Get-Date); End = (Get-Date); Elapsed = [TimeSpan]::Zero
+        }
+        continue
+    }
+    Invoke-OneBitsJob -Name $w.JobName -Pairs $jobPairs -Https:$UseHttps -Cert $clientCert -CertStore $physStoreName -Priority $Priority
 }
 
 $jobEnd  = Get-Date
@@ -482,232 +775,7 @@ Write-Host ("Script start : {0}" -f $ScriptStart.ToString('yyyy-MM-dd HH:mm:ss.f
 Write-Host ("Script end   : {0}" -f $ScriptEnd.ToString('yyyy-MM-dd HH:mm:ss.fff')) -ForegroundColor Green
 Write-Host ("Script total : {0:hh\:mm\:ss\.fff}  ({1:N3} s)" -f $tot, $tot.TotalSeconds) -ForegroundColor Green
 
-# --- Post-processing: rename downloaded files to .xml when content is XML --------------
-Write-Host ""
-Write-Host "Post-processing: sniffing downloaded files for XML content..." -ForegroundColor Green
-$allFiles = $workList | ForEach-Object { $_.Pairs } | ForEach-Object { $_.LocalFile } | Sort-Object -Unique
-$renamed = 0; $skipped = 0; $missing = 0; $errors = 0
-foreach ($f in $allFiles) {
-    try {
-        if (-not (Test-Path -LiteralPath $f -ErrorAction SilentlyContinue)) { $missing++; continue }
-        # Read up to 1024 bytes and decode using BOM if present, else UTF-8
-        $buf = $null; $read = 0
-        try {
-            $stream = [System.IO.File]::Open($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-            try {
-                $buf  = New-Object byte[] 1024
-                $read = $stream.Read($buf, 0, $buf.Length)
-            } finally { $stream.Dispose() }
-        } catch {
-            Write-Host ("  SKIP (read failed): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
-            $errors++; continue
-        }
-        if ($read -le 0) { $skipped++; continue }
-
-        $enc = [System.Text.Encoding]::UTF8
-        $off = 0
-        if     ($read -ge 3 -and $buf[0] -eq 0xEF -and $buf[1] -eq 0xBB -and $buf[2] -eq 0xBF)            { $enc = [System.Text.Encoding]::UTF8;    $off = 3 }
-        elseif ($read -ge 2 -and $buf[0] -eq 0xFF -and $buf[1] -eq 0xFE)                                  { $enc = [System.Text.Encoding]::Unicode; $off = 2 }   # UTF-16 LE
-        elseif ($read -ge 2 -and $buf[0] -eq 0xFE -and $buf[1] -eq 0xFF)                                  { $enc = [System.Text.Encoding]::BigEndianUnicode; $off = 2 }
-        elseif ($read -ge 4 -and $buf[0] -eq 0x3C -and $buf[1] -eq 0x00 -and $buf[2] -eq 0x3F -and $buf[3] -eq 0x00) { $enc = [System.Text.Encoding]::Unicode; $off = 0 }   # UTF-16 LE no BOM
-
-        $text  = $enc.GetString($buf, $off, $read - $off).TrimStart(' ', "`r", "`n", "`t")
-        $isXml = $text.StartsWith('<?xml', [StringComparison]::OrdinalIgnoreCase) -or
-                 ($text.StartsWith('<') -and $text -match '^<[A-Za-z_!?][^>]*>')
-        if (-not $isXml) { $skipped++; continue }
-
-        $dir   = Split-Path -Path $f -Parent
-        $base  = [IO.Path]::GetFileNameWithoutExtension($f)
-        $newP  = Join-Path $dir "$base.xml"
-        if ($newP -ieq $f) { $skipped++; continue }   # already .xml
-        if (Test-Path -LiteralPath $newP -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $newP -Force -ErrorAction SilentlyContinue }
-        try {
-            [System.IO.File]::Move($f, $newP)
-            Write-Host ("  XML : {0}  ->  {1}" -f (Split-Path $f -Leaf), (Split-Path $newP -Leaf)) -ForegroundColor Green
-            $renamed++
-        } catch {
-            Write-Host ("  ERR (rename): {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
-            $errors++
-        }
-    } catch {
-        Write-Host ("  ERR : {0} - {1}" -f (Split-Path $f -Leaf), $_.Exception.Message)
-        $errors++
-    }
-}
-Write-Host ("Post-processing: renamed={0}  kept={1}  missing={2}  errors={3}" -f $renamed, $skipped, $missing, $errors) -ForegroundColor Green
-
-# --- Decompress zlib-packed policy bodies -> *-unpacked.xml ---
-function Expand-CMZlib {
-    param([Parameter(Mandatory)][string]$HexBlob)
-    $hex = ($HexBlob -replace '[\s\r\n]','')
-    if ($hex.Length -lt 12 -or ($hex.Length % 2)) { throw "Invalid hex blob length: $($hex.Length)" }
-    $raw = New-Object byte[] ($hex.Length / 2)
-    for ($i = 0; $i -lt $raw.Length; $i++) { $raw[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16) }
-    # Strip 2-byte zlib header + trailing 4-byte Adler32 -> raw DEFLATE
-    $deflate = New-Object byte[] ($raw.Length - 6)
-    [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
-    $in  = New-Object System.IO.MemoryStream(,$deflate)
-    $out = New-Object System.IO.MemoryStream
-    $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
-    try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
-    return ,$out.ToArray()
-}
-
-Write-Host ""
-Write-Host "Post-processing: decompressing zlib policy bodies..." -ForegroundColor Green
-$unpacked = 0; $unpackErr = 0
-$xmlFiles = Get-ChildItem -LiteralPath $Destination -File -Filter *.xml -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -notlike '*-unpacked.xml' }
-foreach ($xf in $xmlFiles) {
-    try {
-        # Load the XML using BOM-aware decoding
-        $xml = $null
-        try { $xml = [xml](Get-Content -LiteralPath $xf.FullName -Raw -ErrorAction Stop) } catch { $xml = $null }
-        if (-not $xml) { continue }
-
-        # Find any element with Compression="zlib"
-        $nodes = $xml.SelectNodes("//*[@Compression='zlib']")
-        if (-not $nodes -or $nodes.Count -eq 0) { continue }
-
-        foreach ($n in $nodes) {
-            $hex = $n.InnerText
-            if ([string]::IsNullOrWhiteSpace($hex)) { continue }
-            try {
-                $bytes = Expand-CMZlib -HexBlob $hex
-                # Decode: try UTF-16 LE BOM, then UTF-16 LE no-BOM, then UTF-8
-                $text = $null
-                if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
-                    $text = [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
-                } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-                    $text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
-                } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
-                    $text = [System.Text.Encoding]::Unicode.GetString($bytes)
-                } else {
-                    $text = [System.Text.Encoding]::Unicode.GetString($bytes)
-                    if ($text -notmatch '<') { $text = [System.Text.Encoding]::UTF8.GetString($bytes) }
-                }
-
-                $outName = "{0}-unpacked.xml" -f [IO.Path]::GetFileNameWithoutExtension($xf.Name)
-                $outPath = Join-Path $xf.DirectoryName $outName
-                Set-Content -LiteralPath $outPath -Value $text -Encoding UTF8
-                Write-Host ("  UNPACK: {0}  ->  {1}  ({2:N0} bytes)" -f $xf.Name, $outName, $bytes.Length) -ForegroundColor Green
-                $unpacked++
-                break   # one unpack per file
-            } catch {
-                Write-Host ("  ERR (unpack): {0} - {1}" -f $xf.Name, $_.Exception.Message)
-                $unpackErr++
-            }
-        }
-    } catch {
-        Write-Host ("  ERR (xml): {0} - {1}" -f $xf.Name, $_.Exception.Message)
-        $unpackErr++
-    }
-}
-Write-Host ("Post-processing: unpacked={0}  errors={1}" -f $unpacked, $unpackErr) -ForegroundColor Green
-
-# --- Decompress raw zlib binary files (e.g. CM .zip CIs that are actually zlib streams) ---
-Write-Host ""
-Write-Host "Post-processing: decompressing raw zlib binary files..." -ForegroundColor Green
-$binUnpacked = 0; $binErr = 0
-$candidates = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
-              Where-Object {
-                  $_.Name -ne '_Script.log' -and
-                  $_.Name -notlike '_batch_*.json' -and
-                  $_.Name -notlike '*-unpacked.xml' -and
-                  $_.Length -ge 6
-              }
-foreach ($cf in $candidates) {
-    try {
-        $fs = [System.IO.File]::Open($cf.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-        try {
-            $hdr = New-Object byte[] 2
-            [void]$fs.Read($hdr, 0, 2)
-        } finally { $fs.Dispose() }
-
-        # zlib magic: 0x78 (CMF) followed by one of 01/5E/9C/DA (FLG)
-        if ($hdr[0] -ne 0x78) { continue }
-        if ($hdr[1] -notin 0x01,0x5E,0x9C,0xDA) { continue }
-
-        $raw = [System.IO.File]::ReadAllBytes($cf.FullName)
-        if ($raw.Length -lt 6) { continue }
-        $deflate = New-Object byte[] ($raw.Length - 6)
-        [Array]::Copy($raw, 2, $deflate, 0, $deflate.Length)
-        $in  = New-Object System.IO.MemoryStream(,$deflate)
-        $out = New-Object System.IO.MemoryStream
-        $ds  = New-Object System.IO.Compression.DeflateStream($in, [System.IO.Compression.CompressionMode]::Decompress)
-        try { $ds.CopyTo($out) } finally { $ds.Dispose(); $in.Dispose() }
-        $bytes = $out.ToArray()
-        if ($bytes.Length -eq 0) { continue }
-
-        # Decide output extension by sniffing decompressed content
-        $isXml = $false
-        $sample = if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
-                      [System.Text.Encoding]::Unicode.GetString($bytes, 2, [Math]::Min(256, $bytes.Length - 2))
-                  } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-                      [System.Text.Encoding]::UTF8.GetString($bytes, 3, [Math]::Min(256, $bytes.Length - 3))
-                  } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x3C -and $bytes[1] -eq 0x00) {
-                      [System.Text.Encoding]::Unicode.GetString($bytes, 0, [Math]::Min(512, $bytes.Length))
-                  } else {
-                      [System.Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(256, $bytes.Length))
-                  }
-        $sample = $sample.TrimStart(' ',"`r","`n","`t",[char]0xFEFF)
-        if ($sample.StartsWith('<?xml',[StringComparison]::OrdinalIgnoreCase) -or
-            ($sample.StartsWith('<') -and $sample -match '^<[A-Za-z_!?][^>]*>')) { $isXml = $true }
-
-        $base    = [IO.Path]::GetFileNameWithoutExtension($cf.Name)
-        $ext     = if ($isXml) { '-unpacked.xml' } else { '-unpacked.bin' }
-        $outPath = Join-Path $cf.DirectoryName ("$base$ext")
-        [System.IO.File]::WriteAllBytes($outPath, $bytes)
-        Write-Host ("  UNZIP : {0}  ->  {1}  ({2:N0} bytes)" -f $cf.Name, (Split-Path $outPath -Leaf), $bytes.Length) -ForegroundColor Green
-        $binUnpacked++
-    } catch {
-        Write-Host ("  ERR (unzip): {0} - {1}" -f $cf.Name, $_.Exception.Message)
-        $binErr++
-    }
-}
-Write-Host ("Post-processing: zlib binaries unpacked={0}  errors={1}" -f $binUnpacked, $binErr) -ForegroundColor Green
-
-# --- Total size of downloaded files (exclude _Script.log, _batch_*.json, *-unpacked.*) ---
-$downloaded = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -ne '_Script.log' -and $_.Name -notlike '_batch_*.json' -and $_.Name -notlike '*-unpacked.*' }
-$totalSize = ($downloaded | Measure-Object -Property Length -Sum).Sum
-if (-not $totalSize) { $totalSize = 0 }
-Write-Host ("Total downloaded: {0} file(s)   {1:N0} bytes   {2:N2} MB" -f `
-    $downloaded.Count, $totalSize, ($totalSize / 1MB)) -ForegroundColor Green
-
-# --- Build "Final" folder: unpacked files + originals that were not packed ---
-Write-Host ""
-Write-Host "Post-processing: assembling 'Final' folder..." -ForegroundColor Green
-$finalDir = Join-Path $Destination 'Final'
-New-Item -ItemType Directory -Force -Path $finalDir | Out-Null
-
-$allInDest = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
-             Where-Object { $_.Name -ne '_Script.log' -and $_.Name -ne '_runtime.txt' -and $_.Name -notlike '_batch_*.json' }
-
-# Collect base names (without -unpacked suffix) of every file that produced an unpacked output
-$unpackedBases = @{}
-foreach ($u in $allInDest | Where-Object { $_.Name -like '*-unpacked.*' }) {
-    $n = $u.Name
-    # Strip "-unpacked<ext>" to get the source base name
-    $base = $n -replace '-unpacked\.[^.]+$',''
-    $unpackedBases[$base] = $true
-}
-
-$copiedUnpacked = 0; $copiedOriginal = 0
-foreach ($f in $allInDest) {
-    if ($f.Name -like '*-unpacked.*') {
-        # Copy the unpacked file as-is
-        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
-        $copiedUnpacked++
-    }
-    else {
-        # Skip originals that have an unpacked counterpart
-        $thisBase = [IO.Path]::GetFileNameWithoutExtension($f.Name)
-        if ($unpackedBases.ContainsKey($thisBase)) { continue }
-        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
-        $copiedOriginal++
-    }
-}
-Write-Host ("Final folder: {0}  (unpacked copied={1}, originals copied={2})" -f $finalDir, $copiedUnpacked, $copiedOriginal) -ForegroundColor Green
+# Post-processing intentionally runs in the calling user context after the scheduled
+# task completes (or via -PostProcessOnly), not here in the SYSTEM child process.
 
 Stop-Transcript | Out-Null
