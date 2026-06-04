@@ -675,4 +675,39 @@ if (-not $totalSize) { $totalSize = 0 }
 Write-Host ("Total downloaded: {0} file(s)   {1:N0} bytes   {2:N2} MB" -f `
     $downloaded.Count, $totalSize, ($totalSize / 1MB)) -ForegroundColor Green
 
+# --- Build "Final" folder: unpacked files + originals that were not packed ---
+Write-Host ""
+Write-Host "Post-processing: assembling 'Final' folder..." -ForegroundColor Green
+$finalDir = Join-Path $Destination 'Final'
+New-Item -ItemType Directory -Force -Path $finalDir | Out-Null
+
+$allInDest = Get-ChildItem -LiteralPath $Destination -File -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -ne '_Script.log' -and $_.Name -ne '_runtime.txt' -and $_.Name -notlike '_batch_*.json' }
+
+# Collect base names (without -unpacked suffix) of every file that produced an unpacked output
+$unpackedBases = @{}
+foreach ($u in $allInDest | Where-Object { $_.Name -like '*-unpacked.*' }) {
+    $n = $u.Name
+    # Strip "-unpacked<ext>" to get the source base name
+    $base = $n -replace '-unpacked\.[^.]+$',''
+    $unpackedBases[$base] = $true
+}
+
+$copiedUnpacked = 0; $copiedOriginal = 0
+foreach ($f in $allInDest) {
+    if ($f.Name -like '*-unpacked.*') {
+        # Copy the unpacked file as-is
+        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
+        $copiedUnpacked++
+    }
+    else {
+        # Skip originals that have an unpacked counterpart
+        $thisBase = [IO.Path]::GetFileNameWithoutExtension($f.Name)
+        if ($unpackedBases.ContainsKey($thisBase)) { continue }
+        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $finalDir $f.Name) -Force
+        $copiedOriginal++
+    }
+}
+Write-Host ("Final folder: {0}  (unpacked copied={1}, originals copied={2})" -f $finalDir, $copiedUnpacked, $copiedOriginal) -ForegroundColor Green
+
 Stop-Transcript | Out-Null

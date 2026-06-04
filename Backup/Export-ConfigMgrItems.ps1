@@ -108,7 +108,22 @@
     Backup the WSUS database. This will create a backup of the WSUS database in the export folder.
     The backup will be created using the SQL Server Management Objects (SMO) and will create a backup file for the WSUS database.
     The backup will be created only if the WSUS database is NOT hosted on the same SQL Server as the ConfigMgr databases and already exported.
-    
+
+.PARAMETER ImportAutomaticDeploymentRules
+    Import Automatic Deployment Rules from previously exported *.xml files in -ImportFolder.
+    Reads each Export-CliXml file, resolves the embedded product / classification GUIDs against
+    the current site (SMS_UpdateCategoryInstance via WMI) and recreates the ADR via the
+    documented New-CMSoftwareUpdateAutoDeploymentRule cmdlet.
+
+.PARAMETER ImportFolder
+    Folder containing the exported ADR *.xml files. Searched recursively. Metadata side files
+    produced by the exporter (*.metadata.xml, *.deployments.xml, *.hinvclasses.xml, *.references.xml)
+    are automatically ignored.
+
+.PARAMETER ForcedImport
+    Update an ADR that already exists with the same Name instead of skipping it. Without this
+    switch, existing ADRs are left untouched and a warning is logged.
+
 .EXAMPLE
     Export-ConfigMgrItems.ps1
 #>
@@ -141,7 +156,22 @@ param
     [Switch]$ExportAutomaticDeploymentRules,
     [switch]$ExportCDLatest,
     [switch]$BackupConfigMgrUserDatabases,
-    [switch]$BackupWSUSUSusdb
+    [switch]$BackupWSUSUSusdb,
+
+    # ---- ADR import parameters --------------------------------------------------
+    # Import Automatic Deployment Rules from previously exported *.xml files
+    # (created by this script via Export-CliXml of SMS_AutoDeployment objects).
+    [Switch]$ImportAutomaticDeploymentRules,
+
+    # Folder containing the exported ADR *.xml files. The folder is searched
+    # recursively. Only files containing a serialized SMS_AutoDeployment object
+    # are processed.
+    [String]$ImportFolder,
+
+    # If specified, an already existing ADR with the same Name will be updated
+    # in-place via Set-CMAutoDeploymentRule / Set-CMAutoDeploymentRuleDeployment.
+    # If not specified, existing ADRs are skipped and a warning is written.
+    [Switch]$ForcedImport
 )
 
 
@@ -1173,6 +1203,946 @@ function Export-CMItemCustomFunction
     End{}
 }
 #endregion 
+
+
+#region function Get-CMUpdateCategoryNameFromGuid
+<#
+.SYNOPSIS
+    Resolves a ConfigMgr update category GUID (Product or UpdateClassification)
+    to its LocalizedCategoryInstanceName via the SMS provider.
+
+.DESCRIPTION
+    The exported UpdateRuleXML stores _Product and _UpdateClassification match
+    rules as e.g. "'Product:5f4177e2-ad09-4066-9050-b7466ad5b078'" or
+    "'UpdateClassification:e6cf1350-c01b-414d-a61f-263d14d133b4'".
+    These IDs cannot be passed to New-CMAutoDeploymentRule directly; the cmdlet
+    expects display names like 'Office 2019' or 'Security Updates'.
+    This helper queries SMS_UpdateCategoryInstance (which is the WMI class
+    behind Get-CMSoftwareUpdateCategory) and returns the human readable name.
+
+.PARAMETER CategoryIdString
+    The raw MatchRule string (with surrounding single quotes optional), e.g.
+    "'Product:5f4177e2-ad09-4066-9050-b7466ad5b078'".
+
+.PARAMETER CategoryCache
+    Optional hashtable used to cache lookups across many calls.
+#>
+function Get-CMUpdateCategoryNameFromGuid
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$CategoryIdString,
+
+        [Parameter(Mandatory = $false)]
+        [hashtable]$CategoryCache
+    )
+
+    # Strip surrounding quotes the exporter may have left in place
+    $cleanId = $CategoryIdString.Trim().Trim("'").Trim('"')
+
+    if ($CategoryCache -and $CategoryCache.ContainsKey($cleanId))
+    {
+        return $CategoryCache[$cleanId]
+    }
+
+    # The CategoryInstance_UniqueID stored in WMI matches the value 1:1
+    # (e.g. "Product:5f4177e2-..." or "UpdateClassification:e6cf1350-...").
+    # Escape single quotes for the WQL string just in case.
+    $wqlId = $cleanId -replace "'", "''"
+    $wmiQuery = "SELECT LocalizedCategoryInstanceName, CategoryTypeName FROM SMS_UpdateCategoryInstance WHERE CategoryInstance_UniqueID = '$wqlId'"
+
+    try
+    {
+        $result = Invoke-CMWmiQuery -Query $wmiQuery -Option Fast -ErrorAction Stop | Select-Object -First 1
+    }
+    catch
+    {
+        Write-CMTraceLog -Message "WMI lookup failed for category '$cleanId': $_" -Severity Warning
+        $result = $null
+    }
+
+    if (-not $result)
+    {
+        Write-CMTraceLog -Message "Could not resolve update category '$cleanId' to a name. The ID will be skipped." -Severity Warning
+        if ($CategoryCache) { $CategoryCache[$cleanId] = $null }
+        return $null
+    }
+
+    $name = $result.LocalizedCategoryInstanceName
+    if ($CategoryCache) { $CategoryCache[$cleanId] = $name }
+    return $name
+}
+#endregion
+
+
+#region function Convert-CMLocaleToLanguageName
+<#
+.SYNOPSIS
+    Converts a "Locale:<lcid>" string from the exported ContentTemplate XML
+    into a language display name accepted by New-CMAutoDeploymentRule.
+
+.DESCRIPTION
+    The exported ContentTemplate uses entries like "Locale:9" (English),
+    "Locale:7" (German) or "Locale:0" (language neutral). The
+    -Language parameter of New-CMAutoDeploymentRule expects English language
+    display names like 'English' or 'German'. This helper performs the
+    conversion via [System.Globalization.CultureInfo].
+
+    Locale:0 is mapped to 'Language Independent' which is the string used by
+    the SCCM console for language-neutral updates.
+#>
+function Convert-CMLocaleToLanguageName
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$LocaleString
+    )
+
+    if ($LocaleString -inotmatch '^Locale:(\d+)$')
+    {
+        Write-CMTraceLog -Message "Unexpected locale string format '$LocaleString'. Skipping." -Severity Warning
+        return $null
+    }
+
+    [int]$lcid = $Matches[1]
+
+    if ($lcid -eq 0)
+    {
+        return 'Language Independent'
+    }
+
+    # The ConfigMgr console exposes most languages as a single neutral entry
+    # (e.g. 'English' for any English region, 'German' for any German region),
+    # but a few languages with multiple scripts/regions are listed with their
+    # parenthesised qualifier (e.g. 'Chinese (Simplified, PRC)',
+    # 'Chinese (Traditional, Taiwan)', 'Portuguese (Brazil)',
+    # 'Portuguese (Portugal)', 'Serbian (Latin)', 'Serbian (Cyrillic)').
+    # The safest way to handle both cases is to walk up to the neutral parent
+    # culture and take its EnglishName, falling back to a static map for the
+    # ambiguous specific cultures.
+
+    # Static overrides for LCIDs where the SCCM console uses the specific
+    # (parenthesised) name rather than the neutral parent.
+    $specificLanguageMap = @{
+        2052 = 'Chinese (Simplified, PRC)'        # zh-CN
+        1028 = 'Chinese (Traditional, Taiwan)'    # zh-TW
+        3076 = 'Chinese (Traditional, Hong Kong)' # zh-HK
+        5124 = 'Chinese (Traditional, Macao)'     # zh-MO
+        4100 = 'Chinese (Simplified, Singapore)'  # zh-SG
+        1046 = 'Portuguese (Brazil)'              # pt-BR
+        2070 = 'Portuguese (Portugal)'            # pt-PT
+        2074 = 'Serbian (Latin)'                  # sr-Latn-*
+        3098 = 'Serbian (Cyrillic)'               # sr-Cyrl-*
+    }
+    if ($specificLanguageMap.ContainsKey($lcid))
+    {
+        return $specificLanguageMap[$lcid]
+    }
+
+    try
+    {
+        $ci = [System.Globalization.CultureInfo]::GetCultureInfo($lcid)
+        # Walk up to a neutral culture (drops the "(United States)" region suffix)
+        $neutral = if ($ci.IsNeutralCulture) { $ci } else { $ci.Parent }
+        if ($null -eq $neutral -or $neutral.LCID -eq 127) # invariant culture
+        {
+            $neutral = $ci
+        }
+        return $neutral.EnglishName.Trim()
+    }
+    catch
+    {
+        Write-CMTraceLog -Message "Could not convert LCID '$lcid' to a language name: $_" -Severity Warning
+        return $null
+    }
+}
+#endregion
+
+
+#region function ConvertFrom-CMDurationUnit
+<#
+.SYNOPSIS
+    Maps the DeploymentTemplate xml "Days|Weeks|Months|Hours" string to the
+    Microsoft.ConfigurationManagement TimeUnitType enum value accepted by the
+    -DeadlineTimeUnit / -AvailableTimeUnit / -AlertTimeUnit parameters.
+#>
+function ConvertFrom-CMDurationUnit
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [string]$Unit
+    )
+
+    switch ($Unit)
+    {
+        'Hours'  { 'Hours' ; break }
+        'Days'   { 'Days'  ; break }
+        'Weeks'  { 'Weeks' ; break }
+        'Months' { 'Months'; break }
+        default
+        {
+            Write-CMTraceLog -Message "Unknown duration unit '$Unit'. Defaulting to 'Days'." -Severity Warning
+            'Days'
+        }
+    }
+}
+#endregion
+
+
+#region function ConvertFrom-CMDateRevisedString
+<#
+.SYNOPSIS
+    Best-effort conversion of the "DateRevised" MatchRule (e.g. "0:2:0:0") into
+    the DateReleasedOrRevisedType enum value used by
+    New-CMSoftwareUpdateAutoDeploymentRule.
+
+.DESCRIPTION
+    The internal representation in UpdateRuleXML is
+        "<type>:<value>:<unit>:<flag>"
+    where:
+        type  0 = DateReleased, 1 = DateRevised
+        unit  0 = Hours, 1 = Days, 2 = Weeks, 3 = Months, 4 = Years
+
+    The supported cmdlet enum values (DateReleasedOrRevisedType) are:
+        Any, LastHour, Last1Hour, Last2Hours, Last3Hours, Last4Hours,
+        Last8Hours, Last12Hours, Last16Hours, Last20Hours,
+        LastDay, Last1Day, Last2Days, Last3Days, Last4Days, Last5Days,
+        Last6Days, Last7Days, Last14Days, Last21Days, Last28Days,
+        LastMonth, Last1Month, Last2Months, Last3Months, Last4Months,
+        Last5Months, Last6Months, Last7Months, Last8Months, Last9Months,
+        Last10Months, Last11Months, Last12Months, LastYear, Last1Year
+
+    Anything that cannot be mapped is returned as 'Any' with a warning so that
+    ADR creation can continue.
+#>
+function ConvertFrom-CMDateRevisedString
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$RawValue
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RawValue) -or $RawValue -eq '0:0:0:0')
+    {
+        return 'Any'
+    }
+
+    $parts = $RawValue -split ':'
+    if ($parts.Count -lt 3)
+    {
+        Write-CMTraceLog -Message "Unparseable DateRevised value '$RawValue'. Falling back to 'Any'." -Severity Warning
+        return 'Any'
+    }
+
+    [int]$value = 0
+    [int]$unit  = 0
+    [void][int]::TryParse($parts[1], [ref]$value)
+    [void][int]::TryParse($parts[2], [ref]$unit)
+
+    $key = '{0}|{1}' -f $value, $unit
+    switch ($key)
+    {
+        # Hours (unit 0)
+        '1|0'  { return 'Last1Hour' }
+        '2|0'  { return 'Last2Hours' }
+        '3|0'  { return 'Last3Hours' }
+        '4|0'  { return 'Last4Hours' }
+        '8|0'  { return 'Last8Hours' }
+        '12|0' { return 'Last12Hours' }
+        '16|0' { return 'Last16Hours' }
+        '20|0' { return 'Last20Hours' }
+        '24|0' { return 'Last1Day' }   # 24 hours has no direct enum value, map to Last1Day
+        # Days (unit 1)
+        '1|1'  { return 'Last1Day' }
+        '2|1'  { return 'Last2Days' }
+        '3|1'  { return 'Last3Days' }
+        '4|1'  { return 'Last4Days' }
+        '5|1'  { return 'Last5Days' }
+        '6|1'  { return 'Last6Days' }
+        '7|1'  { return 'Last7Days' }
+        '14|1' { return 'Last14Days' }
+        '21|1' { return 'Last21Days' }
+        '28|1' { return 'Last28Days' }
+        '30|1' { return 'Last1Month' } # 30 days has no direct enum value, map to Last1Month
+        # Weeks (unit 2)
+        '1|2'  { return 'Last7Days' }
+        '2|2'  { return 'Last14Days' }
+        '3|2'  { return 'Last21Days' }
+        '4|2'  { return 'Last28Days' }
+        # Months (unit 3)
+        '1|3'  { return 'Last1Month' }
+        '2|3'  { return 'Last2Months' }
+        '3|3'  { return 'Last3Months' }
+        '4|3'  { return 'Last4Months' }
+        '5|3'  { return 'Last5Months' }
+        '6|3'  { return 'Last6Months' }
+        '7|3'  { return 'Last7Months' }
+        '8|3'  { return 'Last8Months' }
+        '9|3'  { return 'Last9Months' }
+        '10|3' { return 'Last10Months' }
+        '11|3' { return 'Last11Months' }
+        '12|3' { return 'Last12Months' }
+        # Years (unit 4)
+        '1|4'  { return 'Last1Year' }
+        default
+        {
+            Write-CMTraceLog -Message "DateRevised '$RawValue' (value=$value unit=$unit) has no direct enum mapping. Falling back to 'Any'." -Severity Warning
+            return 'Any'
+        }
+    }
+}
+#endregion
+
+
+#region function Import-CMAutoDeploymentRuleFromXml
+<#
+.SYNOPSIS
+    Creates (or updates) a ConfigMgr Automatic Deployment Rule from an XML
+    file previously produced by Export-CMItemCustomFunction.
+
+.DESCRIPTION
+    The exported XML is an Export-CliXml dump of an SMS_AutoDeployment object.
+    Most of the rule's settings live in four embedded XML strings:
+        - AutoDeploymentProperties  (rule level: enable, scope, alerts, ...)
+        - ContentTemplate           (deployment package, locales, sources)
+        - DeploymentTemplate        (deployment object: schedule, UX, alerts)
+        - UpdateRuleXML             (filter: products, classifications, ...)
+    Plus a couple of top level scalar properties (Name, CollectionID,
+    Schedule, ...).
+
+    This function parses those payloads, resolves Product and
+    UpdateClassification GUIDs to display names via WMI, resolves the
+    deployment package by PackageID and creates the ADR using the official
+    New-CMAutoDeploymentRule cmdlet. Existing ADRs (matched by Name) are
+    skipped unless -Force is supplied, in which case Set-CMAutoDeploymentRule
+    and Set-CMAutoDeploymentRuleDeployment are used to update the rule
+    in-place.
+
+.PARAMETER Path
+    Full path to the exported ADR XML file.
+
+.PARAMETER Force
+    Update an existing ADR with the same Name instead of skipping it.
+#>
+function Import-CMAutoDeploymentRuleFromXml
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true)]
+        [Alias('FullName')]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Force,
+
+        [Parameter(Mandatory = $false)]
+        [hashtable]$CategoryCache = @{}
+    )
+
+    Begin {}
+    Process
+    {
+        try
+        {
+            if (-not (Test-Path -LiteralPath $Path))
+            {
+                Write-CMTraceLog -Message "ADR XML not found: $Path" -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+
+            Write-CMTraceLog -Message "Reading ADR XML: $Path"
+            $adr = Import-Clixml -LiteralPath $Path
+
+            # Sanity check: this is an SMS_AutoDeployment dump
+            if (-not $adr.PSObject.Properties['AutoDeploymentProperties'] -or `
+                -not $adr.PSObject.Properties['ContentTemplate'] -or `
+                -not $adr.PSObject.Properties['DeploymentTemplate'] -or `
+                -not $adr.PSObject.Properties['UpdateRuleXML'])
+            {
+                Write-CMTraceLog -Message "File '$Path' does not look like an exported ADR (missing expected XML properties). Skipping." -Severity Warning
+                return
+            }
+
+            # Reject empty / whitespace embedded payloads up front so the [xml] cast
+            # below doesn't throw a generic / non-actionable parse error.
+            foreach ($payloadProp in @('AutoDeploymentProperties','ContentTemplate','DeploymentTemplate','UpdateRuleXML'))
+            {
+                if ([string]::IsNullOrWhiteSpace([string]$adr.$payloadProp))
+                {
+                    Write-CMTraceLog -Message "File '$Path' has an empty '$payloadProp' payload. Cannot import this ADR." -Severity Error
+                    $script:ExitWithError = $true
+                    return
+                }
+            }
+
+            # ---------- parse the four embedded XML payloads ----------
+            try
+            {
+                [xml]$autoXml       = $adr.AutoDeploymentProperties
+                [xml]$contentXml    = $adr.ContentTemplate
+                [xml]$deploymentXml = $adr.DeploymentTemplate
+                [xml]$updateRuleXml = $adr.UpdateRuleXML
+            }
+            catch
+            {
+                Write-CMTraceLog -Message "File '$Path' contains malformed XML in one of the embedded payloads: $($_.Exception.Message)" -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+
+            $autoRule   = $autoXml.AutoDeploymentRule
+            $contentDef = $contentXml.ContentActionXML
+            $deployDef  = $deploymentXml.DeploymentCreationActionXML
+            $ruleItems  = $updateRuleXml.UpdateXML.UpdateXMLDescriptionItems.UpdateXMLDescriptionItem
+
+            if (-not $autoRule -or -not $contentDef -or -not $deployDef)
+            {
+                Write-CMTraceLog -Message "File '$Path' is missing required XML root nodes (AutoDeploymentRule/ContentActionXML/DeploymentCreationActionXML). Cannot import." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+
+            $adrName = if ($adr.Name) { $adr.Name } else { $autoRule.DeploymentName }
+            if ([string]::IsNullOrWhiteSpace($adrName))
+            {
+                Write-CMTraceLog -Message "Could not determine ADR name from $Path. Skipping." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+            Write-CMTraceLog -Message "Processing ADR '$adrName'"
+
+            # ---------- check for existing ADR ----------
+            $existing = Get-CMSoftwareUpdateAutoDeploymentRule -Fast -WarningAction SilentlyContinue -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq $adrName } |
+                Select-Object -First 1
+            if ($existing -and -not $Force)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' already exists. Use -ForcedImport to update. Skipping." -Severity Warning
+                return
+            }
+
+            # ---------- collection ----------
+            $collectionId = $adr.CollectionID
+            if ([string]::IsNullOrWhiteSpace($collectionId))
+            {
+                $collectionId = $deployDef.CollectionId
+            }
+            if ([string]::IsNullOrWhiteSpace($collectionId))
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' has no CollectionID. Skipping." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+            $collection = Get-CMCollection -Id $collectionId -ErrorAction SilentlyContinue
+            if (-not $collection)
+            {
+                Write-CMTraceLog -Message "Target collection '$collectionId' for ADR '$adrName' does not exist. Skipping." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+
+            # ---------- deployment package ----------
+            $packageId        = $contentDef.PackageID
+            $deploymentPackage = $null
+            $noDeploymentPackage = $false
+            if ([string]::IsNullOrWhiteSpace($packageId))
+            {
+                $noDeploymentPackage = $true
+                Write-CMTraceLog -Message "ADR '$adrName' has no deployment package (download-only mode)."
+            }
+            else
+            {
+                $deploymentPackage = Get-CMSoftwareUpdateDeploymentPackage -Id $packageId -ErrorAction SilentlyContinue
+                if (-not $deploymentPackage)
+                {
+                    Write-CMTraceLog -Message "Deployment package '$packageId' for ADR '$adrName' does not exist. Skipping ADR." -Severity Error
+                    $script:ExitWithError = $true
+                    return
+                }
+            }
+
+            # ---------- languages ----------
+            $languages = @()
+            if ($contentDef.ContentLocales -and $contentDef.ContentLocales.Locale)
+            {
+                foreach ($loc in @($contentDef.ContentLocales.Locale))
+                {
+                    $lang = Convert-CMLocaleToLanguageName -LocaleString $loc
+                    if ($lang) { $languages += $lang }
+                }
+            }
+
+            # ---------- product / classification / title / superseded / article / date / required / deployed ----------
+            $products        = @()
+            $classifications = @()
+            $titleIncludes   = @()
+            $titleExcludes   = @()
+            $superseded      = $null
+            $articleId       = $null
+            $dateRevised     = 'Any'
+            $required        = $null
+            $isDeployed      = $null
+            $sourceHadProductRule        = $false
+            $sourceHadClassificationRule = $false
+
+            foreach ($item in @($ruleItems))
+            {
+                switch ($item.PropertyName)
+                {
+                    '_Product'
+                    {
+                        foreach ($raw in @($item.MatchRules.string))
+                        {
+                            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+                            $sourceHadProductRule = $true
+                            $name = Get-CMUpdateCategoryNameFromGuid -CategoryIdString $raw -CategoryCache $CategoryCache
+                            if ($name) { $products += $name }
+                        }
+                    }
+                    '_UpdateClassification'
+                    {
+                        foreach ($raw in @($item.MatchRules.string))
+                        {
+                            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+                            $sourceHadClassificationRule = $true
+                            $name = Get-CMUpdateCategoryNameFromGuid -CategoryIdString $raw -CategoryCache $CategoryCache
+                            if ($name) { $classifications += $name }
+                        }
+                    }
+                    'LocalizedDisplayName'
+                    {
+                        foreach ($raw in @($item.MatchRules.string))
+                        {
+                            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+                            if ($raw.StartsWith('-'))
+                            {
+                                $titleExcludes += $raw.Substring(1)
+                            }
+                            else
+                            {
+                                $titleIncludes += $raw
+                            }
+                        }
+                    }
+                    'IsSuperseded'
+                    {
+                        # MatchRules.string may be a string or a string[] when serialized;
+                        # take the first value for boolean criteria.
+                        $rawVal = @($item.MatchRules.string) | Select-Object -First 1
+                        if (-not [string]::IsNullOrWhiteSpace($rawVal))
+                        {
+                            $superseded = ($rawVal -ieq 'true')
+                        }
+                    }
+                    'IsDeployed'
+                    {
+                        $rawVal = @($item.MatchRules.string) | Select-Object -First 1
+                        if (-not [string]::IsNullOrWhiteSpace($rawVal))
+                        {
+                            $isDeployed = ($rawVal -ieq 'true')
+                        }
+                    }
+                    'ArticleID'
+                    {
+                        # Cmdlet accepts a String[] so we keep all distinct values.
+                        $articleIdList = @($item.MatchRules.string) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                        if ($articleIdList) { $articleId = $articleIdList }
+                    }
+                    'NumMissing'
+                    {
+                        # MatchRule is a criterion string such as ">=1" — the
+                        # cmdlet's -Required parameter is String[] of criteria,
+                        # so we forward the raw string verbatim.
+                        $rawVal = @($item.MatchRules.string) | Select-Object -First 1
+                        if (-not [string]::IsNullOrWhiteSpace($rawVal))
+                        {
+                            $required = $rawVal
+                        }
+                    }
+                    'DateRevised'
+                    {
+                        $rawVal = @($item.MatchRules.string) | Select-Object -First 1
+                        $dateRevised = ConvertFrom-CMDateRevisedString -RawValue $rawVal
+                    }
+                    default
+                    {
+                        Write-CMTraceLog -Message "ADR '$adrName' has an UpdateRuleXML PropertyName '$($item.PropertyName)' that is not handled by the importer. The criterion will be skipped." -Severity Information
+                    }
+                }
+            }
+
+            # ---------- run schedule ----------
+            # Three modes: ManuallyRun, RunTheRuleAfterAnySoftwareUpdatePointSynchronization, RunTheRuleOnSchedule
+            $runType   = 'DoNotRunThisRuleAutomatically'
+            $scheduleObject = $null
+            if ($autoRule.AlignWithSyncSchedule -ieq 'true')
+            {
+                $runType = 'RunTheRuleAfterAnySoftwareUpdatePointSynchronization'
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($adr.Schedule))
+            {
+                try
+                {
+                    $scheduleObject = Convert-CMSchedule -ScheduleString $adr.Schedule -ErrorAction Stop
+                    $runType = 'RunTheRuleOnSchedule'
+                }
+                catch
+                {
+                    Write-CMTraceLog -Message "Could not convert schedule '$($adr.Schedule)' for ADR '$adrName': $_. Falling back to manual run." -Severity Warning
+                    $runType = 'DoNotRunThisRuleAutomatically'
+                }
+            }
+
+            # ---------- user notification ----------
+            $userNotification = switch ($deployDef.UserNotificationOption)
+            {
+                'HideAll'                  { 'HideAll' ; break }
+                'ShowSoftwareCenterOnly'   { 'DisplaySoftwareCenterOnly' ; break }
+                'DisplaySoftwareCenterOnly'{ 'DisplaySoftwareCenterOnly' ; break }
+                'DisplayAll'               { 'DisplayAll' ; break }
+                default                    { 'DisplaySoftwareCenterOnly' }
+            }
+
+            # ---------- verbose / state message level ----------
+            # ConfigMgr state-message verbosity codes: 1=OnlyError, 5=OnlySuccessAndError, 10=All
+            $verboseLevel = switch ([string]$deployDef.StateMessageVerbosity)
+            {
+                '1'  { 'OnlyErrorMessages' ; break }
+                '5'  { 'OnlySuccessAndErrorMessages' ; break }
+                '10' { 'AllMessages' ; break }
+                default { 'AllMessages' }
+            }
+
+            # ---------- pre-flight: ensure category resolution didn't silently
+            # ----------            empty out the source's filter set
+            if ($sourceHadProductRule -and $products.Count -eq 0)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' had product filter(s) in the source but none could be resolved against this site's update categories. Aborting import to avoid creating an over-broad ADR." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+            if ($sourceHadClassificationRule -and $classifications.Count -eq 0)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' had update classification filter(s) in the source but none could be resolved against this site's update categories. Aborting import to avoid creating an over-broad ADR." -Severity Error
+                $script:ExitWithError = $true
+                return
+            }
+
+            # ---------- content source flags ----------
+            # The exported ContentTemplate.ContentSources can list Internet, WSUS
+            # and UNC. Only the Internet source maps to a documented New-CMSU…ADR
+            # parameter (-DownloadFromInternet). 'WSUS' is the standard
+            # SUP-served path and needs no special flag. The -DownloadFromMicrosoftUpdate
+            # parameter is a *fallback-to-cloud* option that is NOT represented by
+            # a WSUS source entry and must not be derived from one. UNC sources
+            # cannot be set via the cmdlet either; we warn the operator if one is
+            # present.
+            $downloadFromInternet = $false
+            $hasUncSource         = $false
+            if ($contentDef.ContentSources -and $contentDef.ContentSources.Source)
+            {
+                foreach ($src in @($contentDef.ContentSources.Source))
+                {
+                    switch ($src.Name)
+                    {
+                        'Internet' { $downloadFromInternet = $true }
+                        'UNC'      { $hasUncSource = $true }
+                    }
+                }
+            }
+            if ($hasUncSource)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' has a UNC content source which cannot be re-applied via the official cmdlet. Re-add it manually in the console after import." -Severity Warning
+            }
+
+            # IsDeployed criterion cannot be re-applied via the official cmdlet
+            if ($null -ne $isDeployed)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' has an 'IsDeployed' filter (value=$isDeployed) that cannot be set via the official cmdlet. Re-add it manually in the console after import." -Severity Warning
+            }
+
+            # ---------- helper to translate Checked/Unchecked/true/false to bool ----------
+            $toBool = {
+                param($v)
+                if ($null -eq $v) { return $false }
+                $s = [string]$v
+                return ($s -ieq 'true' -or $s -ieq 'checked')
+            }
+
+            # ---------- build splat for New-CMSoftwareUpdateAutoDeploymentRule ----------
+            # The shorter New-CMAutoDeploymentRule is an undocumented alias of the
+            # canonical New-CMSoftwareUpdateAutoDeploymentRule and we use the
+            # canonical form (same for Set-/Get-).
+            $newAdrParams = @{
+                Name                                 = $adrName
+                Collection                           = $collection
+                AddToExistingSoftwareUpdateGroup     = ($autoRule.UseSameDeployment -ieq 'true')
+                EnabledAfterCreate                   = ($autoRule.EnableAfterCreate -ieq 'true')
+                NoInstallOnRemote                    = -not ($deployDef.UseRemoteDP -ieq 'true')
+                NoInstallOnUnprotected               = -not ($deployDef.UseUnprotectedDP -ieq 'true')
+                UseBranchCache                       = (& $toBool $deployDef.UseBranchCache)
+                AllowRestart                         = (& $toBool $deployDef.AllowRestart)
+                AllowSoftwareInstallationOutsideMaintenanceWindow = (& $toBool $deployDef.AllowInstallOutSW)
+                AllowUseMeteredNetwork               = (& $toBool $deployDef.AllowUseMeteredNetwork)
+                SendWakeupPacket                     = (& $toBool $deployDef.EnableWakeOnLan)
+                UseUtc                               = (& $toBool $deployDef.Utc)
+                # Note: docs spell these without the trailing 's' on
+                # New-/Set-CMSoftwareUpdateAutoDeploymentRule.
+                DisableOperationManager              = (& $toBool $deployDef.DisableMomAlert)
+                GenerateOperationManagerAlert        = (& $toBool $deployDef.GenerateMomAlert)
+                RequirePostRebootFullScan            = (& $toBool $deployDef.RequirePostRebootFullScan)
+                SoftDeadlineEnabled                  = (& $toBool $deployDef.SoftDeadlineEnabled)
+                UserNotification                     = $userNotification
+                VerboseLevel                         = $verboseLevel
+                RunType                              = $runType
+                DateReleasedOrRevised                = $dateRevised
+                DownloadFromInternet                 = $downloadFromInternet
+                # NOTE: -DownloadFromMicrosoftUpdate (cloud fallback) is deliberately
+                # NOT derived from the 'WSUS' content source. WSUS is the standard
+                # SUP-served path and does NOT imply cloud fallback. Leave the flag
+                # off and let the cmdlet apply its safe default (False).
+            }
+
+            if ($adr.Description) { $newAdrParams.Description = $adr.Description }
+            if ($null -ne $superseded) { $newAdrParams.Superseded = $superseded }
+            # -Required is a String[] of criteria expressions (e.g. ">=1"), NOT
+            # a Boolean. Pass the raw value forward as an array.
+            if (-not [string]::IsNullOrWhiteSpace([string]$required)) { $newAdrParams.Required = @([string]$required) }
+            if ($products.Count -gt 0) { $newAdrParams.Product = @($products | Sort-Object -Unique) }
+            if ($classifications.Count -gt 0) { $newAdrParams.UpdateClassification = @($classifications | Sort-Object -Unique) }
+            if ($languages.Count -gt 0) { $newAdrParams.Language = @($languages | Sort-Object -Unique) }
+            if ($articleId) { $newAdrParams.ArticleId = @($articleId) }
+            # -Title takes a String[] so pass the array unjoined.
+            if ($titleIncludes.Count -gt 0) { $newAdrParams.Title = @($titleIncludes | Sort-Object -Unique) }
+            # New-CMSoftwareUpdateAutoDeploymentRule has no -TitleExclude / exclusion parameter.
+            # Title exclusions defined in the source ADR cannot be re-applied via the cmdlet
+            # and have to be added manually in the SCCM console after import. Warn the operator.
+            if ($titleExcludes.Count -gt 0)
+            {
+                Write-CMTraceLog -Message "ADR '$adrName' has title EXCLUSIONS [$($titleExcludes -join ', ')] that cannot be set via the official cmdlet. Re-add them manually in the console after import." -Severity Warning
+            }
+            if ($scheduleObject) { $newAdrParams.Schedule = $scheduleObject }
+            if ($deploymentPackage)
+            {
+                $newAdrParams.DeploymentPackage = $deploymentPackage
+            }
+            elseif ($noDeploymentPackage)
+            {
+                # The cmdlet does not have a -NoDeploymentPackage switch; the
+                # documented way to create a "no package" / download-only ADR is to
+                # set -DeploymentPackage $null.
+                $newAdrParams.DeploymentPackage = $null
+            }
+
+            # Deployment timing (deadline / available)
+            $deadline = [int]$deployDef.Duration
+            $available = [int]$deployDef.AvailableDeltaDuration
+            if ($deadline -le 0)
+            {
+                $newAdrParams.DeadlineImmediately = $true
+            }
+            else
+            {
+                # Explicit $false so an update can flip a previously immediate
+                # ADR back to a delayed deadline.
+                $newAdrParams.DeadlineImmediately = $false
+                $newAdrParams.DeadlineTime     = $deadline
+                $newAdrParams.DeadlineTimeUnit = ConvertFrom-CMDurationUnit -Unit $deployDef.DurationUnits
+            }
+            if ($available -le 0)
+            {
+                $newAdrParams.AvailableImmediately = $true
+            }
+            else
+            {
+                # Explicit $false – same reasoning as DeadlineImmediately.
+                $newAdrParams.AvailableImmediately = $false
+                $newAdrParams.AvailableTime     = $available
+                $newAdrParams.AvailableTimeUnit = ConvertFrom-CMDurationUnit -Unit $deployDef.AvailableDeltaDurationUnits
+            }
+
+            # Alert (failure threshold)
+            if ((& $toBool $deployDef.EnableAlert))
+            {
+                $newAdrParams.AlertTime     = [int]$deployDef.AlertDuration
+                $newAdrParams.AlertTimeUnit = ConvertFrom-CMDurationUnit -Unit $deployDef.AlertDurationUnits
+            }
+
+            # Suppress restart flags — always assign so the update path can clear them
+            # back to $false (a conditional assignment would silently leave a previously
+            # set $true value in place on an existing ADR).
+            $newAdrParams.SuppressRestartServer      = ($deployDef.SuppressServers      -ieq 'Checked')
+            $newAdrParams.SuppressRestartWorkstation = ($deployDef.SuppressWorkstations -ieq 'Checked')
+
+            # ---------- create or update ----------
+            if ($existing -and $ForcedImport)
+            {
+                Write-CMTraceLog -Message "Updating existing ADR '$adrName' (ForcedImport)."
+
+                # Set-CMSoftwareUpdateAutoDeploymentRule supports almost the same
+                # param set as New-CMSoftwareUpdateAutoDeploymentRule but the rule
+                # itself must be passed via -InputObject. We rebuild the splat
+                # without -Name/-Collection (collection changes belong to the
+                # deployment cmdlet) and without parameters whose names differ
+                # between the rule and deployment cmdlets.
+                $setRuleParams = @{}
+                $ruleScopedKeys = @(
+                    'AddToExistingSoftwareUpdateGroup','EnabledAfterCreate','RunType',
+                    'DateReleasedOrRevised','Description','Superseded','Required',
+                    'Product','UpdateClassification','Language','ArticleId',
+                    'Title','Schedule',
+                    'DeploymentPackage',
+                    'DownloadFromInternet',
+                    'DisableOperationManager','GenerateOperationManagerAlert'
+                )
+                foreach ($k in $ruleScopedKeys)
+                {
+                    if ($newAdrParams.ContainsKey($k)) { $setRuleParams[$k] = $newAdrParams[$k] }
+                }
+                Set-CMSoftwareUpdateAutoDeploymentRule -InputObject $existing @setRuleParams -ErrorAction Stop
+
+                # The deployment object lives behind a separate cmdlet
+                # (Set-CMAutoDeploymentRuleDeployment), which is identified via
+                # -InputObject from Get-CMAutoDeploymentRuleDeployment. The
+                # deployment cmdlet uses the plural "DisableOperationsManager"
+                # variant so we translate the key on the way in.
+                $setDeployParams = @{}
+                $deployScopedKeys = @(
+                    'NoInstallOnRemote','NoInstallOnUnprotected','UseBranchCache',
+                    'AllowRestart','AllowSoftwareInstallationOutsideMaintenanceWindow',
+                    'AllowUseMeteredNetwork','SendWakeupPacket','UseUtc',
+                    'RequirePostRebootFullScan','SoftDeadlineEnabled',
+                    'UserNotification','VerboseLevel',
+                    'DeadlineImmediately','DeadlineTime','DeadlineTimeUnit',
+                    'AvailableImmediately','AvailableTime','AvailableTimeUnit',
+                    'AlertTime','AlertTimeUnit',
+                    'SuppressRestartServer','SuppressRestartWorkstation'
+                )
+                foreach ($k in $deployScopedKeys)
+                {
+                    if ($newAdrParams.ContainsKey($k)) { $setDeployParams[$k] = $newAdrParams[$k] }
+                }
+                # Map the rule-side parameter name to the deployment-side spelling
+                if ($newAdrParams.ContainsKey('DisableOperationManager'))
+                {
+                    $setDeployParams.DisableOperationsManager = $newAdrParams['DisableOperationManager']
+                }
+                if ($newAdrParams.ContainsKey('GenerateOperationManagerAlert'))
+                {
+                    $setDeployParams.GenerateOperationsManagerAlert = $newAdrParams['GenerateOperationManagerAlert']
+                }
+
+                if ($setDeployParams.Count -gt 0)
+                {
+                    $existingDeployments = Get-CMAutoDeploymentRuleDeployment -Name $adrName -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+                    if (-not $existingDeployments)
+                    {
+                        Write-CMTraceLog -Message "ADR '$adrName' has no existing deployment objects. Deployment properties not updated." -Severity Warning
+                    }
+                    else
+                    {
+                        # The exported file represents ONE deployment (the one bound
+                        # to $collectionId). If the target ADR has multiple
+                        # deployments (extra collections added later), only update
+                        # the one whose target collection matches – applying the
+                        # imported template to all of them would silently overwrite
+                        # unrelated deployment settings.
+                        $allDeployments = @($existingDeployments)
+                        $matchingDeployments = @(
+                            $allDeployments | Where-Object {
+                                $_.CollectionID -eq $collectionId -or
+                                $_.TargetCollectionID -eq $collectionId -or
+                                $_.AssignedCollectionID -eq $collectionId
+                            }
+                        )
+                        if ($matchingDeployments.Count -eq 0)
+                        {
+                            # Fallback: target ADR has deployments but none match
+                            # the imported CollectionID. Only update if there's
+                            # exactly one deployment overall (unambiguous).
+                            if ($allDeployments.Count -eq 1)
+                            {
+                                $matchingDeployments = $allDeployments
+                                Write-CMTraceLog -Message "ADR '$adrName': could not match imported CollectionID '$collectionId' to existing deployment; updating the single existing deployment." -Severity Warning
+                            }
+                            else
+                            {
+                                Write-CMTraceLog -Message "ADR '$adrName' has $($allDeployments.Count) deployments but none match the imported CollectionID '$collectionId'. Deployment properties not updated to avoid clobbering unrelated deployments." -Severity Warning
+                            }
+                        }
+                        if ($allDeployments.Count -gt 1)
+                        {
+                            Write-CMTraceLog -Message "ADR '$adrName' has $($allDeployments.Count) deployments in the target site but the export contains only one. Only the deployment for CollectionID '$collectionId' will be updated; other deployments must be maintained manually." -Severity Warning
+                        }
+                        foreach ($dep in $matchingDeployments)
+                        {
+                            Set-CMAutoDeploymentRuleDeployment -InputObject $dep @setDeployParams -ErrorAction Stop
+                        }
+                    }
+                }
+
+                Write-CMTraceLog -Message "ADR '$adrName' updated."
+            }
+            else
+            {
+                Write-CMTraceLog -Message "Creating ADR '$adrName' via New-CMSoftwareUpdateAutoDeploymentRule."
+                $null = New-CMSoftwareUpdateAutoDeploymentRule @newAdrParams -ErrorAction Stop
+                Write-CMTraceLog -Message "ADR '$adrName' created."
+            }
+
+            # ---------- align current enabled state with source export ----------
+            # AutoDeploymentEnabled is the *current* runtime state, distinct from
+            # EnableAfterCreate which only applies at creation time. After create
+            # or update, toggle the rule to match what was exported.
+            if ($adr.PSObject.Properties['AutoDeploymentEnabled'])
+            {
+                try
+                {
+                    $current = Get-CMSoftwareUpdateAutoDeploymentRule -Fast -WarningAction SilentlyContinue -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -eq $adrName } |
+                        Select-Object -First 1
+                    if ($current)
+                    {
+                        if ($adr.AutoDeploymentEnabled -and -not $current.AutoDeploymentEnabled)
+                        {
+                            Write-CMTraceLog -Message "Enabling ADR '$adrName' to match source state."
+                            Enable-CMSoftwareUpdateAutoDeploymentRule -InputObject $current -ErrorAction Stop
+                        }
+                        elseif (-not $adr.AutoDeploymentEnabled -and $current.AutoDeploymentEnabled)
+                        {
+                            Write-CMTraceLog -Message "Disabling ADR '$adrName' to match source state."
+                            Disable-CMSoftwareUpdateAutoDeploymentRule -InputObject $current -ErrorAction Stop
+                        }
+                    }
+                }
+                catch
+                {
+                    Write-CMTraceLog -Message "Could not synchronize enabled state for ADR '$adrName': $_" -Severity Warning
+                }
+            }
+        }
+        catch
+        {
+            Write-CMTraceLog -Message "Error importing ADR from '$Path'. Line: $($_.InvocationInfo.ScriptLineNumber)" -Severity Error
+            Write-CMTraceLog -Message "$_" -Severity Error
+            $script:ExitWithError = $true
+        }
+    }
+    End {}
+}
+#endregion
 
 
 #region Compress-FolderOnRemoteMachine
@@ -2534,10 +3504,25 @@ Function Get-SQLVersionInfo
 
 
 # Check if none of the switch parameters are set
-if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportAutomaticDeploymentRules -or $ExportCDLatest)) 
+if (-not ($ExportAllItemTypes -or $ExportCollections -or $ExportConfigurationItems -or $ExportConfigurationBaselines -or $ExportTaskSequences -or $ExportAntimalwarePolicies -or $ExportScripts -or $ExportClientSettings -or $ExportConfigurationPolicies -or $ExportAutomaticDeploymentRules -or $ExportCDLatest -or $ImportAutomaticDeploymentRules)) 
 {
-    Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportAutomaticDeploymentRules, -ExportCDLatest" -Severity Warning
+    Write-CMTraceLog -Message "No export type selected. Please use one of the following parameters: -ExportAllItemTypes, -ExportCollections, -ExportConfigurationItems, -ExportConfigurationBaselines, -ExportTaskSequences, -ExportAntimalwarePolicies, -ExportScripts, -ExportClientSettings, -ExportConfigurationPolicies, -ExportAutomaticDeploymentRules, -ExportCDLatest, -ImportAutomaticDeploymentRules" -Severity Warning
     Exit 1 
+}
+
+# Validate import parameter combination early
+if ($ImportAutomaticDeploymentRules)
+{
+    if ([string]::IsNullOrWhiteSpace($ImportFolder))
+    {
+        Write-CMTraceLog -Message "-ImportAutomaticDeploymentRules requires -ImportFolder to point at a folder with the exported ADR XML files." -Severity Error
+        Exit 1
+    }
+    if (-not (Test-Path -LiteralPath $ImportFolder))
+    {
+        Write-CMTraceLog -Message "Import folder '$ImportFolder' does not exist." -Severity Error
+        Exit 1
+    }
 }
 
 $stoptWatch = New-Object System.Diagnostics.Stopwatch
@@ -2702,6 +3687,49 @@ try
         Write-CMTraceLog -Message "---------------------------------"
         # No -Fast so the lazy XML properties of the SMS_AutoDeployment object are loaded
         Get-CMAutoDeploymentRule | Export-CMItemCustomFunction
+    }
+
+    # Import automatic deployment rules
+    if ($ImportAutomaticDeploymentRules)
+    {
+        Write-CMTraceLog -Message "---------------------------------"
+        Write-CMTraceLog -Message " -> Will import automatic deployment rules from: $ImportFolder"
+        Write-CMTraceLog -Message "---------------------------------"
+
+        # Collect candidate XML files. We accept any *.xml that is not one of the
+        # metadata side files produced by the exporter.
+        $adrXmlFiles = Get-ChildItem -Path $ImportFolder -Filter '*.xml' -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -notlike '*.metadata.xml' -and
+                $_.Name -notlike '*.deployments.xml' -and
+                $_.Name -notlike '*.hinvclasses.xml' -and
+                $_.Name -notlike '*.references.xml'
+            }
+
+        if (-not $adrXmlFiles -or $adrXmlFiles.Count -eq 0)
+        {
+            Write-CMTraceLog -Message "No ADR XML files found in '$ImportFolder'." -Severity Warning
+        }
+        else
+        {
+            Write-CMTraceLog -Message "Found $($adrXmlFiles.Count) candidate ADR XML file(s)."
+            # Shared cache so the same product/classification GUID is only looked up once
+            $script:AdrCategoryCache = @{}
+            # Push the current location so each import call can freely Set-Location
+            # to the SiteCode PSDrive without stranding the caller there afterwards.
+            Push-Location
+            try
+            {
+                foreach ($adrFile in $adrXmlFiles)
+                {
+                    Import-CMAutoDeploymentRuleFromXml -Path $adrFile.FullName -Force:$ForcedImport -CategoryCache $script:AdrCategoryCache
+                }
+            }
+            finally
+            {
+                Pop-Location
+            }
+        }
     }
     
     # Export collections

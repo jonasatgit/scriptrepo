@@ -139,6 +139,10 @@ function New-SecureBootEventsWmiClass
     $newWMIClass.Properties["EventLatest"].Qualifiers.Add("read", $true)
     $newWMIClass.Properties["EventLatest"].Qualifiers.Add("Description", "Identifies the latest event with the same event ID")
 
+    $newWMIClass.Properties.Add("ErrorCode", [System.Management.CimType]::String, $false)
+    $newWMIClass.Properties["ErrorCode"].Qualifiers.Add("read", $true)
+    $newWMIClass.Properties["ErrorCode"].Qualifiers.Add("Description", "Error code extracted from the event message if available (e.g. from Event ID 1796).")
+
     [void]$newWMIClass.Put()
 
     return (Get-WmiObject -Namespace $RootPath -Class $ClassName -List)
@@ -368,7 +372,8 @@ if ($eventList.count -eq 0)
     $classEntry = @{KeyName="SecureBootEvent_0";
         EventID = 0;
         EventCount = 0;
-        EventLatest = 0
+        EventLatest = 0;
+        ErrorCode = ""
     }
     Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMISecureBootEventsClassName)" -Arguments $classEntry | Out-Null
 }
@@ -378,10 +383,27 @@ else
 
         $latestEvent = $eventList | Select-Object -First 1
 
+        # Extract error code from Event ID 1796 message if applicable.
+        # Event 1796 message format (per https://support.microsoft.com/en-us/topic/secure-boot-db-and-dbx-variable-update-events-37e47cf8-608b-4a87-8175-bdead630eb69):
+        # "Secure Boot update failed to update \<variable\> with error <errorcode>. For more information, please see https://go.microsoft.com/fwlink/?linkid=2169931"
+        $errorCode = ""
+        if ([int]$_.Name -eq 1796)
+        {
+            $latest1796 = $eventList | Where-Object { $_.Id -eq 1796 } | Sort-Object TimeCreated -Descending | Select-Object -First 1
+            if ($null -ne $latest1796 -and $null -ne $latest1796.Message)
+            {
+                if ($latest1796.Message -match 'with error\s+([^\s\.]+)')
+                {
+                    $errorCode = $matches[1].Trim()
+                }
+            }
+        }
+
         $classEntry = @{KeyName="SecureBootEvent_$($_.Name)";
             EventID = $_.Name;
             EventCount = $_.Count;
-            EventLatest = if($latestEvent.Id -eq $_.Name) { 1 } else { 0 }
+            EventLatest = if($latestEvent.Id -eq $_.Name) { 1 } else { 0 };
+            ErrorCode = $errorCode
         }
         Set-WmiInstance -Path "\\.\$($WMIRootPath):$($WMISecureBootEventsClassName)" -Arguments $classEntry | Out-Null
     }
