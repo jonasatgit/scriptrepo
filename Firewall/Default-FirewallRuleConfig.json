@@ -15,7 +15,7 @@
                                     "A role could be 'Webserver' for example to be able to define port 80 or 443 in a firewall rule",
                                     "Define your own rules if necessary and use them in a 'RuleDefinition' (Explained further down)",
                                     "Possible default values are:",
-                                    "MECMConsole = Systems running the ConfigMgr console",
+                                    "ConfigMgrConsole = Systems running the ConfigMgr console",
                                     "CentralAdministrationSite = CAS",
                                     "PrimarySite = Primary Site",
                                     "SecondarySite = Secondary Site",
@@ -51,8 +51,8 @@
             [
                 {
                     "RuleName": "Name of firewall rule",
-                    "Source": "Source role name from the RoleList of systems. Could be MECMConsole or PrimarySite for example",
-                    "Destination": "Destination role name from the RoleList of systems. Could be MECMConsole or PrimarySite for example",
+                    "Source": "Source role name from the RoleList of systems. Could be ConfigMgrConsole or PrimarySite for example",
+                    "Destination": "Destination role name from the RoleList of systems. Could be ConfigMgrConsole or PrimarySite for example",
                     "Direction": "Rule direction. Either Inbound or Outbound",
                     "Action": "Either Allow or Block",
                     "Profile": "Either Domain, Private, Public or Any",
@@ -112,7 +112,7 @@
                             "SQLServerRole",
                             "SoftwareUpdatePoint",
                             "PrimarySoftwareUpdatePoint",
-                            "MECMConsole"
+                            "ConfigMgrConsole"
                         ]
         },        
         {
@@ -166,7 +166,7 @@
             "Description": "Terminal Server 1",
             "RoleList": [
                             "RDP",
-                            "MECMConsole"
+                            "ConfigMgrConsole"
                         ]
         },
         {
@@ -183,14 +183,14 @@
    "RuleDefinition": 
     [
         {
-            "RuleName": "MECM Clients to Distribution Point",
+            "RuleName": "ConfigMgr Clients to Distribution Point",
             "Source": "Any",
             "Destination": "DistributionPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports?branch=main#BKMK_PortsClient-DP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports?branch=main#BKMK_PortsClient-DP",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",
@@ -199,70 +199,70 @@
                         ]
         },        
         {
-            "RuleName": "MECM Clients to Distribution Point with PXE",
+            "RuleName": "ConfigMgr Clients to Distribution Point with PXE",
             "Source": "Any",
             "Destination": "DistributionPointPXE",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-DP3",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-DP3",
             "IgnoreSiteCode": "",
             "Services": [
                             "PXE"
                         ]
         },
         {
-            "RuleName": "MECM Client to Fallback status point",
+            "RuleName": "ConfigMgr Client to Fallback status point",
             "Source": "Any",
             "Destination": "FallbackStatusPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-FSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-FSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP"
                         ]
         },
         {
-            "RuleName": "MECM Clients to Management Point",
+            "RuleName": "ConfigMgr Clients to Management Point",
             "Source": "Any",
             "Destination": "ManagementPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
             "IgnoreSiteCode": "",
             "Services": [
                             "MPDefault"
                         ]
         },
         {
-            "RuleName": "MECM Clients to Software update point",
+            "RuleName": "ConfigMgr Clients to Software update point",
             "Source": "Any",
             "Destination": "SoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-MP",
             "IgnoreSiteCode": "",
             "Services": [
                             "WSUSCustom"
                         ]
         },
         {
-            "RuleName": "MECM Clients to State migration point",
+            "RuleName": "ConfigMgr Clients to State migration point",
             "Source": "Any",
             "Destination": "StateMigrationPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-SMP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsClient-SMP",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",
@@ -271,14 +271,14 @@
                         ]
         },
         {
-            "RuleName": "MECM CMG connection point to Management Point",
+            "RuleName": "ConfigMgr CMG connection point to Management Point",
             "Source": "CMGConnectionPoint",
             "Destination": "ManagementPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-mp",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-mp",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTPS",
@@ -286,28 +286,28 @@
                         ]
         },
         {
-            "RuleName": "MECM CMG Connection Point to Software Update Point",
+            "RuleName": "ConfigMgr CMG Connection Point to Software Update Point",
             "Source": "CMGConnectionPoint",
             "Destination": "SoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-sup",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#bkmk_cmgcp-sup",
             "IgnoreSiteCode": "",
             "Services": [
                             "WSUSCustom"
                         ]
         },
         {
-            "RuleName": "MECM Console to Reporting Service Point",
-            "Source": "MECMConsole",
+            "RuleName": "ConfigMgr Console to Reporting Service Point",
+            "Source": "ConfigMgrConsole",
             "Destination": "ReportingServicePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-RSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-RSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTPS",
@@ -315,28 +315,28 @@
                         ]
         },
         {
-            "RuleName": "MECM Console to Site Server",
-            "Source": "MECMConsole",
+            "RuleName": "ConfigMgr Console to Site Server",
+            "Source": "ConfigMgrConsole",
             "Destination": "PrimarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "RPC initial connection to WMI to locate SMS provider system. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Site",
+            "Group": "ConfigMgr",
+            "Description": "RPC initial connection to WMI to locate SMS provider system. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Site",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC"
                         ]
         },
         {
-            "RuleName": "MECM Console to SMS provider",
-            "Source": "MECMConsole",
+            "RuleName": "ConfigMgr Console to SMS provider",
+            "Source": "ConfigMgrConsole",
             "Destination": "SMSProvider",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Console to WMI SMS provider connection. HTTPS for AdminService. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Provider",
+            "Group": "ConfigMgr",
+            "Description": "Console to WMI SMS provider connection. HTTPS for AdminService. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Provider",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -346,28 +346,28 @@
                         ]
         },
         {
-            "RuleName": "MECM Data Warehouse to SQL server",
+            "RuleName": "ConfigMgr Data Warehouse to SQL server",
             "Source": "DataWarehouseServicePoint",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDWSPSQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDWSPSQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Distribution Point to Management Point",
+            "RuleName": "ConfigMgr Distribution Point to Management Point",
             "Source": "DistributionPoint",
             "Destination": "ManagementPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Each Distribution Point sends usage and content validation data to the MP. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDist_MP",
+            "Group": "ConfigMgr",
+            "Description": "Each Distribution Point sends usage and content validation data to the MP. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsDist_MP",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",
@@ -375,28 +375,28 @@
                         ]
         },
         {
-            "RuleName": "MECM Endpoint Protection Point to SQL",
+            "RuleName": "ConfigMgr Endpoint Protection Point to SQL",
             "Source": "EndpointProtectionPoint",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Endpoint Protection Point to SQL DB. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEP-to-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Endpoint Protection Point to SQL DB. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEP-to-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Management Point",
+            "RuleName": "ConfigMgr Site Server to Management Point",
             "Source": "SiteServer",
             "Destination": "ManagementPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Site Server to Management Point https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
+            "Group": "ConfigMgr",
+            "Description": "Site Server to Management Point https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -405,14 +405,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Management Point to Site Server",
+            "RuleName": "ConfigMgr Management Point to Site Server",
             "Source": "ManagementPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Rule not required if -Require the site server to initiate connections to this site system- is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
+            "Group": "ConfigMgr",
+            "Description": "Rule not required if -Require the site server to initiate connections to this site system- is checked. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-Site",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -421,42 +421,42 @@
                         ]
         },
         {
-            "RuleName": "MECM Management Point to SQL",
+            "RuleName": "ConfigMgr Management Point to SQL",
             "Source": "ManagementPoint",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsMP-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Reporting Service Point to SQL",
+            "RuleName": "ConfigMgr Reporting Service Point to SQL",
             "Source": "ReportingServicePoint",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsRSP-SQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsRSP-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Distribution Point",
+            "RuleName": "ConfigMgr Site Server to Distribution Point",
             "Source": "SiteServer",
             "Destination": "DistributionPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Note: From DP to Site Server is not a requirement. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-DP",
+            "Group": "ConfigMgr",
+            "Description": "Note: From DP to Site Server is not a requirement. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-DP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -466,14 +466,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to CMG connection point",
+            "RuleName": "ConfigMgr Site Server to CMG connection point",
             "Source": "SiteServer",
             "Destination": "CMGConnectionPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -483,14 +483,14 @@
                         ]
         },
         {
-            "RuleName": "MECM CMG connection point to Site Server",
+            "RuleName": "ConfigMgr CMG connection point to Site Server",
             "Source": "CMGConnectionPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_CMGCP_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -500,14 +500,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Endpoint Protection Point",
+            "RuleName": "ConfigMgr Site Server to Endpoint Protection Point",
             "Source": "SiteServer",
             "Destination": "EndpointProtectionPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -517,14 +517,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Endpoint Protection Point to Site Server",
+            "RuleName": "ConfigMgr Endpoint Protection Point to Site Server",
             "Source": "EndpointProtectionPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsEndpointProtection_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -534,14 +534,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Fallback Status Point",
+            "RuleName": "ConfigMgr Site Server to Fallback Status Point",
             "Source": "SiteServer",
             "Destination": "FallbackStatusPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -551,14 +551,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Fallback Status Point to Site Server",
+            "RuleName": "ConfigMgr Fallback Status Point to Site Server",
             "Source": "FallbackStatusPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-FSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -568,27 +568,27 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Server hosting remote content library share",
+            "RuleName": "ConfigMgr Site Server to Server hosting remote content library share",
             "Source": "SiteServer",
             "Destination": "ContentLibraryServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RCL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RCL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SMB"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Server hosting content source data",
+            "RuleName": "ConfigMgr Site Server to Server hosting content source data",
             "Source": "SiteServer",
             "Destination": "ContentSourceServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "Package, Application, Image, Updates source server",
             "IgnoreSiteCode": "",
             "Services": [
@@ -596,14 +596,14 @@
                         ]
         },        
         {
-            "RuleName": "MECM Site Server to Service Connection Point",
+            "RuleName": "ConfigMgr Site Server to Service Connection Point",
             "Source": "SiteServer",
             "Destination": "ServiceConnectionPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -613,14 +613,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Service Connection Point to Site Server",
+            "RuleName": "ConfigMgr Service Connection Point to Site Server",
             "Source": "ServiceConnectionPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -630,14 +630,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Reporting Service Point",
+            "RuleName": "ConfigMgr Site Server to Reporting Service Point",
             "Source": "SiteServer",
             "Destination": "ReportingServicePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -647,14 +647,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Reporting Service Point to Site Server",
+            "RuleName": "ConfigMgr Reporting Service Point to Site Server",
             "Source": "ReportingServicePoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-RSP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -664,55 +664,55 @@
                         ]
         },
         {
-            "RuleName": "MECM CAS to Primary Site",
+            "RuleName": "ConfigMgr CAS to Primary Site",
             "Source": "CentralAdministrationSite",
             "Destination": "PrimarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
             "IgnoreSiteCode": "True",
             "Services": [
                             "SMB"
                         ]
         },
         {
-            "RuleName": "MECM Primary Site to CAS",
+            "RuleName": "ConfigMgr Primary Site to CAS",
             "Source": "PrimarySite",
             "Destination": "CentralAdministrationSite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
             "IgnoreSiteCode": "True",
             "Services": [
                             "SMB"
                         ]
         },
         {
-            "RuleName": "MECM Primary Site to Secondary Site",
+            "RuleName": "ConfigMgr Primary Site to Secondary Site",
             "Source": "PrimarySite",
             "Destination": "SecondarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
             "IgnoreSiteCode": "True",
             "Services": [
                             "SMB"
                         ]
         },
         {
-            "RuleName": "MECM Primary Site to SMS Provider",
+            "RuleName": "ConfigMgr Primary Site to SMS Provider",
             "Source": "PrimarySite",
             "Destination": "SMSProvider",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "https://learn.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Provider",
             "IgnoreSiteCode": "True",
             "Services": [
@@ -723,42 +723,42 @@
                         ]
         },
         {
-            "RuleName": "MECM Secondary Site to Primary Site",
+            "RuleName": "ConfigMgr Secondary Site to Primary Site",
             "Source": "SecondarySite",
             "Destination": "PrimarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Site",
             "IgnoreSiteCode": "True",
             "Services": [
                             "SMB"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to SQL",
+            "RuleName": "ConfigMgr Site Server to SQL",
             "Source": "SiteServer",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to SQL Install",
+            "RuleName": "ConfigMgr Site Server to SQL Install",
             "Source": "SiteServer",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Site Server to SQL. The ports are just required during the site database installation of a remote SQL server. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Site Server to SQL. The ports are just required during the site database installation of a remote SQL server. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -768,28 +768,28 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to WSUS SQL",
+            "RuleName": "ConfigMgr Site Server to WSUS SQL",
             "Source": "SiteServer",
             "Destination": "SUPSQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "The Site Server connects to each Software Update Point SQL database for maintenance. NOTE: Does not work with the Windows Internal Database. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL-WSUS",
+            "Group": "ConfigMgr",
+            "Description": "The Site Server connects to each Software Update Point SQL database for maintenance. NOTE: Does not work with the Windows Internal Database. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SQL-WSUS",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Site Server to Software Update Point",
+            "RuleName": "ConfigMgr Site Server to Software Update Point",
             "Source": "SiteServer",
             "Destination": "SoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Site Server to Software Update Point. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
+            "Group": "ConfigMgr",
+            "Description": "Site Server to Software Update Point. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -800,14 +800,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Software Update Point to Site Server",
+            "RuleName": "ConfigMgr Software Update Point to Site Server",
             "Source": "SoftwareUpdatePoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Rule not required if: -Require the site server to initiate connections to this site system- is checked. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
+            "Group": "ConfigMgr",
+            "Description": "Rule not required if: -Require the site server to initiate connections to this site system- is checked. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SUP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -817,14 +817,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Site Server to State Migration Point",
+            "RuleName": "ConfigMgr Site Server to State Migration Point",
             "Source": "SiteServer",
             "Destination": "StateMigrationPoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -833,14 +833,14 @@
                         ]
         },
         {
-            "RuleName": "MECM State Migration Point to Site Server",
+            "RuleName": "ConfigMgr State Migration Point to Site Server",
             "Source": "StateMigrationPoint",
             "Destination": "SiteServer",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-SMP",
             "IgnoreSiteCode": "",
             "Services": [
                             "RPC",
@@ -849,70 +849,70 @@
                         ]
         },
         {
-            "RuleName": "MECM SMS Provider to SQL",
+            "RuleName": "ConfigMgr SMS Provider to SQL",
             "Source": "SMSProvider",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsProvider-SQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsProvider-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Software Update Point to Upstream WSUS",
+            "RuleName": "ConfigMgr Software Update Point to Upstream WSUS",
             "Source": "SoftwareUpdatePoint",
             "Destination": "PrimarySoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Software Update Point to Upstream WSUS. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "Group": "ConfigMgr",
+            "Description": "Software Update Point to Upstream WSUS. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
             "IgnoreSiteCode": "",
             "Services": [
                             "WSUSCustom"
                         ]
         },
         {
-            "RuleName": "MECM Primary Software Update Point to Central Software Update Point",
+            "RuleName": "ConfigMgr Primary Software Update Point to Central Software Update Point",
             "Source": "PrimarySoftwareUpdatePoint",
             "Destination": "CentralSoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Primary Software Update Point to Central Software Update Point. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "Group": "ConfigMgr",
+            "Description": "Primary Software Update Point to Central Software Update Point. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
             "IgnoreSiteCode": "True",
             "Services": [
                           "WSUSCustom"
                         ]
         },
         {
-            "RuleName": "MECM Secondary Software Update Point to Primary Software Update Point",
+            "RuleName": "ConfigMgr Secondary Software Update Point to Primary Software Update Point",
             "Source": "SecondarySoftwareUpdatePoint",
             "Destination": "PrimarySoftwareUpdatePoint",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSUP-WSUS",
             "IgnoreSiteCode": "True",
             "Services": [
                           "WSUSCustom"
                         ]
         },        
         {
-            "RuleName": "MECM CAS SQL to Primary Site SQL",
+            "RuleName": "ConfigMgr CAS SQL to Primary Site SQL",
             "Source": "CASSQLServerRole",
             "Destination": "PRISQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Parent and child Site: https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
             "IgnoreSiteCode": "True",                    
             "Services": [
                             "SQLEndpoint",
@@ -920,14 +920,14 @@
                         ]
         },
         {
-            "RuleName": "MECM Primary Site SQL to CAS SQL",
+            "RuleName": "ConfigMgr Primary Site SQL to CAS SQL",
             "Source": "PRISQLServerRole",
             "Destination": "CASSQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Parent and child Site: https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
             "IgnoreSiteCode": "True",
             "Services": [
                           "SQLEndpoint",
@@ -935,14 +935,14 @@
                         ]
         },
         {
-            "RuleName": "MECM SecondarySite SQL to Primary Site SQL",
+            "RuleName": "ConfigMgr SecondarySite SQL to Primary Site SQL",
             "Source": "SECSQLServerRole",
             "Destination": "PRISQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Parent and child Site: https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
             "IgnoreSiteCode": "True",
             "Services": [
                           "SQLEndpoint",
@@ -950,14 +950,14 @@
                         ]
          },
          {
-            "RuleName": "MECM Primary Site SQL to SecondarySite SQL",
+            "RuleName": "ConfigMgr Primary Site SQL to SecondarySite SQL",
             "Source": "PRISQLServerRole",
             "Destination": "SECSQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Parent and child Site: https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
+            "Group": "ConfigMgr",
+            "Description": "Parent and child Site: https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSQL-SQL",
             "IgnoreSiteCode": "True",
             "Services": [
                           "SQLEndpoint",
@@ -965,28 +965,28 @@
                        ]
          },
          {
-            "RuleName": "MECM State Migration Point to SQL",
+            "RuleName": "ConfigMgr State Migration Point to SQL",
             "Source": "StateMigrationPoint",
             "Destination": "SQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsStateMigrationPoint-to-SQL",
+            "Group": "ConfigMgr",
+            "Description": "https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsStateMigrationPoint-to-SQL",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Pull-Distribution Point to Pull-Source",
+            "RuleName": "ConfigMgr Pull-Distribution Point to Pull-Source",
             "Source": "PullDistributionPoint",
             "Destination": "PullDistributionPointSource",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "Might not be required if specific ports are open for all clients. https://docs.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsPullDP-DPSource",
+            "Group": "ConfigMgr",
+            "Description": "Might not be required if specific ports are open for all clients. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsPullDP-DPSource",
             "IgnoreSiteCode": "",
             "Services": [
                             "HTTP",
@@ -994,41 +994,41 @@
                         ]
         },
         {
-            "RuleName": "MECM External systems to CAS SQL database",
+            "RuleName": "ConfigMgr External systems to CAS SQL database",
             "Source": "ExternalSQLConnection",
             "Destination": "CASSQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "MECM external systems to CAS SQL database",
+            "Group": "ConfigMgr",
+            "Description": "ConfigMgr external systems to CAS SQL database",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         }, 
         {
-            "RuleName": "MECM External systems to Primary Site SQL database",
+            "RuleName": "ConfigMgr External systems to Primary Site SQL database",
             "Source": "ExternalSQLConnection",
             "Destination": "PRISQLServerRole",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
-            "Description": "MECM external systems to Primary Site SQL database",
+            "Group": "ConfigMgr",
+            "Description": "ConfigMgr external systems to Primary Site SQL database",
             "IgnoreSiteCode": "",
             "Services": [
                             "SQLEndpoint"
                         ]
         },
         {
-            "RuleName": "MECM Custom SMB to Primary Server",
+            "RuleName": "ConfigMgr Custom SMB to Primary Server",
             "Source": "SMBSystem",
             "Destination": "PrimarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "External Systems with the need to connect via SMB to a Primary Site Server",
             "IgnoreSiteCode": "",
             "Services": [
@@ -1036,13 +1036,13 @@
                         ]
         },
         {
-            "RuleName": "MECM Custom SMB to CAS",
+            "RuleName": "ConfigMgr Custom SMB to CAS",
             "Source": "SMBSystem",
             "Destination": "CentralAdministrationSite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "External Systems with the need to connect via SMB to a CAS",
             "IgnoreSiteCode": "",
             "Services": [
@@ -1050,13 +1050,13 @@
                         ]
         },
         {
-            "RuleName": "MECM Custom RDP to Primary Server",
+            "RuleName": "ConfigMgr Custom RDP to Primary Server",
             "Source": "RDPSystem",
             "Destination": "PrimarySite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "External Systems with the need to connect via RDP to a Primary Site Server",
             "IgnoreSiteCode": "",
             "Services": [
@@ -1064,17 +1064,60 @@
                         ]
         },
         {
-            "RuleName": "MECM Custom RDP to CAS",
+            "RuleName": "ConfigMgr Custom RDP to CAS",
             "Source": "RDPSystem",
             "Destination": "CentralAdministrationSite",
             "Direction": "Inbound",
             "Action": "Allow",
             "Profile": "Domain",
-            "Group": "MECM",
+            "Group": "ConfigMgr",
             "Description": "External Systems with the need to connect via RDP to a CAS",
             "IgnoreSiteCode": "",
             "Services": [
                             "RDP"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Console to Client",
+            "Source": "ConfigMgrConsole",
+            "Destination": "Client",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Console to client for Remote Control and Remote Assistance/RDP. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsConsole-Client",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "RemoteControl",
+                            "RDP"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Service Connection Point to SQL",
+            "Source": "ServiceConnectionPoint",
+            "Destination": "SQLServerRole",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Service Connection Point to site SQL database. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_SCP_SiteServer",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "SQLEndpoint"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Site Server to Client (Wake on LAN)",
+            "Source": "SiteServer",
+            "Destination": "Client",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Site Server sends Wake on LAN magic packets to clients. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#BKMK_PortsSite-Client",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "WakeOnLAN"
                         ]
         }
       ],
