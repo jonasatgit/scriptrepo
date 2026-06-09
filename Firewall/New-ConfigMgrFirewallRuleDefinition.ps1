@@ -113,12 +113,24 @@ Optional: Site code of ConfigMgr site
 .PARAMETER CreateOutboundRuleForeachInboundRule
 Optional: To create outbound rule for each calculated inbound rule. Not quite tested and more experimental
 
+.PARAMETER ExportToCsv
+Optional: Switch that enables CSV export of the rules selected in the grid view.
+If -CsvExportPath is also provided, that path is used. Otherwise a CSV file is created automatically in the
+script folder using the loaded JSON definition file name plus a datetime suffix (same naming scheme used by
+-ExportConfigMgrSystemRoleInformation).
+
+.PARAMETER CsvExportPath
+Optional: Full path to a .csv file. If set, the rules selected in the grid view are exported to this CSV file
+(implies -ExportToCsv, so the switch is not required when an explicit path is given).
+The file uses ";" as the delimiter (so the comma-separated IP-address lists are kept in one cell) and includes a
+leading "sep=;" hint so Excel detects the delimiter automatically on any locale.
+
 .LINK
 https://github.com/jonasatgit/scriptrepo
 
 #>
 
-[CmdletBinding(DefaultParametersetName='Default')]
+[CmdletBinding(DefaultParametersetName='ShowCommands')]
 param
 (
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
@@ -132,7 +144,7 @@ param
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
-    [string]$DestinationSystemFQDN,
+    [string[]]$DestinationSystemFQDN,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
@@ -171,10 +183,22 @@ param
     [ValidateSet("IPv4","IPv6","All")]
     [string]$IPType = "IPv4",
 
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$false)]
+    [switch]$ExportToCsv,
+
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$false)]
+    [string]$CsvExportPath,
+
     [parameter(ParameterSetName = 'ShowConfig',Mandatory=$true)]
     [switch]$ShowConfig,
 
-    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$true)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [switch]$ShowCommands,
 
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
@@ -811,9 +835,11 @@ if ($ExportConfigMgrSystemRoleInformation)
 }
 
 # getting config file 
+[string]$loadedDefinitionFilePath = $null
 if ($DefinitionFilePath)
 {
     $DefinitionFile = Get-Content $DefinitionFilePath | ConvertFrom-Json
+    $loadedDefinitionFilePath = $DefinitionFilePath
 }
 else 
 {
@@ -825,6 +851,7 @@ else
     else 
     {
         $DefinitionFile = Get-Content $DefinitionFileSelection.FullName | ConvertFrom-Json
+        $loadedDefinitionFilePath = $DefinitionFileSelection.FullName
     }
 }
 
@@ -849,12 +876,12 @@ if ($systemsWithoutSiteCode)
 }
 
 # getting system if parameter is not set
-if ([string]::IsNullOrEmpty($DestinationSystemFQDN))
+if (-NOT $DestinationSystemFQDN -or $DestinationSystemFQDN.Count -eq 0)
 {
-    $selectResult = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList | Out-GridView -Title 'Choose a system you want firewall rules for' -OutputMode Single
+    $selectResult = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList | Out-GridView -Title 'Choose one or more systems you want firewall rules for (use Ctrl/Shift to select multiple)' -OutputMode Multiple
     if ($selectResult)
     {
-        $DestinationSystemFQDN = $selectResult.FullQualifiedDomainName
+        [string[]]$DestinationSystemFQDN = @($selectResult.FullQualifiedDomainName)
     }
     else
     {
@@ -873,8 +900,16 @@ else
     $ruleGroupSuffix = $GroupSuffix
 }
 
-Write-Host "$(Get-date -Format u): Searching rules for: `"$DestinationSystemFQDN`"" -ForegroundColor Green
-$destinationSystemObject = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.FullQualifiedDomainName -eq $DestinationSystemFQDN})
+# List of rules with all the data we need to actually create a firewall rule
+# Initialized OUTSIDE the per-system loop so rules for all selected systems are aggregated
+$outParamObject = New-Object System.Collections.ArrayList 
+
+# Iterate over each selected system. Rule generation logic per system is unchanged - we just repeat it for each system.
+foreach ($currentSystemFQDN in $DestinationSystemFQDN)
+{
+
+Write-Host "$(Get-date -Format u): Searching rules for: `"$currentSystemFQDN`"" -ForegroundColor Green
+$destinationSystemObject = $DefinitionFile.FirewallRuleDefinition.SystemAndRoleList.Where({$_.FullQualifiedDomainName -eq $currentSystemFQDN})
 if ($destinationSystemObject)
 {
     if ([string]::IsNullOrEmpty($destinationSystemObject.IPAddress))
@@ -883,8 +918,8 @@ if ($destinationSystemObject)
         [array]$destinationSystemIPAddresses = Get-IPAddressFromName -SystemName ($destinationSystemObject.FullQualifiedDomainName) -Type $IPType
         if (-NOT ($destinationSystemIPAddresses))
         {
-            Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$DestinationSystemFQDN`" Neither in config file nor via DNS!" -ForegroundColor Yellow
-            break           
+            Write-Host "$(Get-date -Format u): WARNING: No IPAddress found for system: `"$currentSystemFQDN`" Neither in config file nor via DNS!" -ForegroundColor Yellow
+            continue           
         }
     }
     else
@@ -902,23 +937,20 @@ if ($destinationSystemObject)
 }
 else 
 {
-    Write-Host "$(Get-date -Format u): WARNING: System not found in configFile `"$DestinationSystemFQDN`"" -ForegroundColor Yellow
-    break
+    Write-Host "$(Get-date -Format u): WARNING: System not found in configFile `"$currentSystemFQDN`"" -ForegroundColor Yellow
+    continue
 }
-
-# List of rules with all the data we need to actually create a firewall rule
-$outParamObject = New-Object System.Collections.ArrayList 
 
 [array]$requiredRules = $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -in ($destinationSystemObject.RoleList)})
 # adding ANY and Internet rules to the list
 [array]$requiredRules += $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -eq 'Any' -or $_.Destination -eq 'Internet'})
 
-Write-Verbose "$(Get-date -Format u): Found: `"$($requiredRules.count)`" possible rules for: `"$DestinationSystemFQDN`""
+Write-Verbose "$(Get-date -Format u): Found: `"$($requiredRules.count)`" possible rules for: `"$currentSystemFQDN`""
 
 # Collectiong all the data we need for each rule
 foreach ($firewallRule in $requiredRules)
 {
-    $status = "OK"
+    $status = "Used"
     $statusDescription = ''
     $IPAddressList = @()
     $SourceSystems = @()
@@ -930,7 +962,7 @@ foreach ($firewallRule in $requiredRules)
     # Ignoring client communication to CAS
     if (($firewallRule.RuleName -like 'ConfigMgr Client*') -and ($destinationSystemObject.RoleList -contains 'CentralAdministrationSite'))
     {
-        $status = "NOT OK"
+        $status = "Not used"
         $statusDescription = 'Clients to CAS not allowed'
     }
 
@@ -976,7 +1008,7 @@ foreach ($firewallRule in $requiredRules)
         if ($SourceSystems.count -eq 0)
         {
             Write-Verbose "$(Get-date -Format u): WARNING: No systems with role: `"$($searchString)`" found in configfile"
-            $status = "NOT OK"
+            $status = "Not used"
             $statusDescription = 'No system with specified role found'
         }
         else 
@@ -1021,7 +1053,7 @@ foreach ($firewallRule in $requiredRules)
         $IPAddressList = $IPAddressList | Where-Object {$_ -notin $destinationSystemIPAddresses}
         if (-NOT $IPAddressList) # if we don't have an IP at all, skip the rule
         {
-            $status = "NOT OK"
+            $status = "Not used"
             $statusDescription = 'Source IP equals destination IP'
             Write-Verbose "$(Get-date -Format u): WARNING: Source system is equal to destination system. That's expected if the role is installed on the destination system!"
         }
@@ -1034,7 +1066,7 @@ foreach ($firewallRule in $requiredRules)
         if (-NOT ($requiredServices))
         {
             Write-Host "$(Get-date -Format u): WARNING: Service not found in config file: `"$service`" " -ForegroundColor Yellow
-            $status = "NOT OK"
+            $status = "Not used"
             $statusDescription = "Service not found in config file: `"$service`""
         }
 
@@ -1054,7 +1086,7 @@ foreach ($firewallRule in $requiredRules)
                 $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
                 $tmpObj.DisplayName = $firewallRule.RuleName
                 $tmpObj.Direction = 'Inbound'
-                $tmpObj.LocalName = $DestinationSystemFQDN
+                $tmpObj.LocalName = $currentSystemFQDN
                 $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
                 $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
                 $tmpObj.Protocol = $requiredService.Protocol
@@ -1072,7 +1104,7 @@ foreach ($firewallRule in $requiredRules)
                 $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
                 $tmpObj.DisplayName = $firewallRule.RuleName
                 $tmpObj.Direction = 'Outbound'
-                $tmpObj.LocalName = $DestinationSystemFQDN
+                $tmpObj.LocalName = $currentSystemFQDN
                 $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
                 $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
                 $tmpObj.Protocol = $requiredService.Protocol
@@ -1091,7 +1123,7 @@ foreach ($firewallRule in $requiredRules)
                 $tmpObj.StatusDescription = If($statusDescriptionTemp){$statusDescriptionTemp}else{$statusDescription}
                 $tmpObj.DisplayName = $firewallRule.RuleName
                 $tmpObj.Direction = $firewallRule.Direction
-                $tmpObj.LocalName = $DestinationSystemFQDN
+                $tmpObj.LocalName = $currentSystemFQDN
                 $tmpObj.LocalAddress = if ($UseAnyAsLocalAddress){'Any'}else{$destinationSystemIPAddresses}
                 $tmpObj.RemoteAddress = if ($IPAddressList){$IPAddressList | Select-Object -Unique}else{$remoteAddressString}
                 $tmpObj.Protocol = $requiredService.Protocol
@@ -1106,12 +1138,14 @@ foreach ($firewallRule in $requiredRules)
         }
     }
 }
+} # end foreach ($currentSystemFQDN in $DestinationSystemFQDN)
 
 # Show just the rules which are evaluated to be ok
-$ogvTitle = 'List of possible firewall rules based on target systems roles. Choose the rules you want to apply or show for: "{0}"' -f $DestinationSystemFQDN
+$systemListForTitle = ($DestinationSystemFQDN -join ', ')
+$ogvTitle = 'List of possible firewall rules based on target systems roles. Choose the rules you want to apply or show for: "{0}"' -f $systemListForTitle
 if ($ValidRulesOnly)
 {
-    $selectedFirewallRules = $outParamObject | Where-Object {$_.Status -eq 'OK' } | Sort-Object -Property Status, Direction, DisplayName | Out-GridView -Title $ogvTitle -OutputMode Multiple
+    $selectedFirewallRules = $outParamObject | Where-Object {$_.Status -eq 'Used' } | Sort-Object -Property Status, Direction, DisplayName | Out-GridView -Title $ogvTitle -OutputMode Multiple
 }
 else 
 {
@@ -1122,8 +1156,9 @@ else
 if ($MergeSimilarRules)
 {
     # Let's merge rules with same settings to have only one rule instead of multiple rules  
+    # NOTE: LocalName is included in the grouping so rules from different selected systems are never merged together.
     $mergedOutObject = New-Object System.Collections.ArrayList
-    $mergedRules = $selectedFirewallRules | Where-Object {$_.Status -eq 'OK' } | Group-Object -Property Direction, LocalAddress, Protocol, LocalPort, Profile, Action, Program
+    $mergedRules = $selectedFirewallRules | Where-Object {$_.Status -eq 'Used' } | Group-Object -Property LocalName, Direction, LocalAddress, Protocol, LocalPort, Profile, Action, Program
     foreach ($ruleGroup in $mergedRules)
     {
         $RemoteAddressList = @()
@@ -1155,8 +1190,77 @@ if ($MergeSimilarRules)
         
     }
 
-    $ogvTitle = 'List of merged rules for system: "[0]" Select the rules you want to apply or show commands for.' -f $DestinationSystemFQDN
+    $ogvTitle = 'List of merged rules for system(s): "{0}" Select the rules you want to apply or show commands for.' -f $systemListForTitle
     $selectedFirewallRules = $mergedOutObject | Sort-Object -Property Status, Direction, DisplayName -Descending | Out-GridView -Title $ogvTitle -OutputMode Multiple        
+}
+
+# Optional CSV export of the selected rules.
+# Uses ';' as the CSV delimiter so the comma-separated IP-address lists in RemoteAddress/LocalAddress/LocalPort are NOT split into separate columns by Excel.
+# A leading "sep=;" hint is written so Excel auto-detects the delimiter on every locale.
+# CSV export runs when either -ExportToCsv is specified OR an explicit -CsvExportPath is provided.
+# If -ExportToCsv is set without -CsvExportPath, a default file is created in the script folder using the
+# loaded JSON definition file name plus a datetime suffix (mirrors the naming used by -ExportConfigMgrSystemRoleInformation).
+if ($ExportToCsv -and [string]::IsNullOrEmpty($CsvExportPath) -and $loadedDefinitionFilePath)
+{
+    $jsonBaseName = [System.IO.Path]::GetFileNameWithoutExtension($loadedDefinitionFilePath)
+    $csvDateStamp = (Get-Date -Format u) -replace '-|:|Z' -replace ' ', '_'
+    $CsvExportPath = '{0}\{1}-{2}.csv' -f $PSScriptRoot, $jsonBaseName, $csvDateStamp
+}
+
+if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
+{
+    if (-NOT $selectedFirewallRules)
+    {
+        Write-Host "$(Get-date -Format u): WARNING: No rules selected - nothing to export to CSV" -ForegroundColor Yellow
+    }
+    else
+    {
+        try
+        {
+            # Make sure target directory exists
+            $csvParentDir = Split-Path -Path $CsvExportPath -Parent
+            if ($csvParentDir -and -NOT (Test-Path -LiteralPath $csvParentDir))
+            {
+                New-Item -ItemType Directory -Path $csvParentDir -Force | Out-Null
+            }
+
+            # Flatten array-valued properties (e.g. RemoteAddress, LocalAddress) into single comma-separated strings
+            # so they end up inside a single quoted CSV cell.
+            $csvData = foreach ($rule in $selectedFirewallRules)
+            {
+                [pscustomobject]@{
+                    Status            = $rule.Status
+                    StatusDescription = $rule.StatusDescription
+                    DisplayName       = $rule.DisplayName
+                    Direction         = $rule.Direction
+                    LocalName         = $rule.LocalName
+                    LocalAddress      = if ($rule.LocalAddress  -is [array]) { $rule.LocalAddress  -join ',' } else { $rule.LocalAddress }
+                    RemoteAddress     = if ($rule.RemoteAddress -is [array]) { $rule.RemoteAddress -join ',' } else { $rule.RemoteAddress }
+                    Protocol          = $rule.Protocol
+                    LocalPort         = if ($rule.LocalPort     -is [array]) { $rule.LocalPort     -join ',' } else { $rule.LocalPort }
+                    Profile           = $rule.Profile
+                    Action            = $rule.Action
+                    Group             = $rule.Group
+                    Program           = $rule.Program
+                    Description       = $rule.Description
+                }
+            }
+
+            # Build CSV text manually so we can prepend the Excel "sep=;" hint.
+            $csvLines = $csvData | ConvertTo-Csv -Delimiter ';' -NoTypeInformation
+            $csvOutput = @('sep=;') + $csvLines
+            Set-Content -LiteralPath $CsvExportPath -Value $csvOutput -Encoding UTF8
+
+            Write-Host "$(Get-date -Format u): Exported $($csvData.Count) rule(s) to CSV: `"$CsvExportPath`"" -ForegroundColor Green
+        }
+        catch
+        {
+            Write-Host "$(Get-date -Format u): ERROR: Failed to export CSV to `"$CsvExportPath`": $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+
+    # CSV export was the requested action - skip the rest (command list / GPO output / local rule creation).
+    return
 }
 
 # Adding GPO specific strings to list
@@ -1183,7 +1287,7 @@ if ($AddRulesToGPO)
 # Prepare parameter list either for New-NetFirewallRule command or for gridview 
 foreach($selectedRule in $selectedFirewallRules)
 {
-    if ($selectedRule.Status -eq 'OK')
+    if ($selectedRule.Status -eq 'Used')
     {
         $paramSplatting = $null
         $paramSplatting = [ordered]@{
@@ -1281,7 +1385,7 @@ foreach($selectedRule in $selectedFirewallRules)
     }
     else 
     {
-        Write-Verbose "$(Get-date -Format u): WARNING: Selected rule was marked as not okay. Will be skipped. `"$($selectedRule.DisplayName)`""
+        Write-Verbose "$(Get-date -Format u): WARNING: Selected rule was marked as 'Not used'. Will be skipped. `"$($selectedRule.DisplayName)`""
     }
 }
 
@@ -1301,7 +1405,7 @@ if ($ShowCommands -or $ShowGPOCommands)
         $RuleString = 'Save-NetGPO -GPOSession $gpoSession'
         [void]$commandOutput.Add($RuleString)
     }   
-    $commandOutput | Out-GridView -Title "List of commands to add firewall rules to: `"$DestinationSystemFQDN`""
+    $commandOutput | Out-GridView -Title "List of commands to add firewall rules to: `"$systemListForTitle`""
 }
 #endregion
 
