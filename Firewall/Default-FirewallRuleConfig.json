@@ -1253,34 +1253,6 @@
                             "CMGVMSS",
                             "CMGClassicTCPTLS"
                         ]
-        },
-        {
-            "RuleName": "ConfigMgr Client to Cloud Distribution Point",
-            "Source": "Any",
-            "Destination": "Internet",
-            "Direction": "Outbound",
-            "Action": "Allow",
-            "Profile": "Domain",
-            "Group": "ConfigMgr",
-            "Description": "Clients download content from Cloud Distribution Point in Azure. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#client--cloud-distribution-point",
-            "IgnoreSiteCode": "True",
-            "Services": [
-                            "HTTPS"
-                        ]
-        },
-        {
-            "RuleName": "ConfigMgr Client to Cloud Management Gateway (CMG)",
-            "Source": "Any",
-            "Destination": "Internet",
-            "Direction": "Outbound",
-            "Action": "Allow",
-            "Profile": "Domain",
-            "Group": "ConfigMgr",
-            "Description": "Internet-based clients communicate with the Cloud Management Gateway in Azure. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#client--cloud-management-gateway-cmg",
-            "IgnoreSiteCode": "True",
-            "Services": [
-                            "HTTPS"
-                        ]
         }
       ],
       "ServiceDefinition": 
