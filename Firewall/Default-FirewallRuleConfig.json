@@ -1121,6 +1121,23 @@
                         ]
         },
         {
+            "RuleName": "ConfigMgr Site Server to Site Server (HA)",
+            "Source": "SiteServer",
+            "Destination": "SiteServer",
+            "Direction": "Inbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Required for site server high availability (active/passive site server). Both nodes share the same site code.",
+            "IgnoreSiteCode": "",
+            "Services": [
+                            "RPC",
+                            "RPCUDP",
+                            "RPCDynamic",
+                            "SMB"
+                        ]
+        },
+        {
             "RuleName": "ConfigMgr Asset Intelligence Synchronization Point to Internet",
             "Source": "AssetIntelligenceSynchronizationPoint",
             "Destination": "Internet",
