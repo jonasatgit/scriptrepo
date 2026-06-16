@@ -1202,8 +1202,14 @@ if ($MergeSimilarRules)
 }
 
 # Optional CSV export of the selected rules.
-# Uses ';' as the CSV delimiter so the comma-separated IP-address lists in RemoteAddress/LocalAddress/LocalPort are NOT split into separate columns by Excel.
-# A leading "sep=;" hint is written so Excel auto-detects the delimiter on every locale.
+# Output uses ';' as the field delimiter and is written with the file extension ".txt" and the suffix "-csv"
+# (e.g. "MyConfig-20260101_120000-csv.txt"). The .txt extension forces Excel to open the Text Import Wizard
+# instead of auto-parsing the file, allowing the IP-address columns to be marked as Text. This prevents Excel
+# (especially in locales where '.' is a thousands separator, e.g. de-DE) from reformatting single IPs like
+# "10.10.10.10" into "10,10,10,10" on save.
+# Multiple IPs in a single cell are separated with a CRLF line break (rendered as line breaks in Excel when
+# Wrap Text is enabled) instead of a comma, for readability.
+# A leading "sep=;" hint is written so Excel still auto-detects the delimiter when opened directly.
 # CSV export runs when either -ExportToCsv is specified OR an explicit -CsvExportPath is provided.
 # If -ExportToCsv is set without -CsvExportPath, a default file is created in the script folder using the
 # loaded JSON definition file name plus a datetime suffix (mirrors the naming used by -ExportConfigMgrSystemRoleInformation).
@@ -1211,11 +1217,18 @@ if ($ExportToCsv -and [string]::IsNullOrEmpty($CsvExportPath) -and $loadedDefini
 {
     $jsonBaseName = [System.IO.Path]::GetFileNameWithoutExtension($loadedDefinitionFilePath)
     $csvDateStamp = (Get-Date -Format u) -replace '-|:|Z' -replace ' ', '_'
-    $CsvExportPath = '{0}\{1}-{2}.csv' -f $PSScriptRoot, $jsonBaseName, $csvDateStamp
+    $CsvExportPath = '{0}\{1}-{2}-csv.txt' -f $PSScriptRoot, $jsonBaseName, $csvDateStamp
 }
 
 if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
 {
+    # Normalize the export path: always write as <base>-csv.txt regardless of the supplied extension.
+    # If the caller supplied a .csv path (legacy), it is automatically rewritten to the -csv.txt form.
+    $expDir  = Split-Path -Path $CsvExportPath -Parent
+    $expBase = [System.IO.Path]::GetFileNameWithoutExtension($CsvExportPath)
+    if ($expBase -notmatch '-csv$') { $expBase = "$expBase-csv" }
+    $CsvExportPath = if ($expDir) { Join-Path -Path $expDir -ChildPath ($expBase + '.txt') } else { $expBase + '.txt' }
+
     if (-NOT $selectedFirewallRules)
     {
         Write-Host "$(Get-date -Format u): WARNING: No rules selected - nothing to export to CSV" -ForegroundColor Yellow
@@ -1231,8 +1244,17 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
                 New-Item -ItemType Directory -Path $csvParentDir -Force | Out-Null
             }
 
-            # Flatten array-valued properties (e.g. RemoteAddress, LocalAddress) into single comma-separated strings
-            # so they end up inside a single quoted CSV cell.
+            # Flatten array-valued address/port properties into a single cell. Multiple values are joined with CRLF
+            # so Excel renders them as line breaks within the cell (with Wrap Text enabled). ConvertTo-Csv quotes
+            # fields that contain delimiters or newlines automatically, so the embedded line breaks are preserved
+            # inside a single quoted cell.
+            $joinMultiLine = {
+                param($value)
+                if ($null -eq $value) { return '' }
+                if ($value -is [array]) { return ($value -join "`r`n") }
+                return [string]$value
+            }
+
             $csvData = foreach ($rule in $selectedFirewallRules)
             {
                 [pscustomobject]@{
@@ -1241,10 +1263,10 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
                     DisplayName       = $rule.DisplayName
                     Direction         = $rule.Direction
                     LocalName         = $rule.LocalName
-                    LocalAddress      = if ($rule.LocalAddress  -is [array]) { $rule.LocalAddress  -join ',' } else { $rule.LocalAddress }
-                    RemoteAddress     = if ($rule.RemoteAddress -is [array]) { $rule.RemoteAddress -join ',' } else { $rule.RemoteAddress }
+                    LocalAddress      = & $joinMultiLine $rule.LocalAddress
+                    RemoteAddress     = & $joinMultiLine $rule.RemoteAddress
                     Protocol          = $rule.Protocol
-                    LocalPort         = if ($rule.LocalPort     -is [array]) { $rule.LocalPort     -join ',' } else { $rule.LocalPort }
+                    LocalPort         = & $joinMultiLine $rule.LocalPort
                     Profile           = $rule.Profile
                     Action            = $rule.Action
                     Group             = $rule.Group
@@ -1254,11 +1276,24 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
             }
 
             # Build CSV text manually so we can prepend the Excel "sep=;" hint.
+            # Use [System.IO.File]::WriteAllText so embedded CRLFs in fields are preserved verbatim and the file
+            # is written with consistent CRLF line endings (Set-Content can normalize newlines on some hosts).
             $csvLines = $csvData | ConvertTo-Csv -Delimiter ';' -NoTypeInformation
             $csvOutput = @('sep=;') + $csvLines
-            Set-Content -LiteralPath $CsvExportPath -Value $csvOutput -Encoding UTF8
+            $csvText = ($csvOutput -join "`r`n") + "`r`n"
+            [System.IO.File]::WriteAllText($CsvExportPath, $csvText, [System.Text.UTF8Encoding]::new($true))
 
-            Write-Host "$(Get-date -Format u): Exported $($csvData.Count) rule(s) to CSV: `"$CsvExportPath`"" -ForegroundColor Green
+            Write-Host "$(Get-date -Format u): Exported $($csvData.Count) rule(s) to CSV (text): `"$CsvExportPath`"" -ForegroundColor Green
+
+            # Hint to the user how to open the file in Excel without the locale-based number reformatting that
+            # would otherwise turn single IPs like "10.10.10.10" into "10,10,10,10" on save.
+            Write-Host ''
+            Write-Host 'What to do next:' -ForegroundColor Magenta
+            Write-Host '  1. Open Excel first, then use Import From File -> Open -> Browse and select the *-csv.txt file (or drag the file onto an open Excel window) to launch the Text Import Wizard' -ForegroundColor Magenta
+            Write-Host '  2. In the wizard, choose "Delimited" and pick Semicolon as the field delimiter' -ForegroundColor Magenta
+            Write-Host '  3. On step 3, select the LocalAddress, RemoteAddress and LocalPort columns and pick "Text" as the column data format' -ForegroundColor Magenta
+            Write-Host '  4. After import, apply "Wrap Text" on those columns to see line breaks for multi-value cells' -ForegroundColor Magenta
+            Write-Host ''
         }
         catch
         {
