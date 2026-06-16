@@ -943,7 +943,14 @@ else
 
 [array]$requiredRules = $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -in ($destinationSystemObject.RoleList)})
 # adding ANY and Internet rules to the list
-[array]$requiredRules += $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({$_.Destination -eq 'Any' -or $_.Destination -eq 'Internet'})
+# For rules with Destination 'Any' or 'Internet' we must additionally check the Source role.
+# Otherwise an outbound rule like "Software Update Point -> Internet" would be added to every system,
+# even if that system is not a Software Update Point.
+# Source = 'Any' (e.g. any client) keeps the rule on every system, which is the intended behavior for client side rules like Client -> Cloud DP / CMG.
+[array]$requiredRules += $DefinitionFile.FirewallRuleDefinition.RuleDefinition.Where({
+    ($_.Destination -eq 'Any' -or $_.Destination -eq 'Internet') -and
+    ($_.Source -eq 'Any' -or $_.Source -in $destinationSystemObject.RoleList)
+})
 
 Write-Verbose "$(Get-date -Format u): Found: `"$($requiredRules.count)`" possible rules for: `"$currentSystemFQDN`""
 
