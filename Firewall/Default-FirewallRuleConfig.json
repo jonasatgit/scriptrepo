@@ -1119,6 +1119,151 @@
             "Services": [
                             "WakeOnLAN"
                         ]
+        },
+        {
+            "RuleName": "ConfigMgr Asset Intelligence Synchronization Point to Internet",
+            "Source": "AssetIntelligenceSynchronizationPoint",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Asset Intelligence sync point downloads catalog data from Microsoft. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#asset-intelligence-synchronization-point--microsoft",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Endpoint Protection Point to Internet",
+            "Source": "EndpointProtectionPoint",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Endpoint Protection point downloads definition updates from the internet. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#endpoint-protection-point--internet",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTP"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Console to Internet",
+            "Source": "ConfigMgrConsole",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Console accesses internet for software update downloads, feedback, documentation links and Community hub. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#configuration-manager-console--internet",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Software Update Point to Internet",
+            "Source": "SoftwareUpdatePoint",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Software update point synchronizes update metadata and content from Microsoft Update. Can be routed through a configured proxy server. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#software-update-point--internet",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Service Connection Point to Azure (Microsoft cloud)",
+            "Source": "ServiceConnectionPoint",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Service connection point connects to Azure/Microsoft cloud services for CMG deployment, Azure Logic App external notifications, telemetry, hotfix download, etc. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#service-connection-point--azure-cmg",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Site Server to Internet",
+            "Source": "SiteServer",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Site server connects to internet for product/component updates and Microsoft cloud services. Can be routed through a configured proxy server. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#site-server--internet",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTP",
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Site Server to Cloud Distribution Point",
+            "Source": "SiteServer",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Site server uploads content to Cloud Distribution Point in Azure. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#site-server--cloud-distribution-point",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr CMG Connection Point to CMG cloud service",
+            "Source": "CMGConnectionPoint",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "CMG connection point builds the CMG channel to the CMG VM scale set / classic cloud service in Azure. HTTPS 443 plus 10124-10139 (VMSS / HTTPS fallback) and 10140-10155 (TCP-TLS preferred for classic). NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#cmg-connection-point--cmg-virtual-machine-scale-set",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS",
+                            "CMGVMSS",
+                            "CMGClassicTCPTLS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Client to Cloud Distribution Point",
+            "Source": "Any",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Clients download content from Cloud Distribution Point in Azure. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#client--cloud-distribution-point",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS"
+                        ]
+        },
+        {
+            "RuleName": "ConfigMgr Client to Cloud Management Gateway (CMG)",
+            "Source": "Any",
+            "Destination": "Internet",
+            "Direction": "Outbound",
+            "Action": "Allow",
+            "Profile": "Domain",
+            "Group": "ConfigMgr",
+            "Description": "Internet-based clients communicate with the Cloud Management Gateway in Azure. NOTE: Destination 'Internet' is not a real system. Rule listed for completeness. https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/hierarchy/ports#client--cloud-management-gateway-cmg",
+            "IgnoreSiteCode": "True",
+            "Services": [
+                            "HTTPS"
+                        ]
         }
       ],
       "ServiceDefinition": 
@@ -1178,6 +1323,20 @@
             "Port": "443",
             "Program": "",
             "Description": "HTTPS"    
+        },
+        {
+            "Name": "CMGVMSS",
+            "Protocol": "TCP",
+            "Port": "10124-10139",
+            "Program": "",
+            "Description": "CMG channel to VM scale set with two or more VMs (also HTTPS fallback for classic CMG)"
+        },
+        {
+            "Name": "CMGClassicTCPTLS",
+            "Protocol": "TCP",
+            "Port": "10140-10155",
+            "Program": "",
+            "Description": "CMG channel to classic cloud service via TCP-TLS (preferred)"
         },
         {
             "Name": "ExpressUpdates",
