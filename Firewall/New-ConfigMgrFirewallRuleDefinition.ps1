@@ -113,6 +113,16 @@ Optional: Site code of ConfigMgr site
 .PARAMETER CreateOutboundRuleForeachInboundRule
 Optional: To create outbound rule for each calculated inbound rule. Not quite tested and more experimental
 
+.PARAMETER UsePortsForRPC
+Optional: Forces conversion of the Windows-defined firewall port keywords in ServiceDefinition.Port to their
+numeric equivalents. Numeric values (e.g. "135", "49152-65535") are left untouched. Mapping:
+    RPCEPMAP / RPCEPMap                -> 135           (RPC Endpoint Mapper)
+    RPC / RPCDynamic / RPCDynamicPorts -> 49152-65535   (RPC dynamic high ports, Windows Server 2008+)
+Useful when the target environment (e.g. third-party firewalls, GPO consumers, documentation) needs explicit
+numeric ports instead of the Windows-internal named ports. The conversion is applied once on the loaded
+DefinitionFile and therefore affects every downstream output (grid view, ShowConfig, ShowCommands, ShowGPOCommands,
+AddRulesLocally, AddRulesToGPO, CSV/TXT export, MergeSimilarRules).
+
 .PARAMETER ExportToCsv
 Optional: Switch that enables CSV export of the rules selected in the grid view.
 If -CsvExportPath is also provided, that path is used. Otherwise a CSV file is created automatically in the
@@ -175,6 +185,13 @@ param
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$true)]
     [switch]$CreateOutboundRuleForeachInboundRule,
+
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowConfig',Mandatory=$false)]
+    [switch]$UsePortsForRPC,
 
     [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
     [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
@@ -855,6 +872,47 @@ else
     }
 }
 
+# When -UsePortsForRPC is set, replace the Windows-defined named ports in every ServiceDefinition entry with
+# their numeric equivalents. This is done ONCE on the in-memory $DefinitionFile so every downstream consumer
+# (grid view, GPO commands, local rule creation, CSV/TXT export, MergeSimilarRules) automatically uses the
+# numeric ports without any further per-rule logic.
+# Conversion only applies when the Port value is a Windows-defined string keyword (e.g. "RPC", "RPCEPMAP");
+# numeric port values like "135" or "49152-65535" are passed through unchanged.
+# Mapping (case-insensitive, matches the Windows firewall keyword semantics):
+#   RPCEPMAP | RPCEPMap        -> 135           (RPC Endpoint Mapper)
+#   RPC | RPCDynamic | RPCDynamicPorts -> 49152-65535   (RPC dynamic high port range, Windows Server 2008+)
+if ($UsePortsForRPC -and $DefinitionFile.FirewallRuleDefinition.ServiceDefinition)
+{
+    $convertedServiceDefinition = New-Object System.Collections.ArrayList
+    foreach ($svc in $DefinitionFile.FirewallRuleDefinition.ServiceDefinition)
+    {
+        $newPort = switch -Regex ([string]$svc.Port)
+        {
+            '^(RPCEPMAP|RPCEPMap)$'                { '135'; break }
+            '^(RPC|RPCDynamic|RPCDynamicPorts)$'   { '49152-65535'; break }
+            default                                { $svc.Port }
+        }
+
+        if ($newPort -ne $svc.Port)
+        {
+            Write-Host "$(Get-date -Format u): -UsePortsForRPC: converting service `"$($svc.Name)`" port `"$($svc.Port)`" -> `"$newPort`"" -ForegroundColor Cyan
+            $clone = [pscustomobject]@{
+                Name        = $svc.Name
+                Protocol    = $svc.Protocol
+                Port        = $newPort
+                Program     = $svc.Program
+                Description = $svc.Description
+            }
+            [void]$convertedServiceDefinition.Add($clone)
+        }
+        else
+        {
+            [void]$convertedServiceDefinition.Add($svc)
+        }
+    }
+    $DefinitionFile.FirewallRuleDefinition.ServiceDefinition = $convertedServiceDefinition
+}
+
 
 if ($ShowConfig)
 {
@@ -1289,7 +1347,7 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
             # would otherwise turn single IPs like "10.10.10.10" into "10,10,10,10" on save.
             Write-Host ''
             Write-Host 'What to do next:' -ForegroundColor Magenta
-            Write-Host '  1. Open Excel first, then use Import From File -> Open -> Browse and select the *-csv.txt file (or drag the file onto an open Excel window) to launch the Text Import Wizard' -ForegroundColor Magenta
+            Write-Host '  1. Open Excel first, then use File -> Open -> Browse and select the *-csv.txt file (or drag the file onto an open Excel window) to launch the Text Import Wizard' -ForegroundColor Magenta
             Write-Host '  2. In the wizard, choose "Delimited" and pick Semicolon as the field delimiter' -ForegroundColor Magenta
             Write-Host '  3. On step 3, select the LocalAddress, RemoteAddress and LocalPort columns and pick "Text" as the column data format' -ForegroundColor Magenta
             Write-Host '  4. After import, apply "Wrap Text" on those columns to see line breaks for multi-value cells' -ForegroundColor Magenta
