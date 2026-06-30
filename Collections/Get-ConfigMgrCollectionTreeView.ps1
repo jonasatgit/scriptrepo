@@ -32,6 +32,7 @@
    | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.   |
    | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.         |
    | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.    |
+   | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.     |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -47,7 +48,7 @@ param
     $providerServer
 )
 
-$version = 'v0.8'
+$version = 'v0.9'
 
 #region Get-TreeViewSubmember
 <#
@@ -897,17 +898,18 @@ $dataGrid.Add_SelectionChanged({
             $global:selectedCollection = $global:selectedCollection | Get-CimInstance
             $rules = @($global:selectedCollection.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
 
-            $queryRuleCombo.Items.Clear()
+            $queryRuleList.Items.Clear()
+            $queryTextBox.Text = ''
             if ($rules.Count -gt 0)
             {
                 foreach($rule in $rules)
                 {
-                    $cbItem = New-Object System.Windows.Controls.ComboBoxItem
-                    $cbItem.Content = $rule.RuleName
-                    $cbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
-                    [void]$queryRuleCombo.Items.Add($cbItem)
+                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
+                    $lbItem.Content = $rule.RuleName
+                    $lbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
+                    [void]$queryRuleList.Items.Add($lbItem)
                 }
-                $queryRuleCombo.SelectedIndex = 0
+                $queryRuleList.SelectedIndex = 0
             }
             else
             {
@@ -990,39 +992,39 @@ $dataGrid1.AutoGenerateColumns = $true
 [System.Windows.Controls.Grid]::SetRow($dataGrid1, 1)
 
 # WQL query view panel: shown in column 4 instead of $dataGrid1 when the user
-# clicks the 'QueryRules' row in the middle properties grid. Lets the user pick
-# a rule, see the pretty-printed query, copy it, or open it in a bigger window.
+# clicks the 'QueryRules' row in the middle properties grid.
+# Layout:
+#   row 0 - ListBox with the rule names (click one to view its query below)
+#   row 1 - toolbar with Copy / Open-in-window buttons
+#   row 2 - read-only, word-wrapping TextBox showing the pretty-printed query
 $queryViewPanel = New-Object System.Windows.Controls.Grid
 $queryViewPanel.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 $queryViewPanel.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
-$queryViewPanel.RowDefinitions[0].Height = [System.Windows.GridLength]::Auto
-$queryViewPanel.RowDefinitions[1].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+$queryViewPanel.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$queryViewPanel.RowDefinitions[0].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+$queryViewPanel.RowDefinitions[1].Height = [System.Windows.GridLength]::Auto
+$queryViewPanel.RowDefinitions[2].Height = [System.Windows.GridLength]::new(2, [System.Windows.GridUnitType]::Star)
 $queryViewPanel.Visibility = [System.Windows.Visibility]::Collapsed
 [System.Windows.Controls.Grid]::SetColumn($queryViewPanel, 4)
 [System.Windows.Controls.Grid]::SetRow($queryViewPanel, 1)
 
-$queryToolbar = New-Object System.Windows.Controls.StackPanel
-$queryToolbar.Orientation = [System.Windows.Controls.Orientation]::Horizontal
-$queryToolbar.Margin = '4'
-[System.Windows.Controls.Grid]::SetRow($queryToolbar, 0)
-
-$queryRuleLabel = New-Object System.Windows.Controls.TextBlock
-$queryRuleLabel.Text = 'Rule:'
-$queryRuleLabel.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
-$queryRuleLabel.Margin = '0,0,4,0'
-[void]$queryToolbar.Children.Add($queryRuleLabel)
-
-$queryRuleCombo = New-Object System.Windows.Controls.ComboBox
-$queryRuleCombo.MinWidth = 150
-$queryRuleCombo.MaxWidth = 280
-$queryRuleCombo.Margin   = '0,0,8,0'
-$queryRuleCombo.Add_SelectionChanged({
-    if ($queryRuleCombo.SelectedItem -and $queryRuleCombo.SelectedItem.Tag)
+# Row 0: list of query rules
+$queryRuleList = New-Object System.Windows.Controls.ListBox
+$queryRuleList.Margin = '4,4,4,2'
+$queryRuleList.Add_SelectionChanged({
+    if ($queryRuleList.SelectedItem -and $queryRuleList.SelectedItem.Tag)
     {
-        $queryTextBox.Text = [string]$queryRuleCombo.SelectedItem.Tag
+        $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Tag
     }
 })
-[void]$queryToolbar.Children.Add($queryRuleCombo)
+[System.Windows.Controls.Grid]::SetRow($queryRuleList, 0)
+[void]$queryViewPanel.Children.Add($queryRuleList)
+
+# Row 1: toolbar with Copy / Open-in-window buttons
+$queryToolbar = New-Object System.Windows.Controls.StackPanel
+$queryToolbar.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+$queryToolbar.Margin = '4,2,4,2'
+[System.Windows.Controls.Grid]::SetRow($queryToolbar, 1)
 
 $queryCopyButton = New-Object System.Windows.Controls.Button
 $queryCopyButton.Content = 'Copy'
@@ -1044,7 +1046,7 @@ $queryOpenButton.ToolTip = 'Show the query in a bigger, resizable window'
 $queryOpenButton.Add_Click({
     if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
     {
-        $popupTitle = if ($queryRuleCombo.SelectedItem) { [string]$queryRuleCombo.SelectedItem.Content } else { 'WQL Query' }
+        $popupTitle = if ($queryRuleList.SelectedItem) { [string]$queryRuleList.SelectedItem.Content } else { 'WQL Query' }
         Show-WqlQueryWindow -title $popupTitle -query $queryTextBox.Text
     }
 })
@@ -1052,6 +1054,7 @@ $queryOpenButton.Add_Click({
 
 [void]$queryViewPanel.Children.Add($queryToolbar)
 
+# Row 2: the query text
 $queryTextBox = New-Object System.Windows.Controls.TextBox
 $queryTextBox.IsReadOnly = $true
 $queryTextBox.AcceptsReturn = $true
@@ -1060,8 +1063,8 @@ $queryTextBox.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBar
 $queryTextBox.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
 $queryTextBox.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
 $queryTextBox.FontSize = 12
-$queryTextBox.Margin = '4,0,4,4'
-[System.Windows.Controls.Grid]::SetRow($queryTextBox, 1)
+$queryTextBox.Margin = '4,2,4,4'
+[System.Windows.Controls.Grid]::SetRow($queryTextBox, 2)
 [void]$queryViewPanel.Children.Add($queryTextBox)
 
 
