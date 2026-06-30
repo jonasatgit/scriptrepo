@@ -46,12 +46,67 @@ Grid view
 
 .EXAMPLE
 .\New-ConfigMgrFirewallRuleDefinition.ps1 -ExportConfigMgrSystemRoleInformation -ProviderMachineName cm02.contoso.local -SiteCode P02
-
-.EXAMPLE
-.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -MergeSimilarRules
+# Export the ConfigMgr site/hierarchy data into a fresh JSON definition file in the script folder.
 
 .EXAMPLE
 .\New-ConfigMgrFirewallRuleDefinition.ps1
+# Default mode (ShowCommands): pick a JSON definition file and a target system via grid views,
+# then display the required rules and the PowerShell commands to create them.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -MergeSimilarRules
+# Same as above but merges rules with identical direction, protocol, port and program into single rules.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowConfig -DefinitionFilePath .\Default-FirewallRuleConfig.json
+# Only display the contents of a JSON definition file - does not generate any rules for a system.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -DestinationSystemFQDN cm02.contoso.local -DefinitionFilePath .\Default-FirewallRuleConfig.json -UseAnyAsLocalAddress -ValidRulesOnly
+# Generate rules for cm02.contoso.local (the ManagementPoint/DistributionPoint in the default config)
+# using a specific JSON file, set LocalAddress to "Any" (useful for multi-system GPOs) and only show
+# rules with status "Used"/"OK".
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -UsePortsForRPC
+# Converts the Windows-defined firewall keywords used in ServiceDefinition.Port to numeric ports before
+# generating rules:  RPCEPMAP -> 135 , RPC / RPCDynamic -> 49152-65535.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowGPOCommands -DomainName contoso.local -GPOName 'CM Firewall' -DestinationSystemFQDN cm02.contoso.local
+# Display the New-NetFirewallRule commands needed to import the rules into the existing GPO "CM Firewall".
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -AddRulesToGPO -DomainName contoso.local -GPOName 'CM Firewall' -DestinationSystemFQDN cm02.contoso.local
+# Actually adds the calculated rules to the GPO "CM Firewall" in domain contoso.local.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -AddRulesLocally
+# Adds the rules selected in the grid view to the local Windows Firewall (must run elevated).
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -ExportToCsv
+# Exports the rules selected in the grid view to a "<JsonBase>-<DateStamp>-csv.txt" file in the script folder.
+# Renaming the file to .txt forces Excel to open the Text Import Wizard so IP columns can be marked as Text
+# (prevents Excel - especially de-DE - from reformatting "10.10.10.10" into "10,10,10,10" on save).
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -CsvExportPath C:\Temp\MyFirewallRules.csv
+# Same as -ExportToCsv but writes to a specific path. Any .csv extension is auto-rewritten to "-csv.txt".
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -HeaderDefinitionFile .\HeaderDefinition.csv
+# Implies -ExportToCsv. Uses a 2-row CSV (";" delimited) to define a custom column layout for the export:
+#   Row 1 = column headers as they should appear in the output file (free text)
+#   Row 2 = script-internal rule property names that supply the data for each column
+#           (empty cells produce empty columns; e.g. "comment=DisplayName", "source=RemoteAddress",
+#            "destination=LocalAddress", "dest. port=LocalPort")
+# At least one property name in row 2 must match an existing rule property.
+
+.EXAMPLE
+.\New-ConfigMgrFirewallRuleDefinition.ps1 -ShowCommands -HeaderDefinitionFile .\HeaderDefinition.csv -CsvExportPath C:\Temp\PCI-DSS-Firewall.csv -MergeSimilarRules -UsePortsForRPC
+# Full combination: merge similar rules, convert RPC keywords to numeric ports, apply the custom column
+# layout from HeaderDefinition.csv and write the result to the given path (rewritten to "PCI-DSS-Firewall-csv.txt").
 
 .PARAMETER DestinationSystemFQDN
 Optional: Can be used to generate rules for a specific system. Fqdn format: name.domain.suffix 
@@ -135,6 +190,20 @@ Optional: Full path to a .csv file. If set, the rules selected in the grid view 
 The file uses ";" as the delimiter (so the comma-separated IP-address lists are kept in one cell) and includes a
 leading "sep=;" hint so Excel detects the delimiter automatically on any locale.
 
+.PARAMETER HeaderDefinitionFile
+Optional: Full path to a CSV file (";" delimited) that customizes the columns of the CSV export.
+The file must contain exactly two rows:
+    Row 1: the column headers that will appear in the exported file (free text, any names)
+    Row 2: the script-internal rule property names that supply the data for each column (leave a cell empty to
+           keep that column blank in the output)
+Valid property names in row 2 are any property exposed on a selected firewall rule, e.g.
+    Status, StatusDescription, DisplayName, Direction, LocalName, LocalAddress, RemoteAddress,
+    Protocol, LocalPort, Profile, Action, Group, Program, Description
+At least one cell in row 2 must match an available property - otherwise the export is aborted with an error.
+Supplying -HeaderDefinitionFile implicitly enables CSV export, so -ExportToCsv is not required. -CsvExportPath
+remains optional; when it is not set, the default "<JsonBaseName>-<DateStamp>-csv.txt" path is used (same as
+when only -ExportToCsv is supplied).
+
 .LINK
 https://github.com/jonasatgit/scriptrepo
 
@@ -211,6 +280,12 @@ param
     [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
     [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$false)]
     [string]$CsvExportPath,
+
+    [parameter(ParameterSetName = 'AddRulesToGPO',Mandatory=$false)]
+    [parameter(ParameterSetName = 'AddRulesLocally',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowCommands',Mandatory=$false)]
+    [parameter(ParameterSetName = 'ShowGPOCommands',Mandatory=$false)]
+    [string]$HeaderDefinitionFile,
 
     [parameter(ParameterSetName = 'ShowConfig',Mandatory=$true)]
     [switch]$ShowConfig,
@@ -1268,25 +1343,19 @@ if ($MergeSimilarRules)
 # Multiple IPs in a single cell are separated with a CRLF line break (rendered as line breaks in Excel when
 # Wrap Text is enabled) instead of a comma, for readability.
 # A leading "sep=;" hint is written so Excel still auto-detects the delimiter when opened directly.
-# CSV export runs when either -ExportToCsv is specified OR an explicit -CsvExportPath is provided.
-# If -ExportToCsv is set without -CsvExportPath, a default file is created in the script folder using the
-# loaded JSON definition file name plus a datetime suffix (mirrors the naming used by -ExportConfigMgrSystemRoleInformation).
-if ($ExportToCsv -and [string]::IsNullOrEmpty($CsvExportPath) -and $loadedDefinitionFilePath)
+# CSV export runs when either -ExportToCsv is specified OR an explicit -CsvExportPath is provided OR a
+# -HeaderDefinitionFile is supplied (which implicitly enables the export).
+# If no -CsvExportPath is given, a default file is created in the script folder using the loaded JSON
+# definition file name plus a datetime suffix (mirrors the naming used by -ExportConfigMgrSystemRoleInformation).
+if (($ExportToCsv -or -NOT [string]::IsNullOrEmpty($HeaderDefinitionFile)) -and [string]::IsNullOrEmpty($CsvExportPath) -and $loadedDefinitionFilePath)
 {
     $jsonBaseName = [System.IO.Path]::GetFileNameWithoutExtension($loadedDefinitionFilePath)
     $csvDateStamp = (Get-Date -Format u) -replace '-|:|Z' -replace ' ', '_'
-    $CsvExportPath = '{0}\{1}-{2}-csv.txt' -f $PSScriptRoot, $jsonBaseName, $csvDateStamp
+    $CsvExportPath = '{0}\{1}-{2}.csv' -f $PSScriptRoot, $jsonBaseName, $csvDateStamp
 }
 
 if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
 {
-    # Normalize the export path: always write as <base>-csv.txt regardless of the supplied extension.
-    # If the caller supplied a .csv path (legacy), it is automatically rewritten to the -csv.txt form.
-    $expDir  = Split-Path -Path $CsvExportPath -Parent
-    $expBase = [System.IO.Path]::GetFileNameWithoutExtension($CsvExportPath)
-    if ($expBase -notmatch '-csv$') { $expBase = "$expBase-csv" }
-    $CsvExportPath = if ($expDir) { Join-Path -Path $expDir -ChildPath ($expBase + '.txt') } else { $expBase + '.txt' }
-
     if (-NOT $selectedFirewallRules)
     {
         Write-Host "$(Get-date -Format u): WARNING: No rules selected - nothing to export to CSV" -ForegroundColor Yellow
@@ -1313,32 +1382,94 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
                 return [string]$value
             }
 
-            $csvData = foreach ($rule in $selectedFirewallRules)
+            if (-NOT [string]::IsNullOrEmpty($HeaderDefinitionFile))
             {
-                [pscustomobject]@{
-                    Status            = $rule.Status
-                    StatusDescription = $rule.StatusDescription
-                    DisplayName       = $rule.DisplayName
-                    Direction         = $rule.Direction
-                    LocalName         = $rule.LocalName
-                    LocalAddress      = & $joinMultiLine $rule.LocalAddress
-                    RemoteAddress     = & $joinMultiLine $rule.RemoteAddress
-                    Protocol          = $rule.Protocol
-                    LocalPort         = & $joinMultiLine $rule.LocalPort
-                    Profile           = $rule.Profile
-                    Action            = $rule.Action
-                    Group             = $rule.Group
-                    Program           = $rule.Program
-                    Description       = $rule.Description
+                # Custom column layout driven by an external header definition file.
+                # File layout (";" delimited):
+                #   Row 1: column headers as they should appear in the export (free text)
+                #   Row 2: script-internal rule property names that supply the data for each column
+                #          (empty cell = column is written but stays blank)
+                if (-NOT (Test-Path -LiteralPath $HeaderDefinitionFile))
+                {
+                    throw "HeaderDefinitionFile not found: `"$HeaderDefinitionFile`""
+                }
+
+                $hdrLines = Get-Content -LiteralPath $HeaderDefinitionFile -Encoding UTF8
+                if (-NOT $hdrLines -or $hdrLines.Count -lt 2)
+                {
+                    throw "HeaderDefinitionFile must contain at least 2 lines (header row + property mapping row): `"$HeaderDefinitionFile`""
+                }
+
+                $headerCols  = @(($hdrLines[0] -split ';') | ForEach-Object { $_.Trim() })
+                $mappingCols = @(($hdrLines[1] -split ';') | ForEach-Object { $_.Trim() })
+
+                # Pad mapping row to match header row length so trailing empty columns are still produced
+                while ($mappingCols.Count -lt $headerCols.Count) { $mappingCols += '' }
+
+                # Determine which rule properties are actually available
+                $availableProps = @($selectedFirewallRules[0].PSObject.Properties.Name)
+                $matchingProps  = @($mappingCols | Where-Object { $_ -and ($availableProps -contains $_) })
+                if ($matchingProps.Count -eq 0)
+                {
+                    Write-Host "$(Get-date -Format u): ERROR: None of the property names in row 2 of `"$HeaderDefinitionFile`" match an available rule property - nothing to export." -ForegroundColor Red
+                    Write-Host "$(Get-date -Format u): Available properties: $($availableProps -join ', ')" -ForegroundColor Yellow
+                    return
+                }
+
+                # Warn about non-matching mappings (typos / unknown property names) but continue
+                $unknownProps = @($mappingCols | Where-Object { $_ -and ($availableProps -notcontains $_) } | Select-Object -Unique)
+                foreach ($u in $unknownProps)
+                {
+                    Write-Host "$(Get-date -Format u): WARNING: Property `"$u`" in HeaderDefinitionFile is not a known rule property - the corresponding column will be left empty" -ForegroundColor Yellow
+                }
+
+                $csvData = foreach ($rule in $selectedFirewallRules)
+                {
+                    $obj = [ordered]@{}
+                    for ($i = 0; $i -lt $headerCols.Count; $i++)
+                    {
+                        $headerName = $headerCols[$i]
+                        $propName   = $mappingCols[$i]
+                        $value      = ''
+                        if ($propName -and ($availableProps -contains $propName))
+                        {
+                            $value = & $joinMultiLine $rule.$propName
+                        }
+                        # Ordered dictionaries reject duplicate keys - disambiguate by appending the column index
+                        if ($obj.Contains($headerName)) { $headerName = '{0} ({1})' -f $headerName, $i }
+                        $obj[$headerName] = $value
+                    }
+                    [pscustomobject]$obj
+                }
+            }
+            else
+            {
+                $csvData = foreach ($rule in $selectedFirewallRules)
+                {
+                    [pscustomobject]@{
+                        Status            = $rule.Status
+                        StatusDescription = $rule.StatusDescription
+                        DisplayName       = $rule.DisplayName
+                        Direction         = $rule.Direction
+                        LocalName         = $rule.LocalName
+                        LocalAddress      = & $joinMultiLine $rule.LocalAddress
+                        RemoteAddress     = & $joinMultiLine $rule.RemoteAddress
+                        Protocol          = $rule.Protocol
+                        LocalPort         = & $joinMultiLine $rule.LocalPort
+                        Profile           = $rule.Profile
+                        Action            = $rule.Action
+                        Group             = $rule.Group
+                        Program           = $rule.Program
+                        Description       = $rule.Description
+                    }
                 }
             }
 
-            # Build CSV text manually so we can prepend the Excel "sep=;" hint.
+            # Build CSV text manually.
             # Use [System.IO.File]::WriteAllText so embedded CRLFs in fields are preserved verbatim and the file
             # is written with consistent CRLF line endings (Set-Content can normalize newlines on some hosts).
             $csvLines = $csvData | ConvertTo-Csv -Delimiter ';' -NoTypeInformation
-            $csvOutput = @('sep=;') + $csvLines
-            $csvText = ($csvOutput -join "`r`n") + "`r`n"
+            $csvText = ($csvLines -join "`r`n") + "`r`n"
             [System.IO.File]::WriteAllText($CsvExportPath, $csvText, [System.Text.UTF8Encoding]::new($true))
 
             Write-Host "$(Get-date -Format u): Exported $($csvData.Count) rule(s) to CSV (text): `"$CsvExportPath`"" -ForegroundColor Green
@@ -1347,7 +1478,8 @@ if (-NOT [string]::IsNullOrEmpty($CsvExportPath))
             # would otherwise turn single IPs like "10.10.10.10" into "10,10,10,10" on save.
             Write-Host ''
             Write-Host 'What to do next:' -ForegroundColor Magenta
-            Write-Host '  1. Open Excel first, then use File -> Open -> Browse and select the *-csv.txt file (or drag the file onto an open Excel window) to launch the Text Import Wizard' -ForegroundColor Magenta
+            Write-Host '  1. Do not double click the CSV file.' -ForegroundColor Magenta
+            Write-Host '     Instead, open Excel first, then use "Data -> Get Data -> From File -> From Text/CSV" to import the file' -ForegroundColor Magenta
             Write-Host '  2. In the wizard, choose "Delimited" and pick Semicolon as the field delimiter' -ForegroundColor Magenta
             Write-Host '  3. On step 3, select the LocalAddress, RemoteAddress and LocalPort columns and pick "Text" as the column data format' -ForegroundColor Magenta
             Write-Host '  4. After import, apply "Wrap Text" on those columns to see line breaks for multi-value cells' -ForegroundColor Magenta

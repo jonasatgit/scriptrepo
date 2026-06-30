@@ -228,6 +228,66 @@ Function Set-TreeViewItemColor2
 #endregion
 
 
+#region New-CollectionHeader
+<#
+.Synopsis
+   New-CollectionHeader
+.DESCRIPTION
+   Builds a WPF StackPanel containing the collection name followed by colored dots,
+   one per criterion that applies to the collection (deployments, permissions,
+   incremental updates, include/exclude rules, client settings, maintenance windows).
+   Used as the Header of each TreeViewItem so the user gets a full overview at a glance.
+#>
+function New-CollectionHeader
+{
+    param
+    (
+        $collection
+    )
+
+    $headerPanel = New-Object System.Windows.Controls.StackPanel
+    $headerPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+
+    $nameBlock = New-Object System.Windows.Controls.TextBlock
+    $nameBlock.Text = $collection.Name
+    $nameBlock.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    [void]$headerPanel.Children.Add($nameBlock)
+
+    # Each entry: condition that has to be true, dot color, tooltip text.
+    # Colors are kept aligned with the original Set-TreeViewItemColor2 toggles,
+    # except 'Maintenance windows' moved from Violet to DarkCyan so it no longer
+    # collides visually with 'Client settings'.
+    $dotDefinitions = @(
+        @{ Test = ($collection.DeploymentCount -gt 0)                                              ; Color = 'Green'    ; Tip = "Deployments: $($collection.DeploymentCount)" }
+        @{ Test = ($collection.AdminCount -gt 0)                                                   ; Color = 'Red'      ; Tip = "Admin permissions: $($collection.AdminCount)" }
+        @{ Test = ($collection.CollectionRefreshType -in @('Incremental','Both'))                  ; Color = 'Blue'     ; Tip = "Incremental updates ($($collection.CollectionRefreshType))" }
+        @{ Test = ((($collection.IncludeCollectionsCount) + ($collection.ExcludeCollectionsCount)) -gt 0) ; Color = 'Coral'    ; Tip = "Include: $($collection.IncludeCollectionsCount) / Exclude: $($collection.ExcludeCollectionsCount)" }
+        @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'   ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
+        @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'DarkCyan' ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
+    )
+
+    foreach($dot in $dotDefinitions)
+    {
+        if ($dot.Test)
+        {
+            $ellipse = New-Object System.Windows.Shapes.Ellipse
+            $ellipse.Width  = 10
+            $ellipse.Height = 10
+            $ellipse.Margin = '6,0,0,0'
+            $ellipse.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+            $ellipse.Fill = [System.Windows.Media.Brushes]::($dot.Color)
+            $ellipse.Stroke = [System.Windows.Media.Brushes]::Black
+            $ellipse.StrokeThickness = 0.5
+            $ellipse.ToolTip = $dot.Tip
+            [void]$headerPanel.Children.Add($ellipse)
+        }
+    }
+
+    return $headerPanel
+}
+#endregion
+
+
 function Get-ConfigMgrCollectionSettings
 {
     param
@@ -574,6 +634,34 @@ $button.Add_Click({
 [void]$stackPanel.Children.Add($textBox)
 [void]$stackPanel.Children.Add($button)
 
+# Build a small legend so the user knows what each dot color next to a collection name means
+$legendDefinitions = @(
+    @{ Color = 'Green'   ; Label = 'Deployments' }
+    @{ Color = 'Red'     ; Label = 'Permissions' }
+    @{ Color = 'Blue'    ; Label = 'Incremental updates' }
+    @{ Color = 'Coral'   ; Label = 'Include/Exclude rules' }
+    @{ Color = 'Violet'  ; Label = 'Client settings' }
+    @{ Color = 'DarkCyan'; Label = 'Maintenance windows' }
+)
+
+foreach($legend in $legendDefinitions)
+{
+    $legendEllipse = New-Object System.Windows.Shapes.Ellipse
+    $legendEllipse.Width  = 10
+    $legendEllipse.Height = 10
+    $legendEllipse.Margin = '12,0,4,0'
+    $legendEllipse.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    $legendEllipse.Fill = [System.Windows.Media.Brushes]::($legend.Color)
+    $legendEllipse.Stroke = [System.Windows.Media.Brushes]::Black
+    $legendEllipse.StrokeThickness = 0.5
+    [void]$stackPanel.Children.Add($legendEllipse)
+
+    $legendText = New-Object System.Windows.Controls.TextBlock
+    $legendText.Text = $legend.Label
+    $legendText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    [void]$stackPanel.Children.Add($legendText)
+}
+
 
 # Create the TreeView and set properties
 $treeView = New-Object System.Windows.Controls.TreeView
@@ -768,7 +856,7 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
 
 
     $item = New-Object System.Windows.Controls.TreeViewItem
-    $item.Header = $collection.Name
+    $item.Header = New-CollectionHeader -collection $collection
     $item.Tag = $collection
 
     [void]$collectionItems.add($collection.CollectionID, $item)
@@ -793,7 +881,7 @@ $stack = [System.Collections.Generic.Stack[PSCustomObject]]::new()
 foreach($collection in $rootCollections)
 {
     $item = New-Object System.Windows.Controls.TreeViewItem
-    $item.Header = $collection.Name
+    $item.Header = New-CollectionHeader -collection $collection
     $item.Tag = $collection
 
     $subMembers = $childrenHashTable[($collection.CollectionID)]
