@@ -34,6 +34,7 @@
    | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.    |
    | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.     |
    | v0.10   | Added MembershipRules property (query + include + exclude in one list, auto-selected on click).|
+   | v0.11   | Removed slow upfront query-rule pre-load; rules are now lazy-loaded the first time a collection is selected.  |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -49,7 +50,7 @@ param
     $providerServer
 )
 
-$version = 'v0.10'
+$version = 'v0.11'
 
 #region Get-TreeViewSubmember
 <#
@@ -541,33 +542,11 @@ $excludeCollectionListClean | Group-Object -Property DependentCollectionID | For
 }
 
 
-# Pre-load collection query rules so we can show a real count in the property
-# pane instead of 'Click to load'. CollectionRules is a lazy WMI property, so we
-# have to fetch it per collection. Results are cached in a hashtable keyed by
-# CollectionID so the dataGrid click handler does not need to re-query later.
-Write-Host "Get all collection query rules (may take a moment for large environments)" -ForegroundColor Green
+# Cache for collection query rules. CollectionRules is a lazy WMI property and
+# fetching it for every collection at startup is too slow on big environments.
+# Instead, populate this hashtable on-demand the first time the user selects a
+# collection (see the TreeView SelectedItemChanged handler below).
 $queryRulesHashTable = @{}
-$qrCounter = 0
-$qrTotal   = $global:collectionList.Count
-foreach($coll in $global:collectionList)
-{
-    $qrCounter++
-    Write-Progress -Activity "Loading collection query rules" -Status "$($coll.Name)" -PercentComplete (($qrCounter / $qrTotal) * 100)
-    try
-    {
-        $collWithRules = $coll | Get-CimInstance -ErrorAction Stop
-        $rules = @($collWithRules.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
-        if ($rules.Count -gt 0)
-        {
-            $queryRulesHashTable[$coll.CollectionID] = $rules
-        }
-    }
-    catch
-    {
-        # ignore single-collection failures so the tool still loads
-    }
-}
-Write-Progress -Activity "Loading collection query rules" -Completed
 
 
 $propertyList = ('MembershipRules',
@@ -874,6 +853,31 @@ $treeView.Add_SelectedItemChanged({
     $selectedItem = $e.NewValue
     $global:selectedCollection = $selectedItem.Tag
     if ($selectedItem -ne $null) {
+
+        # Lazy load the query rules for the selected collection (once per
+        # collection) so the script's initial startup is fast.
+        $coll = $selectedItem.Tag
+        if (-not $queryRulesHashTable.ContainsKey($coll.CollectionID))
+        {
+            try
+            {
+                $collWithRules = $coll | Get-CimInstance -ErrorAction Stop
+                $rules = @($collWithRules.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
+                $queryRulesHashTable[$coll.CollectionID] = $rules
+            }
+            catch
+            {
+                # Cache empty array so we don't retry every click on failure.
+                $queryRulesHashTable[$coll.CollectionID] = @()
+            }
+
+            # Now that we have the real count, refresh the property values on
+            # the collection object so the data grid displays accurate numbers.
+            $queryRulesCount = $queryRulesHashTable[$coll.CollectionID].Count
+            $coll.QueryRules      = $queryRulesCount
+            $coll.MembershipRules = $queryRulesCount + [int]$coll.IncludeCollectionsCount + [int]$coll.ExcludeCollectionsCount
+        }
+
         $properties = $selectedItem.Tag | Select-Object -Property $propertyList | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
         $rows = $properties | ForEach-Object {
             [PSCustomObject]@{
@@ -1244,18 +1248,16 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     $collection | Add-Member -MemberType NoteProperty -Name Admins -value $adminHashTable[($collection.CollectionID)] 
     $collection | Add-Member -MemberType NoteProperty -Name AdminCount -Value $collection.Admins.Count
 
-    # QueryRules now holds the pre-loaded count instead of 'Click to load'.
-    $queryRulesCount = 0
-    if ($queryRulesHashTable.ContainsKey($collection.CollectionID))
-    {
-        $queryRulesCount = $queryRulesHashTable[$collection.CollectionID].Count
-    }
-    $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value $queryRulesCount
+    # Query rules are loaded on demand. We initialise the count to '?' so the
+    # property grid shows a clear placeholder. The treeview SelectedItemChanged
+    # handler will replace it with the real count the first time the user picks
+    # this collection.
+    $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value '?'
 
-    # MembershipRules = total of query rules + include collections + exclude collections.
-    # Clicking this row in the property grid shows all three in a single list on the right.
-    $membershipCount = $queryRulesCount + [int]$collection.IncludeCollectionsCount + [int]$collection.ExcludeCollectionsCount
-    $collection | Add-Member -MemberType NoteProperty -Name MembershipRules -Value $membershipCount
+    # MembershipRules holds at minimum the include + exclude collection counts;
+    # the query-rule count is added once it is loaded on demand.
+    $membershipCount = [int]$collection.IncludeCollectionsCount + [int]$collection.ExcludeCollectionsCount
+    $collection | Add-Member -MemberType NoteProperty -Name MembershipRules -Value "$($membershipCount) + ?"
 
 
     $item = New-Object System.Windows.Controls.TreeViewItem
