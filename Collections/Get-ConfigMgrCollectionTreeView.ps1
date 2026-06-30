@@ -454,9 +454,10 @@ $mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
 
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
-#$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 $mainGrid.RowDefinitions[0].Height = [System.Windows.GridLength]::new(45)
 $mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+$mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(30)
 #$mainGrid.RowDefinitions[1].Height = [System.Windows.GridLength]::new(40)
 #$mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(40)
 
@@ -634,7 +635,22 @@ $button.Add_Click({
 [void]$stackPanel.Children.Add($textBox)
 [void]$stackPanel.Children.Add($button)
 
-# Build a small legend so the user knows what each dot color next to a collection name means
+# Build a small legend bar at the bottom so the user knows what each dot color next to a collection name means
+$legendPanel = New-Object System.Windows.Controls.StackPanel
+$legendPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+$legendPanel.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+$legendPanel.Margin = '10,0,10,0'
+$legendPanel.Background = [System.Windows.Media.Brushes]::WhiteSmoke
+[System.Windows.Controls.Grid]::SetRow($legendPanel, 2)
+[System.Windows.Controls.Grid]::SetColumn($legendPanel, 0)
+[System.Windows.Controls.Grid]::SetColumnSpan($legendPanel, 3)
+
+$legendHeader = New-Object System.Windows.Controls.TextBlock
+$legendHeader.Text = 'Legend:'
+$legendHeader.FontWeight = [System.Windows.FontWeights]::Bold
+$legendHeader.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+[void]$legendPanel.Children.Add($legendHeader)
+
 $legendDefinitions = @(
     @{ Color = 'Green'   ; Label = 'Deployments' }
     @{ Color = 'Red'     ; Label = 'Permissions' }
@@ -654,12 +670,12 @@ foreach($legend in $legendDefinitions)
     $legendEllipse.Fill = [System.Windows.Media.Brushes]::($legend.Color)
     $legendEllipse.Stroke = [System.Windows.Media.Brushes]::Black
     $legendEllipse.StrokeThickness = 0.5
-    [void]$stackPanel.Children.Add($legendEllipse)
+    [void]$legendPanel.Children.Add($legendEllipse)
 
     $legendText = New-Object System.Windows.Controls.TextBlock
     $legendText.Text = $legend.Label
     $legendText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
-    [void]$stackPanel.Children.Add($legendText)
+    [void]$legendPanel.Children.Add($legendText)
 }
 
 
@@ -813,6 +829,7 @@ $dataGrid1.AutoGenerateColumns = $true
 [void]$mainGrid.Children.Add($treeView)
 [void]$mainGrid.Children.Add($dataGrid)
 [void]$mainGrid.Children.Add($dataGrid1)
+[void]$mainGrid.Children.Add($legendPanel)
 
 
 Write-Verbose "Create treeview items hashtable and add additional info to collections"
