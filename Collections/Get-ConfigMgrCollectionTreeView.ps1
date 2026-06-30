@@ -19,7 +19,6 @@
 
 .DESCRIPTION
    Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
-   The code was written ~40% by Bing/GPT, GitHub CoPilot and ~60% by a human
 
    Version history:
    | Version | Notes                                                                                          |
@@ -38,6 +37,8 @@
    | v1.0    | First stable release. Renamed event-handler params off the automatic 'sender' variable.                        |
    | v1.1    | Membership pane is now a Type / ID / Name table instead of a flat list. ID populated for include/exclude only.|
    | v1.2    | Middle property grid now uses two explicit columns - removes the trailing empty column.                       |
+   | v1.3    | Maintenance windows dot/legend changed from DarkCyan to Goldenrod for better contrast against Deployments.    |
+   | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.   |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -53,7 +54,7 @@ param
     $providerServer
 )
 
-$version = 'v1.2'
+$version = 'v1.4'
 
 #region Get-TreeViewSubmember
 <#
@@ -273,15 +274,15 @@ function New-CollectionHeader
 
     # Each entry: condition that has to be true, dot color, tooltip text.
     # Colors are kept aligned with the original Set-TreeViewItemColor2 toggles,
-    # except 'Maintenance windows' moved from Violet to DarkCyan so it no longer
-    # collides visually with 'Client settings'.
+    # except 'Maintenance windows' which uses Goldenrod so it stays visually
+    # distinct from both 'Client settings' (Violet) and 'Deployments' (Green).
     $dotDefinitions = @(
-        @{ Test = ($collection.DeploymentCount -gt 0)                                              ; Color = 'Green'    ; Tip = "Deployments: $($collection.DeploymentCount)" }
-        @{ Test = ($collection.AdminCount -gt 0)                                                   ; Color = 'Red'      ; Tip = "Admin permissions: $($collection.AdminCount)" }
-        @{ Test = ($collection.CollectionRefreshType -in @('Incremental','Both'))                  ; Color = 'Blue'     ; Tip = "Incremental updates ($($collection.CollectionRefreshType))" }
-        @{ Test = ((($collection.IncludeCollectionsCount) + ($collection.ExcludeCollectionsCount)) -gt 0) ; Color = 'Coral'    ; Tip = "Include: $($collection.IncludeCollectionsCount) / Exclude: $($collection.ExcludeCollectionsCount)" }
-        @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'   ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
-        @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'DarkCyan' ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
+        @{ Test = ($collection.DeploymentCount -gt 0)                                              ; Color = 'Green'     ; Tip = "Deployments: $($collection.DeploymentCount)" }
+        @{ Test = ($collection.AdminCount -gt 0)                                                   ; Color = 'Red'       ; Tip = "Admin permissions: $($collection.AdminCount)" }
+        @{ Test = ($collection.CollectionRefreshType -in @('Incremental','Both'))                  ; Color = 'Blue'      ; Tip = "Incremental updates ($($collection.CollectionRefreshType))" }
+        @{ Test = ((($collection.IncludeCollectionsCount) + ($collection.ExcludeCollectionsCount)) -gt 0) ; Color = 'Coral'     ; Tip = "Include: $($collection.IncludeCollectionsCount) / Exclude: $($collection.ExcludeCollectionsCount)" }
+        @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'    ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
+        @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'Goldenrod' ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
     )
 
     foreach($dot in $dotDefinitions)
@@ -825,7 +826,7 @@ $legendDefinitions = @(
     @{ Color = 'Blue'    ; Label = 'Incremental updates' }
     @{ Color = 'Coral'   ; Label = 'Include/Exclude rules' }
     @{ Color = 'Violet'  ; Label = 'Client settings' }
-    @{ Color = 'DarkCyan'; Label = 'Maintenance windows' }
+    @{ Color = 'Goldenrod'; Label = 'Maintenance windows' }
 )
 
 foreach($legend in $legendDefinitions)
@@ -855,6 +856,18 @@ $treeView.Add_SelectedItemChanged({
     # Update the data grid with the selected item data
     $selectedItem = $e.NewValue
     $global:selectedCollection = $selectedItem.Tag
+
+    # Reset any previous red/blue highlight from the last membership-row click
+    # so a fresh tree selection starts on a clean slate. The membership-row
+    # selection handler will re-apply the blue marker for this collection.
+    if ($global:collectionItems)
+    {
+        foreach($tvi in $global:collectionItems.Values)
+        {
+            $tvi.Foreground = [System.Windows.Media.Brushes]::Black
+        }
+    }
+
     if ($selectedItem -ne $null) {
 
         # Lazy load the query rules for the selected collection (once per
@@ -1177,6 +1190,33 @@ $queryRuleList.Add_SelectionChanged({
         {
             # Include / exclude entries have no WQL - clear the text box.
             $queryTextBox.Text = ''
+        }
+
+        # Highlight the related collections in the treeview to make include /
+        # exclude dependencies easy to spot:
+        #   - Blue: the currently selected collection
+        #   - Red : the source collection of the selected include / exclude row
+        if ($global:collectionItems)
+        {
+            foreach($tvi in $global:collectionItems.Values)
+            {
+                $tvi.Foreground = [System.Windows.Media.Brushes]::Black
+            }
+
+            if ($global:selectedCollection -and $global:collectionItems.ContainsKey($global:selectedCollection.CollectionID))
+            {
+                $global:collectionItems[$global:selectedCollection.CollectionID].Foreground = [System.Windows.Media.Brushes]::Blue
+            }
+
+            $row = $queryRuleList.SelectedItem
+            if ($row -and ($row.Type -eq 'Include' -or $row.Type -eq 'Exclude') -and $row.ID)
+            {
+                $srcId = [string]$row.ID
+                if ($global:collectionItems.ContainsKey($srcId))
+                {
+                    $global:collectionItems[$srcId].Foreground = [System.Windows.Media.Brushes]::Red
+                }
+            }
         }
     }
 })
