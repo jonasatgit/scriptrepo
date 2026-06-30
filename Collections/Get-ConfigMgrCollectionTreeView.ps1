@@ -43,6 +43,7 @@
    | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.|
    | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.|
    | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage. |
+   | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.   |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -58,7 +59,7 @@ param
     $providerServer
 )
 
-$version = 'v1.8'
+$version = 'v1.9'
 
 #region Get-TreeViewSubmember
 <#
@@ -1047,7 +1048,8 @@ function Show-CollectionDependencyLines
     [System.Windows.Controls.Canvas]::SetTop($debugRect, 0)
     [void]$depCanvas.Children.Add($debugRect)
 
-    Write-Host "[deps] canvas size: $($depCanvas.ActualWidth) x $($depCanvas.ActualHeight); pair count: $(@($pairs).Count)" -ForegroundColor Cyan
+    $pairCount = @($pairs).Count
+    Write-Host "[deps] canvas size: $($depCanvas.ActualWidth) x $($depCanvas.ActualHeight); pair count: $pairCount" -ForegroundColor Cyan
 
     if (-not $pairs) { return }
 
@@ -1121,8 +1123,13 @@ function Show-CollectionDependencyLines
         }
         else
         {
-            $path.Stroke          = [System.Windows.Media.Brushes]::Red
-            $path.StrokeDashArray = New-Object System.Windows.Media.DoubleCollection(@(4.0, 3.0))
+            $path.Stroke = [System.Windows.Media.Brushes]::Red
+            # DoubleCollection has no constructor that takes a single array, so
+            # build the dash pattern by Add()-ing each value individually.
+            $dashes = New-Object System.Windows.Media.DoubleCollection
+            [void]$dashes.Add(4.0)
+            [void]$dashes.Add(3.0)
+            $path.StrokeDashArray = $dashes
         }
         [void]$depCanvas.Children.Add($path)
 
