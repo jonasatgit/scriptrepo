@@ -48,6 +48,14 @@
    | v1.11   | Dependency lines now follow the TreeView when it is scrolled; removed v1.8 debug rectangle + per-pair logs.    |
    | v1.12   | Removed remaining dependency-line Write-Host diagnostics; failed pairs are now silently skipped.               |
    | v2.0    | Added 'Reset dep. lines' button that clears the overlay and disables the scroll-redraw.                       |
+   | v2.1    | Fixed arrow-head direction, shortened the GitHub legend hyperlink to 'Link', added Include/Exclude line legend. |
+   | v2.2    | Added 'Choose toggle' placeholder item to the toolbar ComboBox so it is no longer visually empty on startup.   |
+   | v2.3    | Added Teal 'Collection variables' dot, legend entry and toolbar toggle for collections that have variables set.|
+   | v2.4    | Recolored 'Collection variables' from Teal to DeepPink so it no longer looks like the green Deployments dot.   |
+   | v2.5    | Recolored 'Collection variables' from DeepPink to Black for a calmer, higher-contrast indicator.               |
+   | v2.6    | Added 'DirectMembershipRulesCount' property (lazy-loaded count of direct membership rules per collection).    |
+   | v2.7    | Direct membership rules now appear as a row in the MembershipRules grid (Type=Direct, Name='x direct rules').  |
+   | v2.8    | Removed redundant QueryRules / DirectMembershipRulesCount / Include- / ExcludeCollectionsCount property rows. |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -63,7 +71,7 @@ param
     $providerServer
 )
 
-$version = 'v2.0'
+$version = 'v2.8'
 
 #region Get-TreeViewSubmember
 <#
@@ -169,7 +177,7 @@ Function Set-TreeViewItemColor2
         [System.Windows.Controls.TreeViewItem]$treeviewItem,
         #[ValidateSet("Red", "Green","Black")]
         [string]$color= 'Red',
-        [ValidateSet("Reset","Search","Toggle deployments", "Toggle permissions","Toggle incremental updates","Toggle include or exclude","Toggle client settings","Toggle maintenance windows")]
+        [ValidateSet("Reset","Search","Toggle deployments", "Toggle permissions","Toggle incremental updates","Toggle include or exclude","Toggle client settings","Toggle maintenance windows","Toggle collection variables")]
         [string]$type,
         [string]$searchString
     )
@@ -223,6 +231,14 @@ Function Set-TreeViewItemColor2
                 $color = 'Violet'
                 $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
             }          
+        }
+        "Toggle collection variables"
+        {
+            if ($treeviewItem.tag.CollectionVariablesCount -gt 0)
+            {
+                $color = 'Black'
+                $treeviewItem.Foreground = [System.Windows.Media.Brushes]::$color
+            }
         }
         'Search'
         {
@@ -293,6 +309,7 @@ function New-CollectionHeader
         @{ Test = ($collection.UsedAsIncludeExcludeCount -gt 0)                                    ; Color = 'SaddleBrown' ; Tip = "Used as include/exclude source by $($collection.UsedAsIncludeExcludeCount) collection(s)" }
         @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'      ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
         @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'Goldenrod'   ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
+        @{ Test = ($collection.CollectionVariablesCount -gt 0)                                     ; Color = 'Black'       ; Tip = "Collection variables: $($collection.CollectionVariablesCount)" }
     )
 
     foreach($dot in $dotDefinitions)
@@ -600,11 +617,8 @@ $propertyList = ('MembershipRules',
     'DeploymentCount',
     'CollectionVariablesCount',
     'AdminCount',
-    'QueryRules',
     #'Admins',
     #'IncludeExcludeCollectionsCount',
-    'IncludeCollectionsCount',
-    'ExcludeCollectionsCount',
     'UsedAsIncludeExcludeCount',
     'MemberCount',
     'ServiceWindowsCount',
@@ -750,15 +764,25 @@ $comboBox = New-Object System.Windows.Controls.ComboBox
 $comboBox.Margin = "10,10,10,10"
 $comboBox.Width = 200
 $comboBox.Height = 22
+# v2.2: inert placeholder text so the ComboBox shows something before any
+# real selection. Selected by default; the SelectionChanged handler below
+# returns early when this placeholder is the current item.
+$comboBoxPlaceholder = 'Choose toggle'
+[void]$comboBox.Items.Add($comboBoxPlaceholder)
 [void]$comboBox.Items.Add("Toggle deployments")
 [void]$comboBox.Items.Add("Toggle permissions")
 [void]$comboBox.Items.Add("Toggle incremental updates")
 [void]$comboBox.Items.Add("Toggle include or exclude")
 [void]$comboBox.Items.Add("Toggle client settings")
 [void]$comboBox.Items.Add("Toggle maintenance windows")
+[void]$comboBox.Items.Add("Toggle collection variables")
 [void]$comboBox.Items.Add("Reset")
+$comboBox.SelectedIndex = 0
 
 $comboBox.Add_SelectionChanged({
+    # Skip the inert placeholder so Set-TreeViewItemColor2's ValidateSet stays happy.
+    if ($comboBox.SelectedItem -eq $comboBoxPlaceholder) { return }
+
     # Get the selected item from the ComboBox
     foreach($item in $treeView.Items)
     {
@@ -900,6 +924,7 @@ $legendDefinitions = @(
     @{ Color = 'SaddleBrown'; Label = 'Used as include/exclude' }
     @{ Color = 'Violet'   ; Label = 'Client settings' }
     @{ Color = 'Goldenrod'; Label = 'Maintenance windows' }
+    @{ Color = 'Black'    ; Label = 'Collection variables' }
 )
 
 foreach($legend in $legendDefinitions)
@@ -920,6 +945,38 @@ foreach($legend in $legendDefinitions)
     [void]$legendPanel.Children.Add($legendText)
 }
 
+# v2.1: legend entries for the dependency-line overlay drawn by the
+# 'Show ... dep. lines' buttons.
+$legendLineDefs = @(
+    @{ Color = 'Green'; Dashed = $false; Label = 'Include line' }
+    @{ Color = 'Red'  ; Dashed = $true ; Label = 'Exclude line' }
+)
+foreach($lineDef in $legendLineDefs)
+{
+    $legendLine = New-Object System.Windows.Shapes.Line
+    $legendLine.X1 = 0
+    $legendLine.Y1 = 0
+    $legendLine.X2 = 22
+    $legendLine.Y2 = 0
+    $legendLine.Stroke = [System.Windows.Media.Brushes]::($lineDef.Color)
+    $legendLine.StrokeThickness = 1.5
+    $legendLine.Margin = '12,0,4,0'
+    $legendLine.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    if ($lineDef.Dashed)
+    {
+        $legendDashes = New-Object System.Windows.Media.DoubleCollection
+        [void]$legendDashes.Add(4.0)
+        [void]$legendDashes.Add(3.0)
+        $legendLine.StrokeDashArray = $legendDashes
+    }
+    [void]$legendPanel.Children.Add($legendLine)
+
+    $legendLineText = New-Object System.Windows.Controls.TextBlock
+    $legendLineText.Text = $lineDef.Label
+    $legendLineText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    [void]$legendPanel.Children.Add($legendLineText)
+}
+
 # Clickable GitHub link in the bottom-right corner of the legend bar.
 $repoUrl = 'https://github.com/jonasatgit/scriptrepo/tree/master/Collections'
 $linkTextBlock = New-Object System.Windows.Controls.TextBlock
@@ -931,7 +988,9 @@ $linkTextBlock.Margin              = '10,0,12,0'
 $hyperlink = New-Object System.Windows.Documents.Hyperlink
 $hyperlink.NavigateUri = [Uri]$repoUrl
 $hyperlink.ToolTip     = $repoUrl
-[void]$hyperlink.Inlines.Add($repoUrl)
+# v2.1: display 'Link' instead of the full URL to save toolbar space; the full
+# URL is still visible on hover via the tooltip.
+[void]$hyperlink.Inlines.Add('Link')
 $hyperlink.Add_RequestNavigate({
     Start-Process $_.Uri.AbsoluteUri
     $_.Handled = $true
@@ -973,18 +1032,21 @@ $treeView.Add_SelectedItemChanged({
                 $collWithRules = $coll | Get-CimInstance -ErrorAction Stop
                 $rules = @($collWithRules.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
                 $queryRulesHashTable[$coll.CollectionID] = $rules
+                $directRulesCount = @($collWithRules.CollectionRules | Where-Object { $_.ResourceID -ne $null }).Count
             }
             catch
             {
                 # Cache empty array so we don't retry every click on failure.
                 $queryRulesHashTable[$coll.CollectionID] = @()
+                $directRulesCount = 0
             }
 
             # Now that we have the real count, refresh the property values on
             # the collection object so the data grid displays accurate numbers.
             $queryRulesCount = $queryRulesHashTable[$coll.CollectionID].Count
             $coll.QueryRules      = $queryRulesCount
-            $coll.MembershipRules = $queryRulesCount + [int]$coll.IncludeCollectionsCount + [int]$coll.ExcludeCollectionsCount
+            $coll.DirectMembershipRulesCount = $directRulesCount
+            $coll.MembershipRules = $queryRulesCount + $directRulesCount + [int]$coll.IncludeCollectionsCount + [int]$coll.ExcludeCollectionsCount
         }
 
         $properties = $selectedItem.Tag | Select-Object -Property $propertyList | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
@@ -1122,12 +1184,15 @@ function Show-CollectionDependencyLines
         }
         [void]$depCanvas.Children.Add($path)
 
-        # Arrow head pointing at the dependent collection row.
+        # Arrow head pointing at the dependent collection row. The curve ends
+        # at ($dstEdgeX, $dstY) heading LEFT (coming back from the right-side
+        # gutter), so the base of the triangle is placed to the RIGHT of the
+        # tip to make the arrow visually flow in the same direction.
         $arrow = New-Object System.Windows.Shapes.Polygon
         $arrow.Points = New-Object System.Windows.Media.PointCollection
         [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX,     $dstY))
-        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY - 4))
-        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY + 4))
+        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX + 8, $dstY - 4))
+        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX + 8, $dstY + 4))
         $arrow.Fill = $path.Stroke
         [void]$depCanvas.Children.Add($arrow)
     }
@@ -1338,6 +1403,17 @@ $dataGrid.Add_SelectionChanged({
                     ID   = ''
                     Name = $rule.RuleName
                     Wql  = (Format-WqlQuery -query $rule.QueryExpression)
+                })
+            }
+
+            $directRulesCount = [int]$global:selectedCollection.DirectMembershipRulesCount
+            if ($directRulesCount -gt 0)
+            {
+                $gridRows.Add([PSCustomObject]@{
+                    Type = 'Direct'
+                    ID   = ''
+                    Name = "$directRulesCount direct rules"
+                    Wql  = $null
                 })
             }
 
@@ -1689,8 +1765,12 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     # this collection.
     $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value '?'
 
+    # Direct membership rules are also loaded on demand from the same lazy WMI
+    # call as QueryRules; initialise to '?' as a placeholder until then.
+    $collection | Add-Member -MemberType NoteProperty -Name DirectMembershipRulesCount -Value '?'
+
     # MembershipRules holds at minimum the include + exclude collection counts;
-    # the query-rule count is added once it is loaded on demand.
+    # the query-rule and direct-rule counts are added once they are loaded on demand.
     $membershipCount = [int]$collection.IncludeCollectionsCount + [int]$collection.ExcludeCollectionsCount
     $collection | Add-Member -MemberType NoteProperty -Name MembershipRules -Value "$($membershipCount) + ?"
 
