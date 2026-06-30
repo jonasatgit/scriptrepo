@@ -46,6 +46,8 @@
    | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.   |
    | v1.10   | Replaced @($pairs).Count with a null-guarded $pairs.Count - the array-subexpression mis-binds a generic List.|
    | v1.11   | Dependency lines now follow the TreeView when it is scrolled; removed v1.8 debug rectangle + per-pair logs.    |
+   | v1.12   | Removed remaining dependency-line Write-Host diagnostics; failed pairs are now silently skipped.               |
+   | v2.0    | Added 'Reset dep. lines' button that clears the overlay and disables the scroll-redraw.                       |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -61,7 +63,7 @@ param
     $providerServer
 )
 
-$version = 'v1.11'
+$version = 'v2.0'
 
 #region Get-TreeViewSubmember
 <#
@@ -842,6 +844,12 @@ $showSelDepsButton.Padding = '8,0'
 $showSelDepsButton.Height  = 22
 $showSelDepsButton.Content = 'Show selected dep. lines'
 
+$resetDepsButton = New-Object System.Windows.Controls.Button
+$resetDepsButton.Margin  = '2,10,10,10'
+$resetDepsButton.Padding = '8,0'
+$resetDepsButton.Height  = 22
+$resetDepsButton.Content = 'Reset dep. lines'
+
 
 # Add the CheckBoxes to the StackPanel
 #[void]$stackPanel.Children.Add($checkBox)
@@ -853,6 +861,7 @@ $showSelDepsButton.Content = 'Show selected dep. lines'
 [void]$stackPanel.Children.Add($button)
 [void]$stackPanel.Children.Add($showAllDepsButton)
 [void]$stackPanel.Children.Add($showSelDepsButton)
+[void]$stackPanel.Children.Add($resetDepsButton)
 
 # Build a legend bar at the bottom so the user knows what each dot color next to a collection name means.
 # A Border is used as the actual Grid child so it can stretch and paint the full row width;
@@ -1042,25 +1051,13 @@ function Show-CollectionDependencyLines
     param($pairs)
 
     $depCanvas.Children.Clear()
-
-    $pairCount = 0
-    if ($null -ne $pairs) { $pairCount = $pairs.Count }
-    Write-Host "[deps] canvas size: $($depCanvas.ActualWidth) x $($depCanvas.ActualHeight); pair count: $pairCount" -ForegroundColor Cyan
-
     if (-not $pairs) { return }
 
-    $drawn   = 0
-    $skipped = 0
     foreach($pair in $pairs)
     {
         $srcItem = $global:collectionItems[$pair.SourceCollectionID]
         $dstItem = $global:collectionItems[$pair.DependentCollectionID]
-        if (-not $srcItem -or -not $dstItem)
-        {
-            Write-Host "[deps] missing TreeViewItem for $($pair.SourceCollectionID) -> $($pair.DependentCollectionID)" -ForegroundColor Yellow
-            $skipped++
-            continue
-        }
+        if (-not $srcItem -or -not $dstItem) { continue }
 
         # Use the visual header (the StackPanel built by New-CollectionHeader)
         # when available so coordinates line up with the actual collection name.
@@ -1074,8 +1071,6 @@ function Show-CollectionDependencyLines
         }
         catch
         {
-            Write-Host "[deps] TranslatePoint failed for $($pair.SourceCollectionID) -> $($pair.DependentCollectionID): $($_.Exception.Message)" -ForegroundColor Red
-            $skipped++
             continue
         }
 
@@ -1135,20 +1130,13 @@ function Show-CollectionDependencyLines
         [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY + 4))
         $arrow.Fill = $path.Stroke
         [void]$depCanvas.Children.Add($arrow)
-        $drawn++
     }
-
-    Write-Host "[deps] drawn=$drawn skipped=$skipped total children on canvas=$($depCanvas.Children.Count)" -ForegroundColor Cyan
 }
 
 
 # 'Show all dep. lines': expand the whole tree, then draw every include and
 # exclude relationship in the environment.
 $showAllDepsButton.Add_Click({
-    Write-Host "[deps] 'Show all dep. lines' clicked" -ForegroundColor Cyan
-    Write-Host "[deps] includeCollectionListClean count = $(@($includeCollectionListClean).Count); excludeCollectionListClean count = $(@($excludeCollectionListClean).Count)" -ForegroundColor Cyan
-    Write-Host "[deps] global:collectionItems is null? $(-not $global:collectionItems); count = $(if($global:collectionItems){$global:collectionItems.Count}else{'n/a'})" -ForegroundColor Cyan
-
     Expand-AllTreeViewItems -items $treeView.Items
 
     $allPairs = New-Object System.Collections.Generic.List[object]
@@ -1182,15 +1170,12 @@ $showAllDepsButton.Add_Click({
 # 'Show selected dep. lines': only draw include/exclude lines that touch the
 # currently selected collection (as source OR dependent).
 $showSelDepsButton.Add_Click({
-    Write-Host "[deps] 'Show selected dep. lines' clicked" -ForegroundColor Cyan
     if (-not $global:selectedCollection)
     {
-        Write-Host "[deps] no collection selected - clearing canvas" -ForegroundColor Yellow
         $depCanvas.Children.Clear()
         return
     }
     $cid = $global:selectedCollection.CollectionID
-    Write-Host "[deps] selected CollectionID = $cid ($($global:selectedCollection.Name))" -ForegroundColor Cyan
 
     Expand-AllTreeViewItems -items $treeView.Items
 
@@ -1221,6 +1206,14 @@ $showSelDepsButton.Add_Click({
     $treeView.UpdateLayout()
     $script:lastDepPairs = $pairs
     Show-CollectionDependencyLines -pairs $pairs
+})
+
+
+# 'Reset dep. lines': clear the overlay and forget the last pair list so the
+# scroll handler stops re-drawing.
+$resetDepsButton.Add_Click({
+    $script:lastDepPairs = $null
+    $depCanvas.Children.Clear()
 })
 
 
