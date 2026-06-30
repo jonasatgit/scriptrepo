@@ -37,6 +37,7 @@
    | v0.11   | Removed slow upfront query-rule pre-load; rules are now lazy-loaded the first time a collection is selected.  |
    | v1.0    | First stable release. Renamed event-handler params off the automatic 'sender' variable.                        |
    | v1.1    | Membership pane is now a Type / ID / Name table instead of a flat list. ID populated for include/exclude only.|
+   | v1.2    | Middle property grid now uses two explicit columns - removes the trailing empty column.                       |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -52,7 +53,7 @@ param
     $providerServer
 )
 
-$version = 'v1.1'
+$version = 'v1.2'
 
 #region Get-TreeViewSubmember
 <#
@@ -907,8 +908,26 @@ $treeView.Add_SelectedItemChanged({
 Write-Verbose "Create the data grid and set properties"
 $dataGrid = New-Object System.Windows.Controls.DataGrid
 $dataGrid.IsReadOnly = $true
-$dataGrid.HeadersVisibility = "All"
-$dataGrid.AutoGenerateColumns = $true
+$dataGrid.HeadersVisibility = 'Column'
+$dataGrid.AutoGenerateColumns = $false
+$dataGrid.CanUserAddRows    = $false
+$dataGrid.CanUserDeleteRows = $false
+
+# Two explicit columns - Property (sized to header) and Value (fills the rest).
+# Using explicit columns instead of auto-generation removes the trailing empty
+# space that previously looked like a third blank column.
+$col = New-Object System.Windows.Controls.DataGridTextColumn
+$col.Header  = 'Property'
+$col.Binding = New-Object System.Windows.Data.Binding('Property')
+$col.Width   = [System.Windows.Controls.DataGridLength]::SizeToCells
+[void]$dataGrid.Columns.Add($col)
+
+$col = New-Object System.Windows.Controls.DataGridTextColumn
+$col.Header  = 'Value'
+$col.Binding = New-Object System.Windows.Data.Binding('Value')
+$col.Width   = New-Object System.Windows.Controls.DataGridLength(1, [System.Windows.Controls.DataGridLengthUnitType]::Star)
+[void]$dataGrid.Columns.Add($col)
+
 $dataGrid.Add_SelectionChanged({
     param($src, $e)
 
