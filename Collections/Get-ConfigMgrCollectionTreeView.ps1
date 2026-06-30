@@ -39,6 +39,7 @@
    | v1.2    | Middle property grid now uses two explicit columns - removes the trailing empty column.                       |
    | v1.3    | Maintenance windows dot/legend changed from DarkCyan to Goldenrod for better contrast against Deployments.    |
    | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.   |
+   | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.       |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -54,7 +55,7 @@ param
     $providerServer
 )
 
-$version = 'v1.4'
+$version = 'v1.5'
 
 #region Get-TreeViewSubmember
 <#
@@ -578,7 +579,7 @@ Add-Type -AssemblyName PresentationFramework
 
 # Create the window and set properties
 $window = New-Object System.Windows.Window
-$window.Title = "$($version) TreeView of $($global:collectionList.count) collections         --> https://github.com/jonasatgit/scriptrepo/tree/master/Collections <--"
+$window.Title = "$($version) TreeView of $($global:collectionList.count) collections"
 $window.Height = 800
 $window.Width = 1400
 
@@ -798,7 +799,8 @@ $button.Add_Click({
 
 # Build a legend bar at the bottom so the user knows what each dot color next to a collection name means.
 # A Border is used as the actual Grid child so it can stretch and paint the full row width;
-# the inner StackPanel hosts the legend entries.
+# inside the border a DockPanel holds the legend entries on the left and a
+# clickable GitHub link in the bottom-right corner.
 $legendBorder = New-Object System.Windows.Controls.Border
 $legendBorder.Background = [System.Windows.Media.Brushes]::WhiteSmoke
 $legendBorder.BorderBrush = [System.Windows.Media.Brushes]::LightGray
@@ -807,12 +809,16 @@ $legendBorder.BorderThickness = '0,1,0,0'
 [System.Windows.Controls.Grid]::SetColumn($legendBorder, 0)
 [System.Windows.Controls.Grid]::SetColumnSpan($legendBorder, 5)
 
+$legendDock = New-Object System.Windows.Controls.DockPanel
+$legendDock.LastChildFill = $false
+$legendBorder.Child = $legendDock
+
 $legendPanel = New-Object System.Windows.Controls.StackPanel
 $legendPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
 $legendPanel.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
-$legendPanel.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Left
 $legendPanel.Margin = '10,0,10,0'
-$legendBorder.Child = $legendPanel
+[System.Windows.Controls.DockPanel]::SetDock($legendPanel, [System.Windows.Controls.Dock]::Left)
+[void]$legendDock.Children.Add($legendPanel)
 
 $legendHeader = New-Object System.Windows.Controls.TextBlock
 $legendHeader.Text = 'Legend:'
@@ -846,6 +852,26 @@ foreach($legend in $legendDefinitions)
     $legendText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
     [void]$legendPanel.Children.Add($legendText)
 }
+
+# Clickable GitHub link in the bottom-right corner of the legend bar.
+$repoUrl = 'https://github.com/jonasatgit/scriptrepo/tree/master/Collections'
+$linkTextBlock = New-Object System.Windows.Controls.TextBlock
+$linkTextBlock.VerticalAlignment   = [System.Windows.VerticalAlignment]::Center
+$linkTextBlock.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+$linkTextBlock.Margin              = '10,0,12,0'
+[System.Windows.Controls.DockPanel]::SetDock($linkTextBlock, [System.Windows.Controls.Dock]::Right)
+
+$hyperlink = New-Object System.Windows.Documents.Hyperlink
+$hyperlink.NavigateUri = [Uri]$repoUrl
+$hyperlink.ToolTip     = $repoUrl
+[void]$hyperlink.Inlines.Add($repoUrl)
+$hyperlink.Add_RequestNavigate({
+    Start-Process $_.Uri.AbsoluteUri
+    $_.Handled = $true
+}.GetNewClosure())
+[void]$linkTextBlock.Inlines.Add($hyperlink)
+
+[void]$legendDock.Children.Add($linkTextBlock)
 
 
 # Create the TreeView and set properties
