@@ -30,6 +30,7 @@
    | v0.4    | Added search box and combo-box with more toggle options (incremental, client settings, MWs).   |
    | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.  |
    | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.   |
+   | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.         |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -45,7 +46,7 @@ param
     $providerServer
 )
 
-$version = 'v0.6'
+$version = 'v0.7'
 
 #region Get-TreeViewSubmember
 <#
@@ -491,9 +492,13 @@ $mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(40)
 # Create a StackPanel and set properties
 $stackPanel = New-Object System.Windows.Controls.StackPanel
 $stackPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
-# Span the toolbar across all 5 columns so its controls are not clipped
-# when the user drags the left column splitter to make column 0 narrow.
+$stackPanel.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$stackPanel.VerticalAlignment   = [System.Windows.VerticalAlignment]::Stretch
+$stackPanel.Background = [System.Windows.Media.Brushes]::White
+# Pin the toolbar to row 0 and span all 5 columns so its controls are not
+# clipped when the user drags a column splitter to make a column narrow.
 [System.Windows.Controls.Grid]::SetRow($stackPanel, 0)
+[System.Windows.Controls.Grid]::SetRowSpan($stackPanel, 1)
 [System.Windows.Controls.Grid]::SetColumn($stackPanel, 0)
 [System.Windows.Controls.Grid]::SetColumnSpan($stackPanel, 5)
 
@@ -886,6 +891,7 @@ $splitter1.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::Previo
 $splitter1.ResizeDirection = [System.Windows.Controls.GridResizeDirection]::Columns
 [System.Windows.Controls.Grid]::SetColumn($splitter1, 1)
 [System.Windows.Controls.Grid]::SetRow($splitter1, 1)
+[System.Windows.Controls.Grid]::SetRowSpan($splitter1, 1)
 [void]$mainGrid.Children.Add($splitter1)
 
 $splitter2 = New-Object System.Windows.Controls.GridSplitter
@@ -898,6 +904,7 @@ $splitter2.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::Previo
 $splitter2.ResizeDirection = [System.Windows.Controls.GridResizeDirection]::Columns
 [System.Windows.Controls.Grid]::SetColumn($splitter2, 3)
 [System.Windows.Controls.Grid]::SetRow($splitter2, 1)
+[System.Windows.Controls.Grid]::SetRowSpan($splitter2, 1)
 [void]$mainGrid.Children.Add($splitter2)
 
 
