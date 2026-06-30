@@ -33,6 +33,7 @@
    | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.         |
    | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.    |
    | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.     |
+   | v0.10   | Added MembershipRules property (query + include + exclude in one list, auto-selected on click).|
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -48,7 +49,7 @@ param
     $providerServer
 )
 
-$version = 'v0.9'
+$version = 'v0.10'
 
 #region Get-TreeViewSubmember
 <#
@@ -540,8 +541,37 @@ $excludeCollectionListClean | Group-Object -Property DependentCollectionID | For
 }
 
 
+# Pre-load collection query rules so we can show a real count in the property
+# pane instead of 'Click to load'. CollectionRules is a lazy WMI property, so we
+# have to fetch it per collection. Results are cached in a hashtable keyed by
+# CollectionID so the dataGrid click handler does not need to re-query later.
+Write-Host "Get all collection query rules (may take a moment for large environments)" -ForegroundColor Green
+$queryRulesHashTable = @{}
+$qrCounter = 0
+$qrTotal   = $global:collectionList.Count
+foreach($coll in $global:collectionList)
+{
+    $qrCounter++
+    Write-Progress -Activity "Loading collection query rules" -Status "$($coll.Name)" -PercentComplete (($qrCounter / $qrTotal) * 100)
+    try
+    {
+        $collWithRules = $coll | Get-CimInstance -ErrorAction Stop
+        $rules = @($collWithRules.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
+        if ($rules.Count -gt 0)
+        {
+            $queryRulesHashTable[$coll.CollectionID] = $rules
+        }
+    }
+    catch
+    {
+        # ignore single-collection failures so the tool still loads
+    }
+}
+Write-Progress -Activity "Loading collection query rules" -Completed
 
-$propertyList = ('CollectionID',
+
+$propertyList = ('MembershipRules',
+    'CollectionID',
     'CollectionRefreshType',
     'ClientSettingsCount',
     'DeploymentCount',
@@ -845,11 +875,20 @@ $treeView.Add_SelectedItemChanged({
     $global:selectedCollection = $selectedItem.Tag
     if ($selectedItem -ne $null) {
         $properties = $selectedItem.Tag | Select-Object -Property $propertyList | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
-        $dataGrid.ItemsSource = $properties | ForEach-Object {
+        $rows = $properties | ForEach-Object {
             [PSCustomObject]@{
                 Property = $_
                 Value = $selectedItem.Tag.$_
             }
+        }
+        $dataGrid.ItemsSource = $rows
+
+        # Auto-select the MembershipRules row so the user immediately sees the
+        # combined list of query rules + include/exclude collections.
+        $membershipRow = $rows | Where-Object { $_.Property -eq 'MembershipRules' } | Select-Object -First 1
+        if ($membershipRow)
+        {
+            $dataGrid.SelectedItem = $membershipRow
         }
     } else {
         $dataGrid.ItemsSource = $null
@@ -895,8 +934,8 @@ $dataGrid.Add_SelectionChanged({
         }
         'QueryRules'
         {
-            $global:selectedCollection = $global:selectedCollection | Get-CimInstance
-            $rules = @($global:selectedCollection.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
+            $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
+            if (-not $rules) { $rules = @() }
 
             $queryRuleList.Items.Clear()
             $queryTextBox.Text = ''
@@ -914,6 +953,56 @@ $dataGrid.Add_SelectionChanged({
             else
             {
                 $queryTextBox.Text = '-- No query rules set --'
+            }
+        }
+        'MembershipRules'
+        {
+            # Combined list of query rules + include collections + exclude collections.
+            $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
+            if (-not $rules) { $rules = @() }
+
+            $queryRuleList.Items.Clear()
+            $queryTextBox.Text = ''
+
+            foreach($rule in $rules)
+            {
+                $lbItem = New-Object System.Windows.Controls.ListBoxItem
+                $lbItem.Content = "[Query]   $($rule.RuleName)"
+                $lbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
+                [void]$queryRuleList.Items.Add($lbItem)
+            }
+
+            if ([int]$global:selectedCollection.IncludeCollectionsCount -gt 0)
+            {
+                foreach($inc in @($global:selectedCollection.IncludeCollections))
+                {
+                    if (-not $inc) { continue }
+                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
+                    $lbItem.Content = "[Include] $($inc.SourceCollectionName)"
+                    $lbItem.Tag     = $null
+                    [void]$queryRuleList.Items.Add($lbItem)
+                }
+            }
+
+            if ([int]$global:selectedCollection.ExcludeCollectionsCount -gt 0)
+            {
+                foreach($exc in @($global:selectedCollection.ExcludeCollections))
+                {
+                    if (-not $exc) { continue }
+                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
+                    $lbItem.Content = "[Exclude] $($exc.SourceCollectionName)"
+                    $lbItem.Tag     = $null
+                    [void]$queryRuleList.Items.Add($lbItem)
+                }
+            }
+
+            if ($queryRuleList.Items.Count -gt 0)
+            {
+                $queryRuleList.SelectedIndex = 0
+            }
+            else
+            {
+                $queryTextBox.Text = '-- No membership rules set --'
             }
         }
         'ServiceWindowsCount'
@@ -970,7 +1059,7 @@ $dataGrid.Add_SelectionChanged({
     }
 
     # Swap between the regular details grid and the dedicated WQL query view.
-    if ($selectedItem -and $selectedItem.Property -eq 'QueryRules')
+    if ($selectedItem -and ($selectedItem.Property -eq 'QueryRules' -or $selectedItem.Property -eq 'MembershipRules'))
     {
         $dataGrid1.Visibility      = [System.Windows.Visibility]::Collapsed
         $queryViewPanel.Visibility = [System.Windows.Visibility]::Visible
@@ -1012,9 +1101,17 @@ $queryViewPanel.Visibility = [System.Windows.Visibility]::Collapsed
 $queryRuleList = New-Object System.Windows.Controls.ListBox
 $queryRuleList.Margin = '4,4,4,2'
 $queryRuleList.Add_SelectionChanged({
-    if ($queryRuleList.SelectedItem -and $queryRuleList.SelectedItem.Tag)
+    if ($queryRuleList.SelectedItem)
     {
-        $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Tag
+        if ($queryRuleList.SelectedItem.Tag)
+        {
+            $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Tag
+        }
+        else
+        {
+            # Include / exclude entries have no WQL - clear the text box.
+            $queryTextBox.Text = ''
+        }
     }
 })
 [System.Windows.Controls.Grid]::SetRow($queryRuleList, 0)
@@ -1147,7 +1244,18 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     $collection | Add-Member -MemberType NoteProperty -Name Admins -value $adminHashTable[($collection.CollectionID)] 
     $collection | Add-Member -MemberType NoteProperty -Name AdminCount -Value $collection.Admins.Count
 
-    $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value 'Click to load'
+    # QueryRules now holds the pre-loaded count instead of 'Click to load'.
+    $queryRulesCount = 0
+    if ($queryRulesHashTable.ContainsKey($collection.CollectionID))
+    {
+        $queryRulesCount = $queryRulesHashTable[$collection.CollectionID].Count
+    }
+    $collection | Add-Member -MemberType NoteProperty -Name QueryRules -Value $queryRulesCount
+
+    # MembershipRules = total of query rules + include collections + exclude collections.
+    # Clicking this row in the property grid shows all three in a single list on the right.
+    $membershipCount = $queryRulesCount + [int]$collection.IncludeCollectionsCount + [int]$collection.ExcludeCollectionsCount
+    $collection | Add-Member -MemberType NoteProperty -Name MembershipRules -Value $membershipCount
 
 
     $item = New-Object System.Windows.Controls.TreeViewItem
