@@ -1135,11 +1135,12 @@ $showAllDepsButton.Add_Click({
         })
     }
 
-    # Defer drawing until the layout pass triggered by the expansion is done,
-    # otherwise TranslatePoint returns stale coordinates.
-    [void]$window.Dispatcher.BeginInvoke(
-        [System.Windows.Threading.DispatcherPriority]::Background,
-        [Action]{ Show-CollectionDependencyLines -pairs $allPairs })
+    # Force WPF to finish the measure/arrange pass triggered by the expansion
+    # so TranslatePoint returns valid coordinates. Calling the draw routine
+    # synchronously (instead of via Dispatcher.BeginInvoke) avoids losing the
+    # local $allPairs scope in the deferred delegate.
+    $treeView.UpdateLayout()
+    Show-CollectionDependencyLines -pairs $allPairs
 })
 
 
@@ -1179,9 +1180,8 @@ $showSelDepsButton.Add_Click({
         }
     }
 
-    [void]$window.Dispatcher.BeginInvoke(
-        [System.Windows.Threading.DispatcherPriority]::Background,
-        [Action]{ Show-CollectionDependencyLines -pairs $pairs })
+    $treeView.UpdateLayout()
+    Show-CollectionDependencyLines -pairs $pairs
 })
 
 
