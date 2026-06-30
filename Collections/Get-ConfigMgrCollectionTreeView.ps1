@@ -40,6 +40,7 @@
    | v1.3    | Maintenance windows dot/legend changed from DarkCyan to Goldenrod for better contrast against Deployments.    |
    | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.   |
    | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.       |
+   | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.|
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -55,7 +56,7 @@ param
     $providerServer
 )
 
-$version = 'v1.5'
+$version = 'v1.6'
 
 #region Get-TreeViewSubmember
 <#
@@ -278,12 +279,13 @@ function New-CollectionHeader
     # except 'Maintenance windows' which uses Goldenrod so it stays visually
     # distinct from both 'Client settings' (Violet) and 'Deployments' (Green).
     $dotDefinitions = @(
-        @{ Test = ($collection.DeploymentCount -gt 0)                                              ; Color = 'Green'     ; Tip = "Deployments: $($collection.DeploymentCount)" }
-        @{ Test = ($collection.AdminCount -gt 0)                                                   ; Color = 'Red'       ; Tip = "Admin permissions: $($collection.AdminCount)" }
-        @{ Test = ($collection.CollectionRefreshType -in @('Incremental','Both'))                  ; Color = 'Blue'      ; Tip = "Incremental updates ($($collection.CollectionRefreshType))" }
-        @{ Test = ((($collection.IncludeCollectionsCount) + ($collection.ExcludeCollectionsCount)) -gt 0) ; Color = 'Coral'     ; Tip = "Include: $($collection.IncludeCollectionsCount) / Exclude: $($collection.ExcludeCollectionsCount)" }
-        @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'    ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
-        @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'Goldenrod' ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
+        @{ Test = ($collection.DeploymentCount -gt 0)                                              ; Color = 'Green'       ; Tip = "Deployments: $($collection.DeploymentCount)" }
+        @{ Test = ($collection.AdminCount -gt 0)                                                   ; Color = 'Red'         ; Tip = "Admin permissions: $($collection.AdminCount)" }
+        @{ Test = ($collection.CollectionRefreshType -in @('Incremental','Both'))                  ; Color = 'Blue'        ; Tip = "Incremental updates ($($collection.CollectionRefreshType))" }
+        @{ Test = ((($collection.IncludeCollectionsCount) + ($collection.ExcludeCollectionsCount)) -gt 0) ; Color = 'Coral'       ; Tip = "Include: $($collection.IncludeCollectionsCount) / Exclude: $($collection.ExcludeCollectionsCount)" }
+        @{ Test = ($collection.UsedAsIncludeExcludeCount -gt 0)                                    ; Color = 'SaddleBrown' ; Tip = "Used as include/exclude source by $($collection.UsedAsIncludeExcludeCount) collection(s)" }
+        @{ Test = ($collection.ClientSettingsCount -gt 0)                                          ; Color = 'Violet'      ; Tip = "Client setting deployments: $($collection.ClientSettingsCount)" }
+        @{ Test = ($collection.ServiceWindowsCount -gt 0)                                          ; Color = 'Goldenrod'   ; Tip = "Maintenance windows: $($collection.ServiceWindowsCount)" }
     )
 
     foreach($dot in $dotDefinitions)
@@ -547,6 +549,36 @@ $excludeCollectionListClean | Group-Object -Property DependentCollectionID | For
 }
 
 
+# Build a reverse lookup: for each collection, which other collections use it
+# as the source of an include or exclude rule. Keyed by SourceCollectionID,
+# value is an array of [PSCustomObject]@{ Type; CollectionID; CollectionName }.
+$usedAsSourceHashTable = @{}
+foreach($dep in $includeCollectionListClean)
+{
+    if (-not $usedAsSourceHashTable.ContainsKey($dep.SourceCollectionID))
+    {
+        $usedAsSourceHashTable[$dep.SourceCollectionID] = New-Object System.Collections.Generic.List[object]
+    }
+    $usedAsSourceHashTable[$dep.SourceCollectionID].Add([PSCustomObject]@{
+        Type           = 'Include'
+        CollectionID   = $dep.DependentCollectionID
+        CollectionName = $collectionHashTable[$dep.DependentCollectionID]
+    })
+}
+foreach($dep in $excludeCollectionListClean)
+{
+    if (-not $usedAsSourceHashTable.ContainsKey($dep.SourceCollectionID))
+    {
+        $usedAsSourceHashTable[$dep.SourceCollectionID] = New-Object System.Collections.Generic.List[object]
+    }
+    $usedAsSourceHashTable[$dep.SourceCollectionID].Add([PSCustomObject]@{
+        Type           = 'Exclude'
+        CollectionID   = $dep.DependentCollectionID
+        CollectionName = $collectionHashTable[$dep.DependentCollectionID]
+    })
+}
+
+
 # Cache for collection query rules. CollectionRules is a lazy WMI property and
 # fetching it for every collection at startup is too slow on big environments.
 # Instead, populate this hashtable on-demand the first time the user selects a
@@ -566,6 +598,7 @@ $propertyList = ('MembershipRules',
     #'IncludeExcludeCollectionsCount',
     'IncludeCollectionsCount',
     'ExcludeCollectionsCount',
+    'UsedAsIncludeExcludeCount',
     'MemberCount',
     'ServiceWindowsCount',
     'PowerConfigsCount',
@@ -827,11 +860,12 @@ $legendHeader.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
 [void]$legendPanel.Children.Add($legendHeader)
 
 $legendDefinitions = @(
-    @{ Color = 'Green'   ; Label = 'Deployments' }
-    @{ Color = 'Red'     ; Label = 'Permissions' }
-    @{ Color = 'Blue'    ; Label = 'Incremental updates' }
-    @{ Color = 'Coral'   ; Label = 'Include/Exclude rules' }
-    @{ Color = 'Violet'  ; Label = 'Client settings' }
+    @{ Color = 'Green'    ; Label = 'Deployments' }
+    @{ Color = 'Red'      ; Label = 'Permissions' }
+    @{ Color = 'Blue'     ; Label = 'Incremental updates' }
+    @{ Color = 'Coral'    ; Label = 'Include/Exclude rules' }
+    @{ Color = 'SaddleBrown'; Label = 'Used as include/exclude' }
+    @{ Color = 'Violet'   ; Label = 'Client settings' }
     @{ Color = 'Goldenrod'; Label = 'Maintenance windows' }
 )
 
@@ -986,6 +1020,10 @@ $dataGrid.Add_SelectionChanged({
         'ExcludeCollectionsCount' 
         {
             [array]$properties = $global:selectedCollection.ExcludeCollections | Select-Object SourceCollectionID, SourceCollectionName | Sort-Object SourceCollectionName
+        }
+        'UsedAsIncludeExcludeCount'
+        {
+            [array]$properties = $global:selectedCollection.UsedAsIncludeExclude | Sort-Object Type, CollectionName
         }
         'AdminCount' 
         {
@@ -1372,6 +1410,12 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     $collection | Add-Member -MemberType NoteProperty -Name IncludeCollectionsCount -Value  $collection.IncludeCollections.count
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollections -Value  $excludeCollectionHashTable[($collection.CollectionID)]
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollectionsCount -Value  $collection.ExcludeCollections.count
+
+    # Reverse dependency: collections that use THIS collection as the source of
+    # one of their include or exclude rules.
+    $usedAsSource = $usedAsSourceHashTable[$collection.CollectionID]
+    $collection | Add-Member -MemberType NoteProperty -Name UsedAsIncludeExclude      -Value $usedAsSource
+    $collection | Add-Member -MemberType NoteProperty -Name UsedAsIncludeExcludeCount -Value ([int]$usedAsSource.Count)
 
     $collection | Add-Member -MemberType NoteProperty -Name Admins -value $adminHashTable[($collection.CollectionID)] 
     $collection | Add-Member -MemberType NoteProperty -Name AdminCount -Value $collection.Admins.Count
