@@ -41,6 +41,7 @@
    | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.   |
    | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.       |
    | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.|
+   | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.|
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -56,7 +57,7 @@ param
     $providerServer
 )
 
-$version = 'v1.6'
+$version = 'v1.7'
 
 #region Get-TreeViewSubmember
 <#
@@ -821,6 +822,23 @@ $button.Add_Click({
 })
 
 
+# v1.7: Buttons to overlay include/exclude dependency lines on the TreeView.
+# Defined here so they exist before being added to the toolbar StackPanel below.
+# Click handlers are wired further down, after the TreeView and overlay canvas
+# have been created.
+$showAllDepsButton = New-Object System.Windows.Controls.Button
+$showAllDepsButton.Margin  = '10,10,2,10'
+$showAllDepsButton.Padding = '8,0'
+$showAllDepsButton.Height  = 22
+$showAllDepsButton.Content = 'Show all dep. lines'
+
+$showSelDepsButton = New-Object System.Windows.Controls.Button
+$showSelDepsButton.Margin  = '2,10,10,10'
+$showSelDepsButton.Padding = '8,0'
+$showSelDepsButton.Height  = 22
+$showSelDepsButton.Content = 'Show selected dep. lines'
+
+
 # Add the CheckBoxes to the StackPanel
 #[void]$stackPanel.Children.Add($checkBox)
 #[void]$stackPanel.Children.Add($checkBox2)
@@ -829,6 +847,8 @@ $button.Add_Click({
 [void]$stackPanel.Children.Add($comboBox)
 [void]$stackPanel.Children.Add($textBox)
 [void]$stackPanel.Children.Add($button)
+[void]$stackPanel.Children.Add($showAllDepsButton)
+[void]$stackPanel.Children.Add($showSelDepsButton)
 
 # Build a legend bar at the bottom so the user knows what each dot color next to a collection name means.
 # A Border is used as the actual Grid child so it can stretch and paint the full row width;
@@ -976,6 +996,200 @@ $treeView.Add_SelectedItemChanged({
 })
 [System.Windows.Controls.Grid]::SetColumn($treeView, 0)
 [System.Windows.Controls.Grid]::SetRow($treeView, 1)
+
+
+# v1.7: Transparent overlay canvas placed in the same Grid cell as the TreeView.
+# IsHitTestVisible=$false makes mouse clicks pass straight through to the
+# TreeView underneath so selection, query loading and all existing handlers
+# keep working unchanged. ClipToBounds keeps off-screen line segments hidden.
+$depCanvas = New-Object System.Windows.Controls.Canvas
+$depCanvas.IsHitTestVisible = $false
+$depCanvas.Background       = [System.Windows.Media.Brushes]::Transparent
+$depCanvas.ClipToBounds     = $true
+[System.Windows.Controls.Grid]::SetColumn($depCanvas, 0)
+[System.Windows.Controls.Grid]::SetRow($depCanvas, 1)
+
+
+# Recursively expand every TreeViewItem so all rows referenced by an
+# include/exclude pair are guaranteed to be laid out and visible.
+function Expand-AllTreeViewItems
+{
+    param($items)
+    foreach($item in $items)
+    {
+        $item.IsExpanded = $true
+        if ($item.Items.Count -gt 0)
+        {
+            Expand-AllTreeViewItems -items $item.Items
+        }
+    }
+}
+
+
+# Draw a set of include/exclude dependency pairs as curved arrows on $depCanvas.
+# Each $pair must expose SourceCollectionID, DependentCollectionID and Type
+# ('Include' or 'Exclude'). The canvas is cleared first.
+function Show-CollectionDependencyLines
+{
+    param($pairs)
+
+    $depCanvas.Children.Clear()
+    if (-not $pairs) { return }
+
+    foreach($pair in $pairs)
+    {
+        $srcItem = $global:collectionItems[$pair.SourceCollectionID]
+        $dstItem = $global:collectionItems[$pair.DependentCollectionID]
+        if (-not $srcItem -or -not $dstItem) { continue }
+
+        # Use the visual header (the StackPanel built by New-CollectionHeader)
+        # when available so coordinates line up with the actual collection name.
+        $srcEl = if ($srcItem.Header -is [System.Windows.UIElement]) { $srcItem.Header } else { $srcItem }
+        $dstEl = if ($dstItem.Header -is [System.Windows.UIElement]) { $dstItem.Header } else { $dstItem }
+
+        try
+        {
+            $srcP = $srcEl.TranslatePoint([System.Windows.Point]::new(0, 0), $depCanvas)
+            $dstP = $dstEl.TranslatePoint([System.Windows.Point]::new(0, 0), $depCanvas)
+        }
+        catch
+        {
+            continue
+        }
+
+        $srcH = if ($srcEl.ActualHeight -gt 0) { $srcEl.ActualHeight } else { 18 }
+        $dstH = if ($dstEl.ActualHeight -gt 0) { $dstEl.ActualHeight } else { 18 }
+        $srcW = $srcEl.ActualWidth
+        $dstW = $dstEl.ActualWidth
+
+        $srcY     = $srcP.Y + ($srcH / 2)
+        $dstY     = $dstP.Y + ($dstH / 2)
+        $srcEdgeX = $srcP.X + $srcW + 4
+        $dstEdgeX = $dstP.X + $dstW + 4
+
+        # Right-side gutter where both Bezier control points sit so the curve
+        # sweeps out into empty space to the right of the names.
+        $gutter = [Math]::Max($srcEdgeX, $dstEdgeX) + 30
+        if ($depCanvas.ActualWidth -gt 0 -and $gutter -gt ($depCanvas.ActualWidth - 10))
+        {
+            $gutter = $depCanvas.ActualWidth - 10
+        }
+
+        $figure = New-Object System.Windows.Media.PathFigure
+        $figure.StartPoint = [System.Windows.Point]::new($srcEdgeX, $srcY)
+        $figure.IsClosed   = $false
+        $bz = New-Object System.Windows.Media.BezierSegment
+        $bz.Point1 = [System.Windows.Point]::new($gutter, $srcY)
+        $bz.Point2 = [System.Windows.Point]::new($gutter, $dstY)
+        $bz.Point3 = [System.Windows.Point]::new($dstEdgeX, $dstY)
+        [void]$figure.Segments.Add($bz)
+        $geo = New-Object System.Windows.Media.PathGeometry
+        [void]$geo.Figures.Add($figure)
+
+        $path = New-Object System.Windows.Shapes.Path
+        $path.Data            = $geo
+        $path.StrokeThickness = 1.5
+        if ($pair.Type -eq 'Include')
+        {
+            $path.Stroke = [System.Windows.Media.Brushes]::Green
+        }
+        else
+        {
+            $path.Stroke          = [System.Windows.Media.Brushes]::Red
+            $path.StrokeDashArray = New-Object System.Windows.Media.DoubleCollection(@(4.0, 3.0))
+        }
+        [void]$depCanvas.Children.Add($path)
+
+        # Arrow head pointing at the dependent collection row.
+        $arrow = New-Object System.Windows.Shapes.Polygon
+        $arrow.Points = New-Object System.Windows.Media.PointCollection
+        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX,     $dstY))
+        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY - 4))
+        [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY + 4))
+        $arrow.Fill = $path.Stroke
+        [void]$depCanvas.Children.Add($arrow)
+    }
+}
+
+
+# 'Show all dep. lines': expand the whole tree, then draw every include and
+# exclude relationship in the environment.
+$showAllDepsButton.Add_Click({
+    Expand-AllTreeViewItems -items $treeView.Items
+
+    $allPairs = New-Object System.Collections.Generic.List[object]
+    foreach($p in $includeCollectionListClean)
+    {
+        $allPairs.Add([PSCustomObject]@{
+            SourceCollectionID    = $p.SourceCollectionID
+            DependentCollectionID = $p.DependentCollectionID
+            Type                  = 'Include'
+        })
+    }
+    foreach($p in $excludeCollectionListClean)
+    {
+        $allPairs.Add([PSCustomObject]@{
+            SourceCollectionID    = $p.SourceCollectionID
+            DependentCollectionID = $p.DependentCollectionID
+            Type                  = 'Exclude'
+        })
+    }
+
+    # Defer drawing until the layout pass triggered by the expansion is done,
+    # otherwise TranslatePoint returns stale coordinates.
+    [void]$window.Dispatcher.BeginInvoke(
+        [System.Windows.Threading.DispatcherPriority]::Background,
+        [Action]{ Show-CollectionDependencyLines -pairs $allPairs })
+})
+
+
+# 'Show selected dep. lines': only draw include/exclude lines that touch the
+# currently selected collection (as source OR dependent).
+$showSelDepsButton.Add_Click({
+    if (-not $global:selectedCollection)
+    {
+        $depCanvas.Children.Clear()
+        return
+    }
+    $cid = $global:selectedCollection.CollectionID
+
+    Expand-AllTreeViewItems -items $treeView.Items
+
+    $pairs = New-Object System.Collections.Generic.List[object]
+    foreach($p in $includeCollectionListClean)
+    {
+        if ($p.SourceCollectionID -eq $cid -or $p.DependentCollectionID -eq $cid)
+        {
+            $pairs.Add([PSCustomObject]@{
+                SourceCollectionID    = $p.SourceCollectionID
+                DependentCollectionID = $p.DependentCollectionID
+                Type                  = 'Include'
+            })
+        }
+    }
+    foreach($p in $excludeCollectionListClean)
+    {
+        if ($p.SourceCollectionID -eq $cid -or $p.DependentCollectionID -eq $cid)
+        {
+            $pairs.Add([PSCustomObject]@{
+                SourceCollectionID    = $p.SourceCollectionID
+                DependentCollectionID = $p.DependentCollectionID
+                Type                  = 'Exclude'
+            })
+        }
+    }
+
+    [void]$window.Dispatcher.BeginInvoke(
+        [System.Windows.Threading.DispatcherPriority]::Background,
+        [Action]{ Show-CollectionDependencyLines -pairs $pairs })
+})
+
+
+# Whenever any TreeViewItem is collapsed, clear the overlay so we never have
+# lines pointing to rows that are no longer visible.
+$treeView.AddHandler(
+    [System.Windows.Controls.TreeViewItem]::CollapsedEvent,
+    [System.Windows.RoutedEventHandler]{ $depCanvas.Children.Clear() })
 
 
 Write-Verbose "Create the data grid and set properties"
@@ -1339,6 +1553,7 @@ $queryTextBox.Margin = '4,2,4,4'
 #[void]$mainGrid.Children.Add($checkBox)
 [void]$mainGrid.Children.Add($stackPanel)
 [void]$mainGrid.Children.Add($treeView)
+[void]$mainGrid.Children.Add($depCanvas)
 [void]$mainGrid.Children.Add($dataGrid)
 [void]$mainGrid.Children.Add($dataGrid1)
 [void]$mainGrid.Children.Add($queryViewPanel)
