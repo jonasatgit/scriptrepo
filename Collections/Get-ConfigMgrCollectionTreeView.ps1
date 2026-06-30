@@ -21,6 +21,15 @@
    Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
    The code was written ~40% by Bing/GPT, GitHub CoPilot and ~60% by a human
 
+   Version history:
+   | Version | Notes                                                                                          |
+   |---------|------------------------------------------------------------------------------------------------|
+   | v0.1    | Initial version: basic treeview of all collections.                                            |
+   | v0.2    | Added admin permissions and toggle box for highlighting collections by deployments/permissions.|
+   | v0.3    | Added include/exclude collections, query rules and a second data grid for detail views.        |
+   | v0.4    | Added search box and combo-box with more toggle options (incremental, client settings, MWs).   |
+   | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.  |
+
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
 
@@ -35,7 +44,7 @@ param
     $providerServer
 )
 
-$version = 'v0.4'
+$version = 'v0.5'
 
 #region Get-TreeViewSubmember
 <#
