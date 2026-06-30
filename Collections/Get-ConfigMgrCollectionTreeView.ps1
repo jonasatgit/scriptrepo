@@ -866,24 +866,31 @@ $dataGrid1.AutoGenerateColumns = $true
 [void]$mainGrid.Children.Add($legendBorder)
 
 # GridSplitters between the three content boxes so the user can drag the dividers.
+# - ResizeDirection=Columns is set explicitly so WPF cannot mistake the splitter
+#   for a row splitter (the default 'Auto' can guess wrong when both alignments
+#   are Stretch, which causes one splitter to appear to move the other).
+# - ShowsPreview=$false makes the splitter commit immediately while dragging,
+#   so there is no separate preview adorner that can render at the wrong spot.
 $splitter1 = New-Object System.Windows.Controls.GridSplitter
 $splitter1.Width = 5
-$splitter1.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$splitter1.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
 $splitter1.VerticalAlignment = [System.Windows.VerticalAlignment]::Stretch
 $splitter1.Background = [System.Windows.Media.Brushes]::LightGray
-$splitter1.ShowsPreview = $true
+$splitter1.ShowsPreview = $false
 $splitter1.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::PreviousAndNext
+$splitter1.ResizeDirection = [System.Windows.Controls.GridResizeDirection]::Columns
 [System.Windows.Controls.Grid]::SetColumn($splitter1, 1)
 [System.Windows.Controls.Grid]::SetRow($splitter1, 1)
 [void]$mainGrid.Children.Add($splitter1)
 
 $splitter2 = New-Object System.Windows.Controls.GridSplitter
 $splitter2.Width = 5
-$splitter2.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$splitter2.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
 $splitter2.VerticalAlignment = [System.Windows.VerticalAlignment]::Stretch
 $splitter2.Background = [System.Windows.Media.Brushes]::LightGray
-$splitter2.ShowsPreview = $true
+$splitter2.ShowsPreview = $false
 $splitter2.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::PreviousAndNext
+$splitter2.ResizeDirection = [System.Windows.Controls.GridResizeDirection]::Columns
 [System.Windows.Controls.Grid]::SetColumn($splitter2, 3)
 [System.Windows.Controls.Grid]::SetRow($splitter2, 1)
 [void]$mainGrid.Children.Add($splitter2)
