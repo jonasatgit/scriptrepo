@@ -42,6 +42,7 @@
    | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.       |
    | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.|
    | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.|
+   | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage. |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -57,7 +58,7 @@ param
     $providerServer
 )
 
-$version = 'v1.7'
+$version = 'v1.8'
 
 #region Get-TreeViewSubmember
 <#
@@ -1034,13 +1035,34 @@ function Show-CollectionDependencyLines
     param($pairs)
 
     $depCanvas.Children.Clear()
+
+    # v1.8 debug: a guaranteed-visible 30x30 magenta square in the top-left of
+    # the canvas. If this square does not appear when the buttons are clicked
+    # then the canvas itself is not actually visible/on top.
+    $debugRect = New-Object System.Windows.Shapes.Rectangle
+    $debugRect.Width  = 30
+    $debugRect.Height = 30
+    $debugRect.Fill   = [System.Windows.Media.Brushes]::Magenta
+    [System.Windows.Controls.Canvas]::SetLeft($debugRect, 0)
+    [System.Windows.Controls.Canvas]::SetTop($debugRect, 0)
+    [void]$depCanvas.Children.Add($debugRect)
+
+    Write-Host "[deps] canvas size: $($depCanvas.ActualWidth) x $($depCanvas.ActualHeight); pair count: $(@($pairs).Count)" -ForegroundColor Cyan
+
     if (-not $pairs) { return }
 
+    $drawn   = 0
+    $skipped = 0
     foreach($pair in $pairs)
     {
         $srcItem = $global:collectionItems[$pair.SourceCollectionID]
         $dstItem = $global:collectionItems[$pair.DependentCollectionID]
-        if (-not $srcItem -or -not $dstItem) { continue }
+        if (-not $srcItem -or -not $dstItem)
+        {
+            Write-Host "[deps] missing TreeViewItem for $($pair.SourceCollectionID) -> $($pair.DependentCollectionID)" -ForegroundColor Yellow
+            $skipped++
+            continue
+        }
 
         # Use the visual header (the StackPanel built by New-CollectionHeader)
         # when available so coordinates line up with the actual collection name.
@@ -1054,6 +1076,8 @@ function Show-CollectionDependencyLines
         }
         catch
         {
+            Write-Host "[deps] TranslatePoint failed for $($pair.SourceCollectionID) -> $($pair.DependentCollectionID): $($_.Exception.Message)" -ForegroundColor Red
+            $skipped++
             continue
         }
 
@@ -1066,6 +1090,8 @@ function Show-CollectionDependencyLines
         $dstY     = $dstP.Y + ($dstH / 2)
         $srcEdgeX = $srcP.X + $srcW + 4
         $dstEdgeX = $dstP.X + $dstW + 4
+
+        Write-Host ("[deps] {0} -> {1}: src=({2:F0},{3:F0}) dst=({4:F0},{5:F0})" -f $pair.SourceCollectionID, $pair.DependentCollectionID, $srcEdgeX, $srcY, $dstEdgeX, $dstY) -ForegroundColor DarkGray
 
         # Right-side gutter where both Bezier control points sit so the curve
         # sweeps out into empty space to the right of the names.
@@ -1108,13 +1134,20 @@ function Show-CollectionDependencyLines
         [void]$arrow.Points.Add([System.Windows.Point]::new($dstEdgeX - 8, $dstY + 4))
         $arrow.Fill = $path.Stroke
         [void]$depCanvas.Children.Add($arrow)
+        $drawn++
     }
+
+    Write-Host "[deps] drawn=$drawn skipped=$skipped total children on canvas=$($depCanvas.Children.Count)" -ForegroundColor Cyan
 }
 
 
 # 'Show all dep. lines': expand the whole tree, then draw every include and
 # exclude relationship in the environment.
 $showAllDepsButton.Add_Click({
+    Write-Host "[deps] 'Show all dep. lines' clicked" -ForegroundColor Cyan
+    Write-Host "[deps] includeCollectionListClean count = $(@($includeCollectionListClean).Count); excludeCollectionListClean count = $(@($excludeCollectionListClean).Count)" -ForegroundColor Cyan
+    Write-Host "[deps] global:collectionItems is null? $(-not $global:collectionItems); count = $(if($global:collectionItems){$global:collectionItems.Count}else{'n/a'})" -ForegroundColor Cyan
+
     Expand-AllTreeViewItems -items $treeView.Items
 
     $allPairs = New-Object System.Collections.Generic.List[object]
@@ -1147,12 +1180,15 @@ $showAllDepsButton.Add_Click({
 # 'Show selected dep. lines': only draw include/exclude lines that touch the
 # currently selected collection (as source OR dependent).
 $showSelDepsButton.Add_Click({
+    Write-Host "[deps] 'Show selected dep. lines' clicked" -ForegroundColor Cyan
     if (-not $global:selectedCollection)
     {
+        Write-Host "[deps] no collection selected - clearing canvas" -ForegroundColor Yellow
         $depCanvas.Children.Clear()
         return
     }
     $cid = $global:selectedCollection.CollectionID
+    Write-Host "[deps] selected CollectionID = $cid ($($global:selectedCollection.Name))" -ForegroundColor Cyan
 
     Expand-AllTreeViewItems -items $treeView.Items
 
