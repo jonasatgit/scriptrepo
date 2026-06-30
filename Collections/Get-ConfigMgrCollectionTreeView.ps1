@@ -45,6 +45,7 @@
    | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage. |
    | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.   |
    | v1.10   | Replaced @($pairs).Count with a null-guarded $pairs.Count - the array-subexpression mis-binds a generic List.|
+   | v1.11   | Dependency lines now follow the TreeView when it is scrolled; removed v1.8 debug rectangle + per-pair logs.    |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -60,7 +61,7 @@ param
     $providerServer
 )
 
-$version = 'v1.10'
+$version = 'v1.11'
 
 #region Get-TreeViewSubmember
 <#
@@ -1012,6 +1013,10 @@ $depCanvas.ClipToBounds     = $true
 [System.Windows.Controls.Grid]::SetColumn($depCanvas, 0)
 [System.Windows.Controls.Grid]::SetRow($depCanvas, 1)
 
+# v1.11: remember the last set of pairs that was drawn so the scroll handler
+# can redraw them after the TreeView's internal ScrollViewer moves.
+$script:lastDepPairs = $null
+
 
 # Recursively expand every TreeViewItem so all rows referenced by an
 # include/exclude pair are guaranteed to be laid out and visible.
@@ -1037,17 +1042,6 @@ function Show-CollectionDependencyLines
     param($pairs)
 
     $depCanvas.Children.Clear()
-
-    # v1.8 debug: a guaranteed-visible 30x30 magenta square in the top-left of
-    # the canvas. If this square does not appear when the buttons are clicked
-    # then the canvas itself is not actually visible/on top.
-    $debugRect = New-Object System.Windows.Shapes.Rectangle
-    $debugRect.Width  = 30
-    $debugRect.Height = 30
-    $debugRect.Fill   = [System.Windows.Media.Brushes]::Magenta
-    [System.Windows.Controls.Canvas]::SetLeft($debugRect, 0)
-    [System.Windows.Controls.Canvas]::SetTop($debugRect, 0)
-    [void]$depCanvas.Children.Add($debugRect)
 
     $pairCount = 0
     if ($null -ne $pairs) { $pairCount = $pairs.Count }
@@ -1094,8 +1088,6 @@ function Show-CollectionDependencyLines
         $dstY     = $dstP.Y + ($dstH / 2)
         $srcEdgeX = $srcP.X + $srcW + 4
         $dstEdgeX = $dstP.X + $dstW + 4
-
-        Write-Host ("[deps] {0} -> {1}: src=({2:F0},{3:F0}) dst=({4:F0},{5:F0})" -f $pair.SourceCollectionID, $pair.DependentCollectionID, $srcEdgeX, $srcY, $dstEdgeX, $dstY) -ForegroundColor DarkGray
 
         # Right-side gutter where both Bezier control points sit so the curve
         # sweeps out into empty space to the right of the names.
@@ -1182,6 +1174,7 @@ $showAllDepsButton.Add_Click({
     # synchronously (instead of via Dispatcher.BeginInvoke) avoids losing the
     # local $allPairs scope in the deferred delegate.
     $treeView.UpdateLayout()
+    $script:lastDepPairs = $allPairs
     Show-CollectionDependencyLines -pairs $allPairs
 })
 
@@ -1226,6 +1219,7 @@ $showSelDepsButton.Add_Click({
     }
 
     $treeView.UpdateLayout()
+    $script:lastDepPairs = $pairs
     Show-CollectionDependencyLines -pairs $pairs
 })
 
@@ -1234,7 +1228,23 @@ $showSelDepsButton.Add_Click({
 # lines pointing to rows that are no longer visible.
 $treeView.AddHandler(
     [System.Windows.Controls.TreeViewItem]::CollapsedEvent,
-    [System.Windows.RoutedEventHandler]{ $depCanvas.Children.Clear() })
+    [System.Windows.RoutedEventHandler]{
+        $script:lastDepPairs = $null
+        $depCanvas.Children.Clear()
+    })
+
+# v1.11: when the TreeView's internal ScrollViewer scrolls, the TreeViewItems
+# move but the overlay canvas does not, so lines have to be re-drawn against
+# the new item coordinates. ScrollChanged bubbles, so a single handler on the
+# TreeView catches every scroll of the inner ScrollViewer.
+$treeView.AddHandler(
+    [System.Windows.Controls.ScrollViewer]::ScrollChangedEvent,
+    [System.Windows.RoutedEventHandler]{
+        if ($null -ne $script:lastDepPairs -and $script:lastDepPairs.Count -gt 0)
+        {
+            Show-CollectionDependencyLines -pairs $script:lastDepPairs
+        }
+    })
 
 
 Write-Verbose "Create the data grid and set properties"
