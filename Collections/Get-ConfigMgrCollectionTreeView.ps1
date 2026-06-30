@@ -29,6 +29,7 @@
    | v0.3    | Added include/exclude collections, query rules and a second data grid for detail views.        |
    | v0.4    | Added search box and combo-box with more toggle options (incremental, client settings, MWs).   |
    | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.  |
+   | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.   |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -44,7 +45,7 @@ param
     $providerServer
 )
 
-$version = 'v0.5'
+$version = 'v0.6'
 
 #region Get-TreeViewSubmember
 <#
@@ -456,12 +457,22 @@ $window.Height = 800
 $window.Width = 1400
 
 # Create the main grid and set properties
+# Column layout: [0]=TreeView (Star), [1]=Splitter, [2]=DataGrid (properties),
+#                [3]=Splitter, [4]=DataGrid1 (values). The splitter columns let
+#                the user drag the dividers to resize the three content boxes.
 $mainGrid = New-Object System.Windows.Controls.Grid
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
-$mainGrid.ColumnDefinitions[1].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+$mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+$mainGrid.ColumnDefinitions[0].MinWidth = 150
+$mainGrid.ColumnDefinitions[1].Width = [System.Windows.GridLength]::new(5)
 $mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions[2].MinWidth = 100
+$mainGrid.ColumnDefinitions[3].Width = [System.Windows.GridLength]::new(5)
+$mainGrid.ColumnDefinitions[4].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions[4].MinWidth = 100
 
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
@@ -655,7 +666,7 @@ $legendBorder.BorderBrush = [System.Windows.Media.Brushes]::LightGray
 $legendBorder.BorderThickness = '0,1,0,0'
 [System.Windows.Controls.Grid]::SetRow($legendBorder, 2)
 [System.Windows.Controls.Grid]::SetColumn($legendBorder, 0)
-[System.Windows.Controls.Grid]::SetColumnSpan($legendBorder, 3)
+[System.Windows.Controls.Grid]::SetColumnSpan($legendBorder, 5)
 
 $legendPanel = New-Object System.Windows.Controls.StackPanel
 $legendPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
@@ -831,14 +842,14 @@ $dataGrid.Add_SelectionChanged({
         $dataGrid1.ItemsSource = $null
     }
 })
-[System.Windows.Controls.Grid]::SetColumn($dataGrid, 1)
+[System.Windows.Controls.Grid]::SetColumn($dataGrid, 2)
 [System.Windows.Controls.Grid]::SetRow($dataGrid, 1)
 
 $dataGrid1 = New-Object System.Windows.Controls.DataGrid
 $dataGrid1.IsReadOnly = $true
 $dataGrid1.HeadersVisibility = "All"
 $dataGrid1.AutoGenerateColumns = $true
-[System.Windows.Controls.Grid]::SetColumn($dataGrid1, 2)
+[System.Windows.Controls.Grid]::SetColumn($dataGrid1, 4)
 [System.Windows.Controls.Grid]::SetRow($dataGrid1, 1)
 
 
@@ -849,6 +860,29 @@ $dataGrid1.AutoGenerateColumns = $true
 [void]$mainGrid.Children.Add($dataGrid)
 [void]$mainGrid.Children.Add($dataGrid1)
 [void]$mainGrid.Children.Add($legendBorder)
+
+# GridSplitters between the three content boxes so the user can drag the dividers.
+$splitter1 = New-Object System.Windows.Controls.GridSplitter
+$splitter1.Width = 5
+$splitter1.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$splitter1.VerticalAlignment = [System.Windows.VerticalAlignment]::Stretch
+$splitter1.Background = [System.Windows.Media.Brushes]::LightGray
+$splitter1.ShowsPreview = $true
+$splitter1.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::PreviousAndNext
+[System.Windows.Controls.Grid]::SetColumn($splitter1, 1)
+[System.Windows.Controls.Grid]::SetRow($splitter1, 1)
+[void]$mainGrid.Children.Add($splitter1)
+
+$splitter2 = New-Object System.Windows.Controls.GridSplitter
+$splitter2.Width = 5
+$splitter2.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$splitter2.VerticalAlignment = [System.Windows.VerticalAlignment]::Stretch
+$splitter2.Background = [System.Windows.Media.Brushes]::LightGray
+$splitter2.ShowsPreview = $true
+$splitter2.ResizeBehavior = [System.Windows.Controls.GridResizeBehavior]::PreviousAndNext
+[System.Windows.Controls.Grid]::SetColumn($splitter2, 3)
+[System.Windows.Controls.Grid]::SetRow($splitter2, 1)
+[void]$mainGrid.Children.Add($splitter2)
 
 
 Write-Verbose "Create treeview items hashtable and add additional info to collections"
