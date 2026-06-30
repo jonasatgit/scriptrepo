@@ -31,6 +31,7 @@
    | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.  |
    | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.   |
    | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.         |
+   | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.    |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -46,7 +47,7 @@ param
     $providerServer
 )
 
-$version = 'v0.7'
+$version = 'v0.8'
 
 #region Get-TreeViewSubmember
 <#
@@ -295,6 +296,116 @@ function New-CollectionHeader
     }
 
     return $headerPanel
+}
+#endregion
+
+#region Format-WqlQuery
+<#
+.Synopsis
+   Format-WqlQuery
+.DESCRIPTION
+   Lightly pretty-prints a WQL/SQL query by collapsing whitespace, putting major
+   keywords (SELECT, FROM, WHERE, JOIN, ORDER BY, ...) on their own line and
+   indenting AND/OR continuations. Casing of the original keywords is preserved.
+#>
+function Format-WqlQuery
+{
+    param
+    (
+        [string]$query
+    )
+
+    if ([string]::IsNullOrWhiteSpace($query)) { return $query }
+
+    # Collapse any run of whitespace into single spaces first.
+    $q = ($query -replace '\s+', ' ').Trim()
+
+    # Major keywords that should start a new line. Order matters: more specific
+    # multi-word variants must come before their single-word prefixes so the
+    # regex alternation matches the longest one first.
+    $mainKeywords = @(
+        'SELECT','FROM','WHERE',
+        'GROUP\s+BY','ORDER\s+BY','HAVING',
+        'UNION\s+ALL','UNION',
+        'INNER\s+JOIN',
+        'LEFT\s+OUTER\s+JOIN','LEFT\s+JOIN',
+        'RIGHT\s+OUTER\s+JOIN','RIGHT\s+JOIN',
+        'FULL\s+OUTER\s+JOIN','FULL\s+JOIN',
+        'JOIN'
+    )
+    $pattern = '(?i)\s*\b(' + ($mainKeywords -join '|') + ')\b\s*'
+    $q = [regex]::Replace($q, $pattern, { "`n" + (($args[0].Groups[1].Value) -replace '\s+', ' ') + ' ' })
+
+    # Put AND / OR on their own line, indented under the WHERE/ON clause.
+    $q = [regex]::Replace($q, '(?i)\s+\b(AND|OR)\b\s+', { "`n    " + $args[0].Groups[1].Value + ' ' })
+
+    return $q.Trim()
+}
+#endregion
+
+#region Show-WqlQueryWindow
+<#
+.Synopsis
+   Show-WqlQueryWindow
+.DESCRIPTION
+   Opens a resizable WPF window showing a WQL/SQL query in a large word-wrapping,
+   monospaced read-only text box plus Copy and Close buttons.
+#>
+function Show-WqlQueryWindow
+{
+    param
+    (
+        [string]$title,
+        [string]$query
+    )
+
+    $w = New-Object System.Windows.Window
+    $w.Title  = "WQL Query - $title"
+    $w.Width  = 900
+    $w.Height = 600
+
+    $g = New-Object System.Windows.Controls.Grid
+    $g.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+    $g.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+    $g.RowDefinitions[0].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $g.RowDefinitions[1].Height = [System.Windows.GridLength]::Auto
+
+    $tb = New-Object System.Windows.Controls.TextBox
+    $tb.Text = $query
+    $tb.IsReadOnly = $true
+    $tb.AcceptsReturn = $true
+    $tb.TextWrapping = [System.Windows.TextWrapping]::Wrap
+    $tb.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
+    $tb.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
+    $tb.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+    $tb.FontSize = 12
+    $tb.Margin = '10,10,10,0'
+    [System.Windows.Controls.Grid]::SetRow($tb, 0)
+    [void]$g.Children.Add($tb)
+
+    $bp = New-Object System.Windows.Controls.StackPanel
+    $bp.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+    $bp.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+    $bp.Margin = '10'
+    [System.Windows.Controls.Grid]::SetRow($bp, 1)
+
+    $copy = New-Object System.Windows.Controls.Button
+    $copy.Content = 'Copy to clipboard'
+    $copy.Padding = '10,4'
+    $copy.Margin  = '0,0,8,0'
+    $copy.Add_Click({ [System.Windows.Clipboard]::SetText($tb.Text) }.GetNewClosure())
+    [void]$bp.Children.Add($copy)
+
+    $close = New-Object System.Windows.Controls.Button
+    $close.Content = 'Close'
+    $close.Padding = '10,4'
+    $close.Add_Click({ $w.Close() }.GetNewClosure())
+    [void]$bp.Children.Add($close)
+
+    [void]$g.Children.Add($bp)
+
+    $w.Content = $g
+    [void]$w.ShowDialog()
 }
 #endregion
 
@@ -784,24 +895,24 @@ $dataGrid.Add_SelectionChanged({
         'QueryRules'
         {
             $global:selectedCollection = $global:selectedCollection | Get-CimInstance
-            if ($global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null})
+            $rules = @($global:selectedCollection.CollectionRules | Where-Object { $_.QueryExpression -ne $null })
+
+            $queryRuleCombo.Items.Clear()
+            if ($rules.Count -gt 0)
             {
-                [array]$properties = $global:selectedCollection.CollectionRules | Where-Object {$_.QueryExpression -ne $null} | ForEach-Object {
-                        [PSCustomObject]@{
-                        RuleName = $_.RuleName
-                        Query = $_.QueryExpression
-                        }
-            
+                foreach($rule in $rules)
+                {
+                    $cbItem = New-Object System.Windows.Controls.ComboBoxItem
+                    $cbItem.Content = $rule.RuleName
+                    $cbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
+                    [void]$queryRuleCombo.Items.Add($cbItem)
                 }
+                $queryRuleCombo.SelectedIndex = 0
             }
             else
             {
-                [array]$properties += [PSCustomObject]@{
-                        RuleName = 'No query rules set'
-                        Query = ''
-                        }
+                $queryTextBox.Text = '-- No query rules set --'
             }
-
         }
         'ServiceWindowsCount'
         {
@@ -855,6 +966,18 @@ $dataGrid.Add_SelectionChanged({
     } else {
         $dataGrid1.ItemsSource = $null
     }
+
+    # Swap between the regular details grid and the dedicated WQL query view.
+    if ($selectedItem -and $selectedItem.Property -eq 'QueryRules')
+    {
+        $dataGrid1.Visibility      = [System.Windows.Visibility]::Collapsed
+        $queryViewPanel.Visibility = [System.Windows.Visibility]::Visible
+    }
+    else
+    {
+        $dataGrid1.Visibility      = [System.Windows.Visibility]::Visible
+        $queryViewPanel.Visibility = [System.Windows.Visibility]::Collapsed
+    }
 })
 [System.Windows.Controls.Grid]::SetColumn($dataGrid, 2)
 [System.Windows.Controls.Grid]::SetRow($dataGrid, 1)
@@ -866,6 +989,81 @@ $dataGrid1.AutoGenerateColumns = $true
 [System.Windows.Controls.Grid]::SetColumn($dataGrid1, 4)
 [System.Windows.Controls.Grid]::SetRow($dataGrid1, 1)
 
+# WQL query view panel: shown in column 4 instead of $dataGrid1 when the user
+# clicks the 'QueryRules' row in the middle properties grid. Lets the user pick
+# a rule, see the pretty-printed query, copy it, or open it in a bigger window.
+$queryViewPanel = New-Object System.Windows.Controls.Grid
+$queryViewPanel.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$queryViewPanel.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
+$queryViewPanel.RowDefinitions[0].Height = [System.Windows.GridLength]::Auto
+$queryViewPanel.RowDefinitions[1].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+$queryViewPanel.Visibility = [System.Windows.Visibility]::Collapsed
+[System.Windows.Controls.Grid]::SetColumn($queryViewPanel, 4)
+[System.Windows.Controls.Grid]::SetRow($queryViewPanel, 1)
+
+$queryToolbar = New-Object System.Windows.Controls.StackPanel
+$queryToolbar.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+$queryToolbar.Margin = '4'
+[System.Windows.Controls.Grid]::SetRow($queryToolbar, 0)
+
+$queryRuleLabel = New-Object System.Windows.Controls.TextBlock
+$queryRuleLabel.Text = 'Rule:'
+$queryRuleLabel.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+$queryRuleLabel.Margin = '0,0,4,0'
+[void]$queryToolbar.Children.Add($queryRuleLabel)
+
+$queryRuleCombo = New-Object System.Windows.Controls.ComboBox
+$queryRuleCombo.MinWidth = 150
+$queryRuleCombo.MaxWidth = 280
+$queryRuleCombo.Margin   = '0,0,8,0'
+$queryRuleCombo.Add_SelectionChanged({
+    if ($queryRuleCombo.SelectedItem -and $queryRuleCombo.SelectedItem.Tag)
+    {
+        $queryTextBox.Text = [string]$queryRuleCombo.SelectedItem.Tag
+    }
+})
+[void]$queryToolbar.Children.Add($queryRuleCombo)
+
+$queryCopyButton = New-Object System.Windows.Controls.Button
+$queryCopyButton.Content = 'Copy'
+$queryCopyButton.Padding = '8,2'
+$queryCopyButton.Margin  = '0,0,4,0'
+$queryCopyButton.ToolTip = 'Copy the query to the clipboard'
+$queryCopyButton.Add_Click({
+    if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
+    {
+        [System.Windows.Clipboard]::SetText($queryTextBox.Text)
+    }
+})
+[void]$queryToolbar.Children.Add($queryCopyButton)
+
+$queryOpenButton = New-Object System.Windows.Controls.Button
+$queryOpenButton.Content = 'Open in window'
+$queryOpenButton.Padding = '8,2'
+$queryOpenButton.ToolTip = 'Show the query in a bigger, resizable window'
+$queryOpenButton.Add_Click({
+    if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
+    {
+        $popupTitle = if ($queryRuleCombo.SelectedItem) { [string]$queryRuleCombo.SelectedItem.Content } else { 'WQL Query' }
+        Show-WqlQueryWindow -title $popupTitle -query $queryTextBox.Text
+    }
+})
+[void]$queryToolbar.Children.Add($queryOpenButton)
+
+[void]$queryViewPanel.Children.Add($queryToolbar)
+
+$queryTextBox = New-Object System.Windows.Controls.TextBox
+$queryTextBox.IsReadOnly = $true
+$queryTextBox.AcceptsReturn = $true
+$queryTextBox.TextWrapping = [System.Windows.TextWrapping]::Wrap
+$queryTextBox.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
+$queryTextBox.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
+$queryTextBox.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+$queryTextBox.FontSize = 12
+$queryTextBox.Margin = '4,0,4,4'
+[System.Windows.Controls.Grid]::SetRow($queryTextBox, 1)
+[void]$queryViewPanel.Children.Add($queryTextBox)
+
 
 # Add the TreeView and data grid and checkbox to the main grid
 #[void]$mainGrid.Children.Add($checkBox)
@@ -873,6 +1071,7 @@ $dataGrid1.AutoGenerateColumns = $true
 [void]$mainGrid.Children.Add($treeView)
 [void]$mainGrid.Children.Add($dataGrid)
 [void]$mainGrid.Children.Add($dataGrid1)
+[void]$mainGrid.Children.Add($queryViewPanel)
 [void]$mainGrid.Children.Add($legendBorder)
 
 # GridSplitters between the three content boxes so the user can drag the dividers.
