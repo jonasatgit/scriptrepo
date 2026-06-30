@@ -44,6 +44,7 @@
    | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.|
    | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage. |
    | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.   |
+   | v1.10   | Replaced @($pairs).Count with a null-guarded $pairs.Count - the array-subexpression mis-binds a generic List.|
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -59,7 +60,7 @@ param
     $providerServer
 )
 
-$version = 'v1.9'
+$version = 'v1.10'
 
 #region Get-TreeViewSubmember
 <#
@@ -1048,7 +1049,8 @@ function Show-CollectionDependencyLines
     [System.Windows.Controls.Canvas]::SetTop($debugRect, 0)
     [void]$depCanvas.Children.Add($debugRect)
 
-    $pairCount = @($pairs).Count
+    $pairCount = 0
+    if ($null -ne $pairs) { $pairCount = $pairs.Count }
     Write-Host "[deps] canvas size: $($depCanvas.ActualWidth) x $($depCanvas.ActualHeight); pair count: $pairCount" -ForegroundColor Cyan
 
     if (-not $pairs) { return }
