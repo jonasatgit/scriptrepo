@@ -35,6 +35,8 @@
    | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.     |
    | v0.10   | Added MembershipRules property (query + include + exclude in one list, auto-selected on click).|
    | v0.11   | Removed slow upfront query-rule pre-load; rules are now lazy-loaded the first time a collection is selected.  |
+   | v1.0    | First stable release. Renamed event-handler params off the automatic 'sender' variable.                        |
+   | v1.1    | Membership pane is now a Type / ID / Name table instead of a flat list. ID populated for include/exclude only.|
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -50,7 +52,7 @@ param
     $providerServer
 )
 
-$version = 'v0.11'
+$version = 'v1.1'
 
 #region Get-TreeViewSubmember
 <#
@@ -847,7 +849,7 @@ foreach($legend in $legendDefinitions)
 # Create the TreeView and set properties
 $treeView = New-Object System.Windows.Controls.TreeView
 $treeView.Add_SelectedItemChanged({
-    param($sender, $e)
+    param($src, $e)
 
     # Update the data grid with the selected item data
     $selectedItem = $e.NewValue
@@ -908,7 +910,7 @@ $dataGrid.IsReadOnly = $true
 $dataGrid.HeadersVisibility = "All"
 $dataGrid.AutoGenerateColumns = $true
 $dataGrid.Add_SelectionChanged({
-    param($sender, $e)
+    param($src, $e)
 
     # Update the second data grid with the selected item data
     $selectedItem = $e.AddedItems[0]
@@ -941,21 +943,23 @@ $dataGrid.Add_SelectionChanged({
             $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
             if (-not $rules) { $rules = @() }
 
-            $queryRuleList.Items.Clear()
             $queryTextBox.Text = ''
             if ($rules.Count -gt 0)
             {
-                foreach($rule in $rules)
-                {
-                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
-                    $lbItem.Content = $rule.RuleName
-                    $lbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
-                    [void]$queryRuleList.Items.Add($lbItem)
+                [array]$gridRows = $rules | ForEach-Object {
+                    [PSCustomObject]@{
+                        Type = 'Query'
+                        ID   = ''
+                        Name = $_.RuleName
+                        Wql  = (Format-WqlQuery -query $_.QueryExpression)
+                    }
                 }
+                $queryRuleList.ItemsSource = $gridRows
                 $queryRuleList.SelectedIndex = 0
             }
             else
             {
+                $queryRuleList.ItemsSource = @()
                 $queryTextBox.Text = '-- No query rules set --'
             }
         }
@@ -965,15 +969,18 @@ $dataGrid.Add_SelectionChanged({
             $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
             if (-not $rules) { $rules = @() }
 
-            $queryRuleList.Items.Clear()
             $queryTextBox.Text = ''
+
+            $gridRows = [System.Collections.Generic.List[object]]::new()
 
             foreach($rule in $rules)
             {
-                $lbItem = New-Object System.Windows.Controls.ListBoxItem
-                $lbItem.Content = "[Query]   $($rule.RuleName)"
-                $lbItem.Tag     = (Format-WqlQuery -query $rule.QueryExpression)
-                [void]$queryRuleList.Items.Add($lbItem)
+                $gridRows.Add([PSCustomObject]@{
+                    Type = 'Query'
+                    ID   = ''
+                    Name = $rule.RuleName
+                    Wql  = (Format-WqlQuery -query $rule.QueryExpression)
+                })
             }
 
             if ([int]$global:selectedCollection.IncludeCollectionsCount -gt 0)
@@ -981,10 +988,12 @@ $dataGrid.Add_SelectionChanged({
                 foreach($inc in @($global:selectedCollection.IncludeCollections))
                 {
                     if (-not $inc) { continue }
-                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
-                    $lbItem.Content = "[Include] $($inc.SourceCollectionName)"
-                    $lbItem.Tag     = $null
-                    [void]$queryRuleList.Items.Add($lbItem)
+                    $gridRows.Add([PSCustomObject]@{
+                        Type = 'Include'
+                        ID   = $inc.SourceCollectionID
+                        Name = $inc.SourceCollectionName
+                        Wql  = $null
+                    })
                 }
             }
 
@@ -993,14 +1002,18 @@ $dataGrid.Add_SelectionChanged({
                 foreach($exc in @($global:selectedCollection.ExcludeCollections))
                 {
                     if (-not $exc) { continue }
-                    $lbItem = New-Object System.Windows.Controls.ListBoxItem
-                    $lbItem.Content = "[Exclude] $($exc.SourceCollectionName)"
-                    $lbItem.Tag     = $null
-                    [void]$queryRuleList.Items.Add($lbItem)
+                    $gridRows.Add([PSCustomObject]@{
+                        Type = 'Exclude'
+                        ID   = $exc.SourceCollectionID
+                        Name = $exc.SourceCollectionName
+                        Wql  = $null
+                    })
                 }
             }
 
-            if ($queryRuleList.Items.Count -gt 0)
+            $queryRuleList.ItemsSource = $gridRows
+
+            if ($gridRows.Count -gt 0)
             {
                 $queryRuleList.SelectedIndex = 0
             }
@@ -1101,15 +1114,45 @@ $queryViewPanel.Visibility = [System.Windows.Visibility]::Collapsed
 [System.Windows.Controls.Grid]::SetColumn($queryViewPanel, 4)
 [System.Windows.Controls.Grid]::SetRow($queryViewPanel, 1)
 
-# Row 0: list of query rules
-$queryRuleList = New-Object System.Windows.Controls.ListBox
+# Row 0: table of membership entries (query rules + include + exclude collections)
+# A DataGrid with three columns - Type / ID / Name - replaces the older flat
+# ListBox. The 'Wql' property on each row holds the formatted query text and is
+# read by the selection handler; it is intentionally not added as a visible
+# column.
+$queryRuleList = New-Object System.Windows.Controls.DataGrid
 $queryRuleList.Margin = '4,4,4,2'
+$queryRuleList.AutoGenerateColumns = $false
+$queryRuleList.IsReadOnly           = $true
+$queryRuleList.HeadersVisibility    = 'Column'
+$queryRuleList.SelectionMode        = 'Single'
+$queryRuleList.SelectionUnit        = 'FullRow'
+$queryRuleList.CanUserAddRows       = $false
+$queryRuleList.CanUserDeleteRows    = $false
+
+$col = New-Object System.Windows.Controls.DataGridTextColumn
+$col.Header = 'Type'
+$col.Binding = New-Object System.Windows.Data.Binding('Type')
+$col.Width   = [System.Windows.Controls.DataGridLength]::SizeToCells
+[void]$queryRuleList.Columns.Add($col)
+
+$col = New-Object System.Windows.Controls.DataGridTextColumn
+$col.Header = 'ID'
+$col.Binding = New-Object System.Windows.Data.Binding('ID')
+$col.Width   = [System.Windows.Controls.DataGridLength]::SizeToCells
+[void]$queryRuleList.Columns.Add($col)
+
+$col = New-Object System.Windows.Controls.DataGridTextColumn
+$col.Header = 'Name'
+$col.Binding = New-Object System.Windows.Data.Binding('Name')
+$col.Width   = New-Object System.Windows.Controls.DataGridLength(1, [System.Windows.Controls.DataGridLengthUnitType]::Star)
+[void]$queryRuleList.Columns.Add($col)
+
 $queryRuleList.Add_SelectionChanged({
     if ($queryRuleList.SelectedItem)
     {
-        if ($queryRuleList.SelectedItem.Tag)
+        if ($queryRuleList.SelectedItem.Wql)
         {
-            $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Tag
+            $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Wql
         }
         else
         {
@@ -1147,7 +1190,7 @@ $queryOpenButton.ToolTip = 'Show the query in a bigger, resizable window'
 $queryOpenButton.Add_Click({
     if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
     {
-        $popupTitle = if ($queryRuleList.SelectedItem) { [string]$queryRuleList.SelectedItem.Content } else { 'WQL Query' }
+        $popupTitle = if ($queryRuleList.SelectedItem) { [string]$queryRuleList.SelectedItem.Name } else { 'WQL Query' }
         Show-WqlQueryWindow -title $popupTitle -query $queryTextBox.Text
     }
 })
