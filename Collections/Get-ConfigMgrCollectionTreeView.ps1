@@ -457,21 +457,25 @@ $window.Height = 800
 $window.Width = 1400
 
 # Create the main grid and set properties
-# Column layout: [0]=TreeView (Star), [1]=Splitter, [2]=DataGrid (properties),
+# Column layout: [0]=TreeView, [1]=Splitter, [2]=DataGrid (properties),
 #                [3]=Splitter, [4]=DataGrid1 (values). The splitter columns let
 #                the user drag the dividers to resize the three content boxes.
+# All three content columns use Star sizing (with different initial ratios) so
+# that the GridSplitter only redistributes the Star values of the two adjacent
+# columns. That keeps the non-adjacent column's width unchanged when dragging.
 $mainGrid = New-Object System.Windows.Controls.Grid
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
 $mainGrid.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition))
+$mainGrid.ColumnDefinitions[0].Width = [System.Windows.GridLength]::new(3, [System.Windows.GridUnitType]::Star)
 $mainGrid.ColumnDefinitions[0].MinWidth = 150
 $mainGrid.ColumnDefinitions[1].Width = [System.Windows.GridLength]::new(5)
-$mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions[2].Width = [System.Windows.GridLength]::new(2, [System.Windows.GridUnitType]::Star)
 $mainGrid.ColumnDefinitions[2].MinWidth = 100
 $mainGrid.ColumnDefinitions[3].Width = [System.Windows.GridLength]::new(5)
-$mainGrid.ColumnDefinitions[4].Width = [System.Windows.GridLength]::new(400)
+$mainGrid.ColumnDefinitions[4].Width = [System.Windows.GridLength]::new(2, [System.Windows.GridUnitType]::Star)
 $mainGrid.ColumnDefinitions[4].MinWidth = 100
 
 $mainGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition))
