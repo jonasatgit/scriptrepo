@@ -491,6 +491,11 @@ $mainGrid.RowDefinitions[2].Height = [System.Windows.GridLength]::new(40)
 # Create a StackPanel and set properties
 $stackPanel = New-Object System.Windows.Controls.StackPanel
 $stackPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+# Span the toolbar across all 5 columns so its controls are not clipped
+# when the user drags the left column splitter to make column 0 narrow.
+[System.Windows.Controls.Grid]::SetRow($stackPanel, 0)
+[System.Windows.Controls.Grid]::SetColumn($stackPanel, 0)
+[System.Windows.Controls.Grid]::SetColumnSpan($stackPanel, 5)
 
 # Create the CheckBox and set properties
 $checkBox = New-Object System.Windows.Controls.CheckBox
