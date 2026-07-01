@@ -57,6 +57,9 @@
    | v2.7    | Direct membership rules now appear as a row in the MembershipRules grid (Type=Direct, Name='x direct rules').  |
    | v2.8    | Removed redundant QueryRules / DirectMembershipRulesCount / Include- / ExcludeCollectionsCount property rows. |
    | v3.0    | WQL viewer now uses a RichTextBox with lightweight syntax highlighting (keywords / strings / numbers / --).  |
+   | v3.1    | Maintenance windows grid: Name column moved to the first position (was previously the last).                 |
+   | v3.2    | Added toolbar 'Expand all' / 'Collapse all' toggle button; label stays in sync with programmatic expansion.  |
+   | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.       |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -72,7 +75,7 @@ param
     $providerServer
 )
 
-$version = 'v2.9'
+$version = 'v3.3'
 
 #region Get-TreeViewSubmember
 <#
@@ -963,24 +966,33 @@ $button.Add_Click({
 # v1.7: Buttons to overlay include/exclude dependency lines on the TreeView.
 # Defined here so they exist before being added to the toolbar StackPanel below.
 # Click handlers are wired further down, after the TreeView and overlay canvas
-# have been created.
+# have been created. Each button doubles as its own toggle - the Content flips
+# between 'Show ...' and 'Hide ...' and clicking again clears the overlay.
 $showAllDepsButton = New-Object System.Windows.Controls.Button
 $showAllDepsButton.Margin  = '10,10,2,10'
 $showAllDepsButton.Padding = '8,0'
 $showAllDepsButton.Height  = 22
-$showAllDepsButton.Content = 'Show all dep. lines'
+$showAllDepsButton.Width   = 160
+$showAllDepsButton.Content = 'Show all dependencies'
 
 $showSelDepsButton = New-Object System.Windows.Controls.Button
 $showSelDepsButton.Margin  = '2,10,10,10'
 $showSelDepsButton.Padding = '8,0'
 $showSelDepsButton.Height  = 22
-$showSelDepsButton.Content = 'Show selected dep. lines'
+$showSelDepsButton.Width   = 190
+$showSelDepsButton.Content = 'Show selected dependencies'
 
-$resetDepsButton = New-Object System.Windows.Controls.Button
-$resetDepsButton.Margin  = '2,10,10,10'
-$resetDepsButton.Padding = '8,0'
-$resetDepsButton.Height  = 22
-$resetDepsButton.Content = 'Reset dep. lines'
+# Toggle button placed before the ComboBox that expands or collapses every
+# TreeViewItem in one click. The label flips between 'Expand all' and
+# 'Collapse all' based on the current state - both here and from any code
+# path that programmatically expands the tree (e.g. the dep. line buttons).
+$expandCollapseButton = New-Object System.Windows.Controls.Button
+$expandCollapseButton.Margin  = '10,10,10,10'
+$expandCollapseButton.Padding = '8,0'
+$expandCollapseButton.Height  = 22
+$expandCollapseButton.Width   = 110
+$expandCollapseButton.Content = 'Expand all'
+$expandCollapseButton.ToolTip = 'Expand or collapse every collection node in the tree'
 
 
 # Add the CheckBoxes to the StackPanel
@@ -988,12 +1000,12 @@ $resetDepsButton.Content = 'Reset dep. lines'
 #[void]$stackPanel.Children.Add($checkBox2)
 #[void]$stackPanel.Children.Add($checkBox3)
 #[void]$stackPanel.Children.Add($checkBox4)
+[void]$stackPanel.Children.Add($expandCollapseButton)
 [void]$stackPanel.Children.Add($comboBox)
 [void]$stackPanel.Children.Add($textBox)
 [void]$stackPanel.Children.Add($button)
 [void]$stackPanel.Children.Add($showAllDepsButton)
 [void]$stackPanel.Children.Add($showSelDepsButton)
-[void]$stackPanel.Children.Add($resetDepsButton)
 
 # Build a legend bar at the bottom so the user knows what each dot color next to a collection name means.
 # A Border is used as the actual Grid child so it can stretch and paint the full row width;
@@ -1212,6 +1224,21 @@ function Expand-AllTreeViewItems
     }
 }
 
+# Recursively collapse every TreeViewItem. Companion to Expand-AllTreeViewItems
+# used by the toolbar's Expand/Collapse toggle button.
+function Collapse-AllTreeViewItems
+{
+    param($items)
+    foreach($item in $items)
+    {
+        if ($item.Items.Count -gt 0)
+        {
+            Collapse-AllTreeViewItems -items $item.Items
+        }
+        $item.IsExpanded = $false
+    }
+}
+
 
 # Draw a set of include/exclude dependency pairs as curved arrows on $depCanvas.
 # Each $pair must expose SourceCollectionID, DependentCollectionID and Type
@@ -1307,10 +1334,23 @@ function Show-CollectionDependencyLines
 }
 
 
-# 'Show all dep. lines': expand the whole tree, then draw every include and
-# exclude relationship in the environment.
+# 'Show all dependencies' toggle: on the first click it expands the whole tree
+# and draws every include/exclude relationship; the label flips to 'Hide all
+# dependencies'. Clicking again clears the overlay (same behavior the old
+# 'Reset dep. lines' button had) and flips the label back.
 $showAllDepsButton.Add_Click({
+    if ($showAllDepsButton.Content -eq 'Hide all dependencies')
+    {
+        # Second click - hide the overlay and reset to the initial state.
+        $script:lastDepPairs = $null
+        $depCanvas.Children.Clear()
+        $showAllDepsButton.Content = 'Show all dependencies'
+        return
+    }
+
     Expand-AllTreeViewItems -items $treeView.Items
+    # Tree is now fully expanded - keep the toggle button label in sync.
+    $expandCollapseButton.Content = 'Collapse all'
 
     $allPairs = New-Object System.Collections.Generic.List[object]
     foreach($p in $includeCollectionListClean)
@@ -1337,12 +1377,25 @@ $showAllDepsButton.Add_Click({
     $treeView.UpdateLayout()
     $script:lastDepPairs = $allPairs
     Show-CollectionDependencyLines -pairs $allPairs
+
+    # Only one show-button can 'own' the overlay at a time.
+    $showAllDepsButton.Content = 'Hide all dependencies'
+    $showSelDepsButton.Content = 'Show selected dependencies'
 })
 
 
-# 'Show selected dep. lines': only draw include/exclude lines that touch the
-# currently selected collection (as source OR dependent).
+# 'Show selected dependencies' toggle: mirror of the button above but scoped
+# to include/exclude lines that touch the currently selected collection.
 $showSelDepsButton.Add_Click({
+    if ($showSelDepsButton.Content -eq 'Hide selected dependencies')
+    {
+        # Second click - hide the overlay and reset to the initial state.
+        $script:lastDepPairs = $null
+        $depCanvas.Children.Clear()
+        $showSelDepsButton.Content = 'Show selected dependencies'
+        return
+    }
+
     if (-not $global:selectedCollection)
     {
         $depCanvas.Children.Clear()
@@ -1351,6 +1404,8 @@ $showSelDepsButton.Add_Click({
     $cid = $global:selectedCollection.CollectionID
 
     Expand-AllTreeViewItems -items $treeView.Items
+    # Tree is now fully expanded - keep the toggle button label in sync.
+    $expandCollapseButton.Content = 'Collapse all'
 
     $pairs = New-Object System.Collections.Generic.List[object]
     foreach($p in $includeCollectionListClean)
@@ -1379,14 +1434,28 @@ $showSelDepsButton.Add_Click({
     $treeView.UpdateLayout()
     $script:lastDepPairs = $pairs
     Show-CollectionDependencyLines -pairs $pairs
+
+    # Only one show-button can 'own' the overlay at a time.
+    $showSelDepsButton.Content = 'Hide selected dependencies'
+    $showAllDepsButton.Content = 'Show all dependencies'
 })
 
 
-# 'Reset dep. lines': clear the overlay and forget the last pair list so the
-# scroll handler stops re-drawing.
-$resetDepsButton.Add_Click({
-    $script:lastDepPairs = $null
-    $depCanvas.Children.Clear()
+# Expand/Collapse-all toggle button (placed before the ComboBox in the toolbar).
+# The Content property doubles as the current state indicator:
+#   'Expand all'   -> tree is (at least partially) collapsed
+#   'Collapse all' -> tree is fully expanded
+$expandCollapseButton.Add_Click({
+    if ($expandCollapseButton.Content -eq 'Expand all')
+    {
+        Expand-AllTreeViewItems -items $treeView.Items
+        $expandCollapseButton.Content = 'Collapse all'
+    }
+    else
+    {
+        Collapse-AllTreeViewItems -items $treeView.Items
+        $expandCollapseButton.Content = 'Expand all'
+    }
 })
 
 
@@ -1397,6 +1466,13 @@ $treeView.AddHandler(
     [System.Windows.RoutedEventHandler]{
         $script:lastDepPairs = $null
         $depCanvas.Children.Clear()
+        # A collapse happened somewhere in the tree - it is no longer 'fully
+        # expanded', so offer 'Expand all' as the next action.
+        $expandCollapseButton.Content = 'Expand all'
+        # The overlay is gone, so revert both dependency toggles to their
+        # initial 'Show ...' label.
+        $showAllDepsButton.Content = 'Show all dependencies'
+        $showSelDepsButton.Content = 'Show selected dependencies'
     })
 
 # v1.11: when the TreeView's internal ScrollViewer scrolls, the TreeViewItems
