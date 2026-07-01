@@ -60,6 +60,7 @@
    | v3.1    | Maintenance windows grid: Name column moved to the first position (was previously the last).
    | v3.2    | Added toolbar 'Expand all' / 'Collapse all' toggle button; label stays in sync with programmatic expansion.
    | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.
+   | v3.4    | Auto-detect SiteCode / ProviderServer from local WMI (SMS_ProviderLocation) when parameters are omitted.
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -71,11 +72,11 @@
 [CmdletBinding()]
 param
 (
-    $siteCode,
-    $providerServer
+    $SiteCode,
+    $ProviderServer
 )
 
-$version = 'v3.3'
+$version = 'v3.4'
 
 #region Get-TreeViewSubmember
 <#
@@ -573,6 +574,36 @@ function Get-ConfigMgrCollectionSettings
     }
 }
 
+
+
+# If SiteCode / ProviderServer were not passed in, auto-discover them from the
+# local machine's SMS provider registration (SMS_ProviderLocation) so the script
+# works with zero arguments when run on a ConfigMgr site server or admin console.
+if ([string]::IsNullOrWhiteSpace($ProviderServer) -or [string]::IsNullOrWhiteSpace($SiteCode))
+{
+    Write-Host "Auto-detecting SMS provider from local WMI (root\SMS -> SMS_ProviderLocation)" -ForegroundColor Green
+    try
+    {
+        $providerLocation = Get-CimInstance -Namespace 'root\SMS' -Query 'SELECT * FROM SMS_ProviderLocation WHERE ProviderForLocalSite = 1' -ErrorAction Stop | Select-Object -First 1
+    }
+    catch
+    {
+        Write-Host "Could not query SMS_ProviderLocation from root\SMS on the local machine: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Pass -siteCode and -providerServer explicitly." -ForegroundColor Yellow
+        Exit
+    }
+
+    if (-not $providerLocation)
+    {
+        Write-Host "SMS_ProviderLocation returned no entries. Pass -siteCode and -providerServer explicitly." -ForegroundColor Yellow
+        Exit
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ProviderServer)) { $ProviderServer = $providerLocation.Machine }
+    if ([string]::IsNullOrWhiteSpace($SiteCode))       { $SiteCode       = $providerLocation.SiteCode }
+
+    Write-Host "Using ProviderServer='$ProviderServer' and SiteCode='$SiteCode'" -ForegroundColor Green
+}
 
 
 Write-Verbose "New DCOM connection to $($providerServer)"
