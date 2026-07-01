@@ -21,45 +21,45 @@
    Get-ConfigMgrCollectionTreeView will show all ConfigMgr collections in a treeview
 
    Version history:
-   | Version | Notes                                                                                          |
-   |---------|------------------------------------------------------------------------------------------------|
-   | v0.1    | Initial version: basic treeview of all collections.                                            |
-   | v0.2    | Added admin permissions and toggle box for highlighting collections by deployments/permissions.|
-   | v0.3    | Added include/exclude collections, query rules and a second data grid for detail views.        |
-   | v0.4    | Added search box and combo-box with more toggle options (incremental, client settings, MWs).   |
-   | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.  |
-   | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.   |
-   | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.         |
-   | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.    |
-   | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.     |
-   | v0.10   | Added MembershipRules property (query + include + exclude in one list, auto-selected on click).|
-   | v0.11   | Removed slow upfront query-rule pre-load; rules are now lazy-loaded the first time a collection is selected.  |
-   | v1.0    | First stable release. Renamed event-handler params off the automatic 'sender' variable.                        |
-   | v1.1    | Membership pane is now a Type / ID / Name table instead of a flat list. ID populated for include/exclude only.|
-   | v1.2    | Middle property grid now uses two explicit columns - removes the trailing empty column.                       |
-   | v1.3    | Maintenance windows dot/legend changed from DarkCyan to Goldenrod for better contrast against Deployments.    |
-   | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.   |
-   | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.       |
-   | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.|
-   | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.|
-   | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage. |
-   | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.   |
-   | v1.10   | Replaced @($pairs).Count with a null-guarded $pairs.Count - the array-subexpression mis-binds a generic List.|
-   | v1.11   | Dependency lines now follow the TreeView when it is scrolled; removed v1.8 debug rectangle + per-pair logs.    |
-   | v1.12   | Removed remaining dependency-line Write-Host diagnostics; failed pairs are now silently skipped.               |
-   | v2.0    | Added 'Reset dep. lines' button that clears the overlay and disables the scroll-redraw.                       |
-   | v2.1    | Fixed arrow-head direction, shortened the GitHub legend hyperlink to 'Link', added Include/Exclude line legend. |
-   | v2.2    | Added 'Choose toggle' placeholder item to the toolbar ComboBox so it is no longer visually empty on startup.   |
-   | v2.3    | Added Teal 'Collection variables' dot, legend entry and toolbar toggle for collections that have variables set.|
-   | v2.4    | Recolored 'Collection variables' from Teal to DeepPink so it no longer looks like the green Deployments dot.   |
-   | v2.5    | Recolored 'Collection variables' from DeepPink to Black for a calmer, higher-contrast indicator.               |
-   | v2.6    | Added 'DirectMembershipRulesCount' property (lazy-loaded count of direct membership rules per collection).    |
-   | v2.7    | Direct membership rules now appear as a row in the MembershipRules grid (Type=Direct, Name='x direct rules').  |
-   | v2.8    | Removed redundant QueryRules / DirectMembershipRulesCount / Include- / ExcludeCollectionsCount property rows. |
-   | v3.0    | WQL viewer now uses a RichTextBox with lightweight syntax highlighting (keywords / strings / numbers / --).  |
-   | v3.1    | Maintenance windows grid: Name column moved to the first position (was previously the last).                 |
-   | v3.2    | Added toolbar 'Expand all' / 'Collapse all' toggle button; label stays in sync with programmatic expansion.  |
-   | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.       |
+   | Version | Notes
+   |---------|------------------------------------------------------------------------------------------------
+   | v0.1    | Initial version: basic treeview of all collections.
+   | v0.2    | Added admin permissions and toggle box for highlighting collections by deployments/permissions.
+   | v0.3    | Added include/exclude collections, query rules and a second data grid for detail views.
+   | v0.4    | Added search box and combo-box with more toggle options (incremental, client settings, MWs).
+   | v0.5    | Added per-collection colored dot indicators for all criteria at once and a bottom legend bar.
+   | v0.6    | Added GridSplitters between the three content boxes so the user can drag/resize the columns.
+   | v0.7    | Fixed splitter behavior (independent column resize) and made toolbar span all columns.
+   | v0.8    | WQL query view: pretty-printed/wrapped text, rule selector, Copy + Open-in-window buttons.
+   | v0.9    | Replaced WQL rule drop-down with a ListBox above the query text for faster rule browsing.
+   | v0.10   | Added MembershipRules property (query + include + exclude in one list, auto-selected on click).
+   | v0.11   | Removed slow upfront query-rule pre-load; rules are now lazy-loaded the first time a collection is selected.
+   | v1.0    | First stable release. Renamed event-handler params off the automatic 'sender' variable.
+   | v1.1    | Membership pane is now a Type / ID / Name table instead of a flat list. ID populated for include/exclude only.
+   | v1.2    | Middle property grid now uses two explicit columns - removes the trailing empty column.
+   | v1.3    | Maintenance windows dot/legend changed from DarkCyan to Goldenrod for better contrast against Deployments.
+   | v1.4    | Membership-row click now marks the current collection blue and the include/exclude source collection red.
+   | v1.5    | Moved the GitHub link out of the window title into a clickable hyperlink in the bottom-right legend bar.
+   | v1.6    | Added SaddleBrown dot + UsedAsIncludeExcludeCount property: collections used as include/exclude source by others.
+   | v1.7    | Added 'Show all dep. lines' and 'Show selected dep. lines' buttons that overlay include/exclude curves on the tree.
+   | v1.8    | v1.7 dependency-line buttons drew nothing - added Write-Host diagnostics and a canvas debug rectangle to triage.
+   | v1.9    | Fixed dependency-line draw: DoubleCollection ctor (no 2-arg overload) + string-interp pair count expression.
+   | v1.10   | Replaced @($pairs).Count with a null-guarded $pairs.Count - the array-subexpression mis-binds a generic List.
+   | v1.11   | Dependency lines now follow the TreeView when it is scrolled; removed v1.8 debug rectangle + per-pair logs.
+   | v1.12   | Removed remaining dependency-line Write-Host diagnostics; failed pairs are now silently skipped.
+   | v2.0    | Added 'Reset dep. lines' button that clears the overlay and disables the scroll-redraw.
+   | v2.1    | Fixed arrow-head direction, shortened the GitHub legend hyperlink to 'Link', added Include/Exclude line legend.
+   | v2.2    | Added 'Choose toggle' placeholder item to the toolbar ComboBox so it is no longer visually empty on startup.
+   | v2.3    | Added Teal 'Collection variables' dot, legend entry and toolbar toggle for collections that have variables set.
+   | v2.4    | Recolored 'Collection variables' from Teal to DeepPink so it no longer looks like the green Deployments dot.
+   | v2.5    | Recolored 'Collection variables' from DeepPink to Black for a calmer, higher-contrast indicator.
+   | v2.6    | Added 'DirectMembershipRulesCount' property (lazy-loaded count of direct membership rules per collection).
+   | v2.7    | Direct membership rules now appear as a row in the MembershipRules grid (Type=Direct, Name='x direct rules').
+   | v2.8    | Removed redundant QueryRules / DirectMembershipRulesCount / Include- / ExcludeCollectionsCount property rows.
+   | v3.0    | WQL viewer now uses a RichTextBox with lightweight syntax highlighting (keywords / strings / numbers / --).
+   | v3.1    | Maintenance windows grid: Name column moved to the first position (was previously the last).
+   | v3.2    | Added toolbar 'Expand all' / 'Collapse all' toggle button; label stays in sync with programmatic expansion.
+   | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -1098,7 +1098,7 @@ foreach($lineDef in $legendLineDefs)
 }
 
 # Clickable GitHub link in the bottom-right corner of the legend bar.
-$repoUrl = 'https://github.com/jonasatgit/scriptrepo/tree/master/Collections'
+$repoUrl = 'https://github.com/jonasatgit/scriptrepo/blob/master/Collections/Get-ConfigMgrCollectionTreeView.ps1'
 $linkTextBlock = New-Object System.Windows.Controls.TextBlock
 $linkTextBlock.VerticalAlignment   = [System.Windows.VerticalAlignment]::Center
 $linkTextBlock.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
