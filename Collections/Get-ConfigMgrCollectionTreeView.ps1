@@ -61,6 +61,7 @@
    | v3.2    | Added toolbar 'Expand all' / 'Collapse all' toggle button; label stays in sync with programmatic expansion.
    | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.
    | v3.4    | Auto-detect SiteCode / ProviderServer from local WMI (SMS_ProviderLocation) when parameters are omitted.
+   | v3.5    | Dependency curves now clear the LONGEST collection name in the tree, not just the source/destination pair.
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -76,7 +77,7 @@ param
     $ProviderServer
 )
 
-$version = 'v3.4'
+$version = 'v3.5'
 
 #region Get-TreeViewSubmember
 <#
@@ -1281,6 +1282,29 @@ function Show-CollectionDependencyLines
     $depCanvas.Children.Clear()
     if (-not $pairs) { return }
 
+    # Pre-compute the right edge of every laid-out collection header so the
+    # vertical bezier gutter can be placed past the LONGEST collection name in
+    # the tree - not just past the current source/destination. Without this a
+    # short-name pair produces a curve that dives back across unrelated (much
+    # longer) sibling rows and visually blocks their text.
+    $maxNameRight = 0.0
+    if ($global:collectionItems)
+    {
+        foreach ($tvi in $global:collectionItems.Values)
+        {
+            if (-not $tvi) { continue }
+            $hdr = if ($tvi.Header -is [System.Windows.UIElement]) { $tvi.Header } else { $tvi }
+            if (-not $hdr -or $hdr.ActualWidth -le 0) { continue }
+            try
+            {
+                $p = $hdr.TranslatePoint([System.Windows.Point]::new(0, 0), $depCanvas)
+                $right = $p.X + $hdr.ActualWidth
+                if ($right -gt $maxNameRight) { $maxNameRight = $right }
+            }
+            catch { continue }
+        }
+    }
+
     foreach($pair in $pairs)
     {
         $srcItem = $global:collectionItems[$pair.SourceCollectionID]
@@ -1313,8 +1337,10 @@ function Show-CollectionDependencyLines
         $dstEdgeX = $dstP.X + $dstW + 4
 
         # Right-side gutter where both Bezier control points sit so the curve
-        # sweeps out into empty space to the right of the names.
-        $gutter = [Math]::Max($srcEdgeX, $dstEdgeX) + 30
+        # sweeps out into empty space to the right of the names. Uses the
+        # widest name in the tree as a floor (+20 px slack) so short-name
+        # pairs still clear every sibling row.
+        $gutter = [Math]::Max([Math]::Max($srcEdgeX, $dstEdgeX) + 30, $maxNameRight + 20)
         if ($depCanvas.ActualWidth -gt 0 -and $gutter -gt ($depCanvas.ActualWidth - 10))
         {
             $gutter = $depCanvas.ActualWidth - 10
