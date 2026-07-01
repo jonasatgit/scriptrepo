@@ -56,6 +56,7 @@
    | v2.6    | Added 'DirectMembershipRulesCount' property (lazy-loaded count of direct membership rules per collection).    |
    | v2.7    | Direct membership rules now appear as a row in the MembershipRules grid (Type=Direct, Name='x direct rules').  |
    | v2.8    | Removed redundant QueryRules / DirectMembershipRulesCount / Include- / ExcludeCollectionsCount property rows. |
+   | v3.0    | WQL viewer now uses a RichTextBox with lightweight syntax highlighting (keywords / strings / numbers / --).  |
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -71,7 +72,7 @@ param
     $providerServer
 )
 
-$version = 'v2.8'
+$version = 'v2.9'
 
 #region Get-TreeViewSubmember
 <#
@@ -377,6 +378,115 @@ function Format-WqlQuery
 }
 #endregion
 
+#region Set-WqlHighlighted
+<#
+.Synopsis
+   Set-WqlHighlighted
+.DESCRIPTION
+   Fills a WPF RichTextBox with a WQL/SQL query rendered with simple syntax
+   highlighting (keywords, string literals, numbers and '--' comments each get
+   their own color). The regex tokenizer is intentionally small - just enough
+   to make membership queries easier to scan.
+#>
+function Set-WqlHighlighted
+{
+    param
+    (
+        [System.Windows.Controls.RichTextBox]$rtb,
+        [string]$text
+    )
+
+    $doc = New-Object System.Windows.Documents.FlowDocument
+    $doc.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+    $doc.FontSize   = 12
+    $doc.PagePadding = New-Object System.Windows.Thickness(4)
+
+    $para = New-Object System.Windows.Documents.Paragraph
+    $para.Margin = New-Object System.Windows.Thickness(0)
+
+    if (-not [string]::IsNullOrEmpty($text))
+    {
+        # Combined tokenizer:
+        #   comment  -> '--' to end of line
+        #   string   -> single-quoted literal (with '' escape)
+        #   keyword  -> WQL/SQL keywords (matches longest first)
+        #   number   -> integer / decimal literal
+        # Anything not matched falls through as default-color plain text.
+        $pattern = "(?i)(?<comment>--[^\r\n]*)|(?<string>'(?:[^']|'')*')|(?<keyword>\b(?:SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|UNION\s+ALL|UNION|INNER\s+JOIN|LEFT\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+OUTER\s+JOIN|RIGHT\s+JOIN|FULL\s+OUTER\s+JOIN|FULL\s+JOIN|JOIN|ON|AND|OR|NOT|IN|IS|NULL|LIKE|BETWEEN|AS|DISTINCT|ASC|DESC)\b)|(?<number>\b\d+(?:\.\d+)?\b)"
+
+        $keywordBrush = [System.Windows.Media.Brushes]::RoyalBlue
+        $stringBrush  = [System.Windows.Media.Brushes]::Firebrick
+        $numberBrush  = [System.Windows.Media.Brushes]::Teal
+        $commentBrush = [System.Windows.Media.Brushes]::Gray
+
+        $addSegment = {
+            param($segText, $brush, [switch]$bold, [switch]$italic)
+            if ([string]::IsNullOrEmpty($segText)) { return }
+            # Split on any line-break style so we can insert LineBreak inlines -
+            # a Run's embedded '\n' would otherwise render as a single space.
+            $lines = [regex]::Split($segText, '\r\n|\n|\r')
+            for ($i = 0; $i -lt $lines.Count; $i++)
+            {
+                if ($lines[$i].Length -gt 0)
+                {
+                    $run = New-Object System.Windows.Documents.Run($lines[$i])
+                    if ($brush)  { $run.Foreground = $brush }
+                    if ($bold)   { $run.FontWeight = [System.Windows.FontWeights]::Bold }
+                    if ($italic) { $run.FontStyle  = [System.Windows.FontStyles]::Italic }
+                    [void]$para.Inlines.Add($run)
+                }
+                if ($i -lt ($lines.Count - 1))
+                {
+                    [void]$para.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
+                }
+            }
+        }
+
+        $lastIndex = 0
+        foreach ($m in [regex]::Matches($text, $pattern))
+        {
+            if ($m.Index -gt $lastIndex)
+            {
+                & $addSegment $text.Substring($lastIndex, $m.Index - $lastIndex) $null
+            }
+            if     ($m.Groups['keyword'].Success) { & $addSegment $m.Value $keywordBrush -bold }
+            elseif ($m.Groups['string'].Success)  { & $addSegment $m.Value $stringBrush }
+            elseif ($m.Groups['number'].Success)  { & $addSegment $m.Value $numberBrush }
+            elseif ($m.Groups['comment'].Success) { & $addSegment $m.Value $commentBrush -italic }
+            $lastIndex = $m.Index + $m.Length
+        }
+        if ($lastIndex -lt $text.Length)
+        {
+            & $addSegment $text.Substring($lastIndex) $null
+        }
+    }
+
+    [void]$doc.Blocks.Add($para)
+    $rtb.Document = $doc
+}
+#endregion
+
+#region Get-WqlPlainText
+<#
+.Synopsis
+   Get-WqlPlainText
+.DESCRIPTION
+   Returns the plain, unformatted text content of a RichTextBox - used by the
+   Copy and Open-in-window buttons which need raw WQL, not a FlowDocument.
+#>
+function Get-WqlPlainText
+{
+    param
+    (
+        [System.Windows.Controls.RichTextBox]$rtb
+    )
+
+    if ($null -eq $rtb -or $null -eq $rtb.Document) { return '' }
+    $range = New-Object System.Windows.Documents.TextRange($rtb.Document.ContentStart, $rtb.Document.ContentEnd)
+    return $range.Text.TrimEnd("`r","`n")
+}
+#endregion
+
 #region Show-WqlQueryWindow
 <#
 .Synopsis
@@ -404,16 +514,14 @@ function Show-WqlQueryWindow
     $g.RowDefinitions[0].Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
     $g.RowDefinitions[1].Height = [System.Windows.GridLength]::Auto
 
-    $tb = New-Object System.Windows.Controls.TextBox
-    $tb.Text = $query
+    $tb = New-Object System.Windows.Controls.RichTextBox
     $tb.IsReadOnly = $true
-    $tb.AcceptsReturn = $true
-    $tb.TextWrapping = [System.Windows.TextWrapping]::Wrap
     $tb.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
     $tb.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
     $tb.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $tb.FontSize = 12
     $tb.Margin = '10,10,10,0'
+    Set-WqlHighlighted -rtb $tb -text $query
     [System.Windows.Controls.Grid]::SetRow($tb, 0)
     [void]$g.Children.Add($tb)
 
@@ -427,7 +535,7 @@ function Show-WqlQueryWindow
     $copy.Content = 'Copy to clipboard'
     $copy.Padding = '10,4'
     $copy.Margin  = '0,0,8,0'
-    $copy.Add_Click({ [System.Windows.Clipboard]::SetText($tb.Text) }.GetNewClosure())
+    $copy.Add_Click({ [System.Windows.Clipboard]::SetText((Get-WqlPlainText -rtb $tb)) }.GetNewClosure())
     [void]$bp.Children.Add($copy)
 
     $close = New-Object System.Windows.Controls.Button
@@ -1366,7 +1474,7 @@ $dataGrid.Add_SelectionChanged({
             $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
             if (-not $rules) { $rules = @() }
 
-            $queryTextBox.Text = ''
+            Set-WqlHighlighted -rtb $queryTextBox -text ''
             if ($rules.Count -gt 0)
             {
                 [array]$gridRows = $rules | ForEach-Object {
@@ -1383,7 +1491,7 @@ $dataGrid.Add_SelectionChanged({
             else
             {
                 $queryRuleList.ItemsSource = @()
-                $queryTextBox.Text = '-- No query rules set --'
+                Set-WqlHighlighted -rtb $queryTextBox -text '-- No query rules set --'
             }
         }
         'MembershipRules'
@@ -1392,7 +1500,7 @@ $dataGrid.Add_SelectionChanged({
             $rules = @($queryRulesHashTable[$global:selectedCollection.CollectionID])
             if (-not $rules) { $rules = @() }
 
-            $queryTextBox.Text = ''
+            Set-WqlHighlighted -rtb $queryTextBox -text ''
 
             $gridRows = [System.Collections.Generic.List[object]]::new()
 
@@ -1453,7 +1561,7 @@ $dataGrid.Add_SelectionChanged({
             }
             else
             {
-                $queryTextBox.Text = '-- No membership rules set --'
+                Set-WqlHighlighted -rtb $queryTextBox -text '-- No membership rules set --'
             }
         }
         'ServiceWindowsCount'
@@ -1474,9 +1582,9 @@ $dataGrid.Add_SelectionChanged({
                         }
                             
                         [PSCustomObject]@{
+                            Name = $_.Name
                             ServiceWindowType = $ServiceWindowType
                             Description = $_.Description
-                            Name = $_.Name
                         }
                     } 
                 
@@ -1586,12 +1694,12 @@ $queryRuleList.Add_SelectionChanged({
     {
         if ($queryRuleList.SelectedItem.Wql)
         {
-            $queryTextBox.Text = [string]$queryRuleList.SelectedItem.Wql
+            Set-WqlHighlighted -rtb $queryTextBox -text ([string]$queryRuleList.SelectedItem.Wql)
         }
         else
         {
             # Include / exclude entries have no WQL - clear the text box.
-            $queryTextBox.Text = ''
+            Set-WqlHighlighted -rtb $queryTextBox -text ''
         }
 
         # Highlight the related collections in the treeview to make include /
@@ -1637,9 +1745,10 @@ $queryCopyButton.Padding = '8,2'
 $queryCopyButton.Margin  = '0,0,4,0'
 $queryCopyButton.ToolTip = 'Copy the query to the clipboard'
 $queryCopyButton.Add_Click({
-    if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
+    $plain = Get-WqlPlainText -rtb $queryTextBox
+    if (-not [string]::IsNullOrEmpty($plain))
     {
-        [System.Windows.Clipboard]::SetText($queryTextBox.Text)
+        [System.Windows.Clipboard]::SetText($plain)
     }
 })
 [void]$queryToolbar.Children.Add($queryCopyButton)
@@ -1649,10 +1758,11 @@ $queryOpenButton.Content = 'Open in window'
 $queryOpenButton.Padding = '8,2'
 $queryOpenButton.ToolTip = 'Show the query in a bigger, resizable window'
 $queryOpenButton.Add_Click({
-    if (-not [string]::IsNullOrEmpty($queryTextBox.Text))
+    $plain = Get-WqlPlainText -rtb $queryTextBox
+    if (-not [string]::IsNullOrEmpty($plain))
     {
         $popupTitle = if ($queryRuleList.SelectedItem) { [string]$queryRuleList.SelectedItem.Name } else { 'WQL Query' }
-        Show-WqlQueryWindow -title $popupTitle -query $queryTextBox.Text
+        Show-WqlQueryWindow -title $popupTitle -query $plain
     }
 })
 [void]$queryToolbar.Children.Add($queryOpenButton)
@@ -1660,10 +1770,8 @@ $queryOpenButton.Add_Click({
 [void]$queryViewPanel.Children.Add($queryToolbar)
 
 # Row 2: the query text
-$queryTextBox = New-Object System.Windows.Controls.TextBox
+$queryTextBox = New-Object System.Windows.Controls.RichTextBox
 $queryTextBox.IsReadOnly = $true
-$queryTextBox.AcceptsReturn = $true
-$queryTextBox.TextWrapping = [System.Windows.TextWrapping]::Wrap
 $queryTextBox.VerticalScrollBarVisibility   = [System.Windows.Controls.ScrollBarVisibility]::Auto
 $queryTextBox.HorizontalScrollBarVisibility = [System.Windows.Controls.ScrollBarVisibility]::Auto
 $queryTextBox.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
