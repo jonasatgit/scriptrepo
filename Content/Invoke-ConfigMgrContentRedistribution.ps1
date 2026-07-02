@@ -25,8 +25,10 @@
  
 [CmdletBinding()]
 param(
-    [string]$SiteCode = 'P02',
-    [string]$ProviderServer = 'CM02.contoso.local'
+    [Parameter(Mandatory=$true, HelpMessage='Please provide the site code of the ConfigMgr site')]
+    [string]$SiteCode,
+    [Parameter(Mandatory=$true, HelpMessage='Please provide the ConfigMgr provider server')]
+    [string]$ProviderServer
 )
 #region hash tables
 # Possible package status states: https://learn.microsoft.com/en-us/mem/configmgr/develop/reference/core/servers/configure/sms_packagestatusdistpointssummarizer-server-wmi-class
@@ -229,11 +231,33 @@ if ($dpContentList.count -gt 0)
     {
         foreach($package in $selection)
         {
-            $query = "select * from SMS_DistributionPoint where PackageID='$($package.PackageID)' and ServerNALPath like '%$($package.ServerName)%'"
-            $contentOnDP = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
-            $contentOnDP.RefreshNow = $true
-            Write-Host "Will refresh content with ID $($package.PackageID) on $($package.ServerName)..." -ForegroundColor Green
-            $null = $contentOnDP.Put()
+            # Use the exact ServerNALPath (from $dpNALPathHash) instead of a LIKE wildcard match.
+            # A LIKE '%servername%' filter can return multiple SMS_DistributionPoint instances
+            # (e.g. when one DP short name is a substring of another). In that case Get-WmiObject
+            # returns an Object[] and calling .Put() on the array fails with "no Put method".
+            $exactNALPath = $dpNALPathHash[$package.ServerName]
+            if (-not $exactNALPath)
+            {
+                Write-Host "Could not resolve NALPath for `"$($package.ServerName)`", skipping PackageID $($package.PackageID)..." -ForegroundColor Yellow
+                continue
+            }
+
+            $query = "select * from SMS_DistributionPoint where PackageID='$($package.PackageID)' and ServerNALPath='$exactNALPath'"
+            [array]$contentOnDP = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+
+            if (-not $contentOnDP -or $contentOnDP.Count -eq 0)
+            {
+                Write-Host "No SMS_DistributionPoint instance found for PackageID $($package.PackageID) on `"$($package.ServerName)`", skipping..." -ForegroundColor Yellow
+                continue
+            }
+
+            # Iterate explicitly so .Put() is always called on a single ManagementObject
+            foreach($dpInstance in $contentOnDP)
+            {
+                $dpInstance.RefreshNow = $true
+                Write-Host "Will refresh content with ID $($package.PackageID) on `"$($package.ServerName)`"..." -ForegroundColor Green
+                $null = $dpInstance.Put()
+            }
         }
     }      
     else
