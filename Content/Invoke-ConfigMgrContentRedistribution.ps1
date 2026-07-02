@@ -66,7 +66,7 @@ $messageStateHash = @{
 #endregion
 #region get dps
 $query = "SELECT NALPath, NumberInstalled, NumberErrors, NumberInProgress, NumberUnknown FROM SMS_DPStatusInfo"
-[array]$DPList = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+[array]$DPList = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
  
 $ServerName = @{label="ServerName";expression={$_.NALPath -replace '\["Display=\\' -replace '\\' -replace '"].*'}}
 $dpSiteCode = @{label="SiteCode"; expression={$_.NALPath -replace '.*("SMS_SITE=.*").*', '$1' -replace '"' -replace 'SMS_SITE='}}
@@ -105,11 +105,11 @@ if ($dpSelection)
         Write-Host "Getting list of assigned content for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
         #$query = "select PackageID, Status, PackageType from SMS_DistributionPoint where ServerNALPath like '%$($dp.ServerName)%'"
         $query = "select PackageID, Status, PackageType from SMS_DistributionPoint where ServerNALPath = '$($dpNALPathHash[($dp.ServerName)])'"
-        [array]$contentAssignedToDP = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+        [array]$contentAssignedToDP = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         Write-Host "Getting list of contentent from status summarizer for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
         #$query = "select PackageID, State from SMS_PackageStatusDistPointsSummarizer where ServerNALPath like '%$($dp.ServerName)%'"
         $query = "select PackageID, State from SMS_PackageStatusDistPointsSummarizer where ServerNALPath = '$($dpNALPathHash[($dp.ServerName)])'"
-        [array]$contentFromStatusSummarizer = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+        [array]$contentFromStatusSummarizer = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         # create hashtable to be able to lookup fast
         $dpContentStatusSummarizerHash = @{}
         foreach($item in $contentFromStatusSummarizer)
@@ -122,7 +122,7 @@ if ($dpSelection)
  
         Write-Host "Getting list of content status messages for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
         $query = "SELECT DPName, PackageID, MessageState FROM SMS_DPStatusDetails WHERE DPName = '$($dp.ServerName)' and PackageID <> ''"
-        [array]$dpContentMessageStatusDetails = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+        [array]$dpContentMessageStatusDetails = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         # create hashtable to be able to lookup fast
         $dpContentStateMessageHash = @{}
         foreach($item in $dpContentMessageStatusDetails)
@@ -135,7 +135,7 @@ if ($dpSelection)
  
         Write-Host "Getting overall DP status for DP: `"$($dp.ServerName)`"" -ForegroundColor Green
         $query = "SELECT * FROM SMS_DPStatusInfo Where Name = '$($dp.ServerName)'"
-        [array]$smsDPStatusInfo = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+        [array]$smsDPStatusInfo = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
         
  
         if($contentAssignedToDP.count -gt 0)
@@ -229,12 +229,15 @@ if ($dpContentList.count -gt 0)
     # Lets re-distribute if we have a selection
     if ($selection)
     {
+        # NOTE: We use CIM cmdlets here (not Get-WmiObject) so this works on PowerShell 7,
+        # where Get-WmiObject is either missing or provided by a compatibility shim that
+        # returns CimInstance objects (no __PATH, no .Put() method). Set-CimInstance is
+        # the correct way to persist a property change on a WMI instance under PS 7.
         foreach($package in $selection)
         {
             # Use the exact ServerNALPath (from $dpNALPathHash) instead of a LIKE wildcard match.
             # A LIKE '%servername%' filter can return multiple SMS_DistributionPoint instances
-            # (e.g. when one DP short name is a substring of another). In that case Get-WmiObject
-            # returns an Object[] and calling .Put() on the array fails with "no Put method".
+            # (e.g. when one DP short name is a substring of another).
             $exactNALPath = $dpNALPathHash[$package.ServerName]
             if (-not $exactNALPath)
             {
@@ -242,8 +245,16 @@ if ($dpContentList.count -gt 0)
                 continue
             }
 
-            $query = "select * from SMS_DistributionPoint where PackageID='$($package.PackageID)' and ServerNALPath='$exactNALPath'"
-            [array]$contentOnDP = Get-WmiObject -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -Query $query
+            $filter = "PackageID='$($package.PackageID)' and ServerNALPath='$exactNALPath'"
+            try
+            {
+                [array]$contentOnDP = Get-CimInstance -ComputerName $ProviderServer -Namespace "Root\SMS\Site_$SiteCode" -ClassName SMS_DistributionPoint -Filter $filter -ErrorAction Stop
+            }
+            catch
+            {
+                Write-Host "  Failed to query SMS_DistributionPoint for PackageID $($package.PackageID) on `"$($package.ServerName)`": $($_.Exception.Message)" -ForegroundColor Red
+                continue
+            }
 
             if (-not $contentOnDP -or $contentOnDP.Count -eq 0)
             {
@@ -251,12 +262,17 @@ if ($dpContentList.count -gt 0)
                 continue
             }
 
-            # Iterate explicitly so .Put() is always called on a single ManagementObject
             foreach($dpInstance in $contentOnDP)
             {
-                $dpInstance.RefreshNow = $true
-                Write-Host "Will refresh content with ID $($package.PackageID) on `"$($package.ServerName)`"..." -ForegroundColor Green
-                $null = $dpInstance.Put()
+                try
+                {
+                    Write-Host "Will refresh content with ID $($package.PackageID) on `"$($package.ServerName)`"..." -ForegroundColor Green
+                    $null = Set-CimInstance -InputObject $dpInstance -Property @{ RefreshNow = $true } -ErrorAction Stop
+                }
+                catch
+                {
+                    Write-Host "  Failed to refresh PackageID $($package.PackageID) on `"$($package.ServerName)`": $($_.Exception.Message)" -ForegroundColor Red
+                }
             }
         }
     }      
