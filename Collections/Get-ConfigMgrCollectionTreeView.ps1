@@ -63,6 +63,7 @@
    | v3.4    | Auto-detect SiteCode / ProviderServer from local WMI (SMS_ProviderLocation) when parameters are omitted.
    | v3.5    | Dependency curves now clear the LONGEST collection name in the tree, not just the source/destination pair.
    | v3.6    | Added toolbar 'Refresh' button that reloads all collections by re-invoking the script.
+   | v3.7    | Property grid now shows LimitingCollectionID and LimitingName for the selected collection.
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -78,7 +79,7 @@ param
     $ProviderServer
 )
 
-$version = 'v3.6'
+$version = 'v3.7'
 
 #region Get-TreeViewSubmember
 <#
@@ -756,6 +757,8 @@ $queryRulesHashTable = @{}
 
 $propertyList = ('MembershipRules',
     'CollectionID',
+    'LimitingCollectionID',
+    'LimitingName',
     'CollectionRefreshType',
     'ClientSettingsCount',
     'DeploymentCount',
@@ -2008,6 +2011,12 @@ foreach($collection in $collectionList | Sort-Object -Property Name)
     $collection | Add-Member -MemberType NoteProperty -Name IncludeCollectionsCount -Value  $collection.IncludeCollections.count
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollections -Value  $excludeCollectionHashTable[($collection.CollectionID)]
     $collection | Add-Member -MemberType NoteProperty -Name ExcludeCollectionsCount -Value  $collection.ExcludeCollections.count
+
+    # v3.7: expose the limiting collection (SMS_Collection.LimitToCollectionID /
+    # LimitToCollectionName) under friendlier names so it shows up in the middle
+    # property grid alongside the other collection details.
+    $collection | Add-Member -MemberType NoteProperty -Name LimitingCollectionID -Value $collection.LimitToCollectionID
+    $collection | Add-Member -MemberType NoteProperty -Name LimitingName         -Value $collection.LimitToCollectionName
 
     # Reverse dependency: collections that use THIS collection as the source of
     # one of their include or exclude rules.
