@@ -62,6 +62,7 @@
    | v3.3    | Merged 'Reset dependencies' into the Show buttons - each now toggles between 'Show ...' and 'Hide ...'.
    | v3.4    | Auto-detect SiteCode / ProviderServer from local WMI (SMS_ProviderLocation) when parameters are omitted.
    | v3.5    | Dependency curves now clear the LONGEST collection name in the tree, not just the source/destination pair.
+   | v3.6    | Added toolbar 'Refresh' button that reloads all collections by re-invoking the script.
 
 .EXAMPLE
    Get-ConfigMgrCollectionTreeView.ps1 -siteCode 'P01' -providerServer 'CM01.contoso.local'
@@ -77,7 +78,7 @@ param
     $ProviderServer
 )
 
-$version = 'v3.5'
+$version = 'v3.6'
 
 #region Get-TreeViewSubmember
 <#
@@ -1026,6 +1027,22 @@ $expandCollapseButton.Width   = 110
 $expandCollapseButton.Content = 'Expand all'
 $expandCollapseButton.ToolTip = 'Expand or collapse every collection node in the tree'
 
+# v3.6: Refresh button - closes the current window and re-invokes the script
+# with the same SiteCode / ProviderServer so all WMI data is re-queried and the
+# UI is rebuilt from scratch. The re-invocation is handled after ShowDialog
+# returns (see bottom of the script).
+$refreshButton = New-Object System.Windows.Controls.Button
+$refreshButton.Margin  = '10,10,10,10'
+$refreshButton.Padding = '8,0'
+$refreshButton.Height  = 22
+$refreshButton.Width   = 80
+$refreshButton.Content = 'Refresh'
+$refreshButton.ToolTip = 'Reload all collections from the ConfigMgr provider'
+$refreshButton.Add_Click({
+    $script:refreshRequested = $true
+    $window.Close()
+})
+
 
 # Add the CheckBoxes to the StackPanel
 #[void]$stackPanel.Children.Add($checkBox)
@@ -1038,6 +1055,7 @@ $expandCollapseButton.ToolTip = 'Expand or collapse every collection node in the
 [void]$stackPanel.Children.Add($button)
 [void]$stackPanel.Children.Add($showAllDepsButton)
 [void]$stackPanel.Children.Add($showSelDepsButton)
+[void]$stackPanel.Children.Add($refreshButton)
 
 # Build a legend bar at the bottom so the user knows what each dot color next to a collection name means.
 # A Border is used as the actual Grid child so it can stretch and paint the full row width;
@@ -2078,6 +2096,14 @@ $window.ShowDialog() | Out-Null
 if($cimSession)
 {
     $cimSession | Remove-CimSession
+}
+
+# v3.6: If the user clicked the Refresh toolbar button, re-invoke this script
+# with the same parameters so all WMI data is re-queried and the UI is rebuilt.
+# Uses $PSCommandPath so the reload works no matter where the script lives.
+if ($script:refreshRequested)
+{
+    & $PSCommandPath -SiteCode $SiteCode -ProviderServer $ProviderServer
 }
 
 Write-Verbose "Done"
