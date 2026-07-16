@@ -160,6 +160,14 @@ $objectTypeConfig = [ordered]@{
 # Object types can also be passed directly (one or multiple) via the -ObjectType parameter.
 if (-not $ObjectType)
 {
+    # Out-GridView is only available in interactive sessions and is not present in PowerShell 7+
+    # unless the Microsoft.PowerShell.GraphicalTools module is installed. Fail with a clear message
+    # so the script can still be used in non-interactive / automation contexts.
+    if (-not (Get-Command -Name 'Out-GridView' -ErrorAction SilentlyContinue))
+    {
+        throw "No -ObjectType was specified and Out-GridView is not available in this session. Specify one or more object types via -ObjectType instead."
+    }
+
     $ObjectType = $objectTypeConfig.Keys | Out-GridView -Title 'Select one or more ConfigMgr object types to add the scope to' -OutputMode Multiple
     if (-not $ObjectType)
     {
@@ -171,18 +179,29 @@ if (-not $ObjectType)
 # Import the ConfigurationManager.psd1 module
 if ($null -eq (Get-Module ConfigurationManager))
 {
-    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
+    if ([string]::IsNullOrEmpty($ENV:SMS_ADMIN_UI_PATH))
+    {
+        throw "Environment variable SMS_ADMIN_UI_PATH is not set. Run this script from a machine with the ConfigMgr console installed."
+    }
+
+    $configMgrModulePath = Join-Path -Path (Split-Path -Path $ENV:SMS_ADMIN_UI_PATH -Parent) -ChildPath 'ConfigurationManager.psd1'
+    if (-not (Test-Path -Path $configMgrModulePath))
+    {
+        throw "ConfigurationManager module not found at '$configMgrModulePath'. Ensure the ConfigMgr console is installed."
+    }
+
+    Import-Module $configMgrModulePath -ErrorAction Stop
 }
 
 # Connect to the site's drive if it is not already present
 if ($null -eq (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue))
 {
-    New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName | Out-Null
+    New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName -ErrorAction Stop | Out-Null
 }
 
 # Remember the current location and switch to the site drive
 $originalLocation = Get-Location
-Set-Location "$($SiteCode):\"
+Set-Location "$($SiteCode):\" -ErrorAction Stop
 
 try
 {
@@ -192,12 +211,25 @@ try
         throw "Cmdlet 'Add-CMObjectSecurityScope' is not available in this session."
     }
 
-    # Validate that the security scope exists before touching any objects
-    $scope = Get-CMSecurityScope -Name $ScopeName -ErrorAction SilentlyContinue
+    # Validate that the security scope exists before touching any objects. Use -ErrorAction Stop
+    # so a provider error is surfaced instead of being confused with a non-existent scope.
+    try
+    {
+        $scope = Get-CMSecurityScope -Name $ScopeName -ErrorAction Stop
+    }
+    catch
+    {
+        throw "Failed to query security scope '$ScopeName': $($_.Exception.Message)"
+    }
+
     if ($null -eq $scope)
     {
         throw "Security scope '$ScopeName' does not exist. Create it first or specify an existing scope."
     }
+
+    # Track the outcome across all object types so automation callers get an honest result.
+    $successCount = 0
+    $failureCount = 0
 
     # Process each selected object type
     foreach ($type in $ObjectType)
@@ -218,7 +250,9 @@ try
         # name parameter entirely so the cmdlet returns all objects of that type. Many ConfigMgr
         # Get cmdlets also support the -Fast parameter, which skips retrieving lazy (expensive)
         # properties and greatly speeds up retrieval. Only add it when the cmdlet supports it.
-        $getParams = @{}
+        # -ErrorAction Stop ensures a provider/query failure is caught instead of silently
+        # returning nothing and being reported as "no objects found".
+        $getParams = @{ ErrorAction = 'Stop' }
         if (-not [string]::IsNullOrEmpty($ItemName))
         {
             $getParams[$nameParameter] = $ItemName
@@ -232,7 +266,22 @@ try
         $itemFilterText = if ([string]::IsNullOrEmpty($ItemName)) { 'all' } else { "'$ItemName'" }
 
         Write-Verbose "Retrieving $type object(s) (filter: $itemFilterText) using $getCmdletName."
-        $items = @(& $getCmdletName @getParams)
+        try
+        {
+            $items = @(& $getCmdletName @getParams)
+        }
+        catch
+        {
+            Write-Warning "Failed to retrieve $type object(s) (filter: $itemFilterText): $($_.Exception.Message)"
+            continue
+        }
+
+        # Default client settings are not scope-secured (only CUSTOM client settings are). The
+        # default client settings object always has priority 10000, so filter it out.
+        if ($type -eq 'ClientSetting')
+        {
+            $items = @($items | Where-Object { $_.Priority -ne 10000 })
+        }
 
         if ($items.Count -eq 0)
         {
@@ -260,14 +309,22 @@ try
                 {
                     $item | Add-CMObjectSecurityScope -Scope $scope -ErrorAction Stop | Out-Null
                     Write-Host "  [OK]   $displayName" -ForegroundColor Green
+                    $successCount++
                 }
                 catch
                 {
                     Write-Host "  [FAIL] $displayName" -ForegroundColor Red
                     Write-Verbose "  [FAIL] $displayName : $($_.Exception.Message)"
+                    $failureCount++
                 }
             }
         }
+    }
+
+    Write-Host "Done. $successCount succeeded, $failureCount failed." -ForegroundColor Cyan
+    if ($failureCount -gt 0)
+    {
+        Write-Error "$failureCount of $($successCount + $failureCount) scope assignment(s) failed. Re-run with -Verbose for details."
     }
 }
 finally
