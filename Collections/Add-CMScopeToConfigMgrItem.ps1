@@ -289,7 +289,7 @@ try
             continue
         }
 
-        Write-Host "Found $($items.Count) $type object(s) (filter: $itemFilterText). Adding scope '$ScopeName'..." -ForegroundColor Green
+        Write-Host "Found $($items.Count) $type object(s) (filter: $itemFilterText). Adding scope '$ScopeName'..." -ForegroundColor Cyan
 
         foreach ($item in $items)
         {
