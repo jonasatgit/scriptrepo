@@ -69,31 +69,6 @@ param
 
 $version = 'v1.0'
 
-# Map of SMS_ObjectContainerNode.ObjectType -> friendly folder-type name shown as the tree root.
-# Values are taken from the SMS_ObjectContainerNode WMI class documentation.
-$folderTypeNames = @{
-    2    = 'Package'
-    3    = 'Advertisement'
-    7    = 'Query'
-    8    = 'Report'
-    9    = 'Software Metering'
-    11   = 'Configuration Item'
-    14   = 'OS Upgrade Package'
-    17   = 'State Migration'
-    18   = 'OS Image'
-    19   = 'Boot Image'
-    20   = 'Task Sequence'
-    21   = 'Device Setting'
-    23   = 'Driver Package'
-    25   = 'Driver'
-    1011 = 'Software Update'
-    2011 = 'Configuration Baseline'
-    5000 = 'DeviceCollection'
-    5001 = 'UserCollection'
-    6000 = 'Application'
-    6001 = 'Configuration Item'
-}
-
 
 # -------------------------------------------------------------------------------------------------
 # Auto-detect SiteCode / ProviderMachineName from the local SMS provider if not passed in.
@@ -216,11 +191,16 @@ $script:pending           = [ordered]@{}           # scope name -> 'Add' | 'Remo
 # Helper functions.
 # -------------------------------------------------------------------------------------------------
 
-# Returns the friendly type name for a given ObjectType value.
+# Returns a friendly folder-type name derived from the folder's own ObjectTypeName property
+# (the undocumented SMS_ObjectContainerNode.ObjectTypeName, e.g. 'SMS_Package') with the leading
+# 'SMS_' prefix and any trailing 'Latest' removed. Falls back to the numeric ObjectType if missing.
 function Get-FolderTypeName
 {
-    param([int]$ObjectType)
-    if ($folderTypeNames.ContainsKey($ObjectType)) { return $folderTypeNames[$ObjectType] }
+    param([string]$ObjectTypeName, [int]$ObjectType)
+    if (-not [string]::IsNullOrWhiteSpace($ObjectTypeName))
+    {
+        return (($ObjectTypeName -replace '^SMS_', '') -replace 'Latest$', '')
+    }
     return "ObjectType $ObjectType"
 }
 
@@ -735,13 +715,15 @@ function New-FolderTreeItem
     return $item
 }
 
-# Group folders by type and create a root node per type that actually has folders.
+# Group folders by type and create a root node per type that actually has folders. The friendly
+# type name comes from each folder's own ObjectTypeName property (with the 'SMS_' prefix stripped).
 $foldersByType = $allFolders | Group-Object -Property ObjectType
 $rootDefinitions = foreach ($group in $foldersByType)
 {
+    $sampleFolder = $group.Group | Select-Object -First 1
     [PSCustomObject]@{
         ObjectType = [int]$group.Name
-        TypeName   = Get-FolderTypeName -ObjectType ([int]$group.Name)
+        TypeName   = Get-FolderTypeName -ObjectTypeName $sampleFolder.ObjectTypeName -ObjectType ([int]$group.Name)
     }
 }
 
