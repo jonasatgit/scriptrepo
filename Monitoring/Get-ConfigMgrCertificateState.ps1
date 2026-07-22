@@ -605,7 +605,7 @@ else
                         $tmpObj.Status = 'Warning'
                         $tmpObj.SiteCode = ""
                         $tmpObj.Description = 'DP or Boot certificate is about to expire in {0} days! See console for Certificate GUID:{1}' -f $expireDays, ($OSDCertificate.SMSID)
-                        $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                        $tmpObj.PossibleActions = 'Renew Distribution Point certificate and import the certificate in the Distribution Point properties.'
                         [void]$resultObject.Add($tmpObj)   
                     }
                 }
@@ -620,7 +620,7 @@ else
                 $tmpObj.Status = 'Warning'
                 $tmpObj.SiteCode = ""
                 $tmpObj.Description = 'No DP or Boot certificate found!'
-                $tmpObj.PossibleActions = 'Renew certificate or request a new one'
+                $tmpObj.PossibleActions = 'No DP or Boot certificate found! Validate user rights and or ConfigMgr site config and import a valid certificate in the Distribution Point properties.'
                 [void]$resultObject.Add($tmpObj)      
             }   
         }
@@ -683,7 +683,7 @@ else
                                 $tmpObj.Status = 'Warning'
                                 $tmpObj.SiteCode = ""
                                 $tmpObj.Description = 'Certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
-                                $tmpObj.PossibleActions = 'Renew certificate or request a new one'            
+                                $tmpObj.PossibleActions = 'Renew certificate or request a new one and bind it to the IIS site'            
                             }
  
                             # check if it is a ConfigMgr managed certificate. Only if not, we will check the template
@@ -697,7 +697,7 @@ else
                                     $tmpObj.SystemName = $systemName
                                     $tmpObj.Status = 'Warning'
                                     $tmpObj.SiteCode = ""
-                                    $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding info to the description in case both checks are successful
+                                    $tmpObj.Description = '{0} WRONG Template. Change the template definition for the script or request a certificate with the correct template' -f $tmpObj.Description # Adding info to the description in case both checks are successful
                                 }
                             }
                             else
@@ -721,7 +721,7 @@ else
                             $tmpObj.Status = 'Error'
                             $tmpObj.SiteCode = ""
                             $tmpObj.Description = "IIS site certificate not found: $($certPath)"
-                            $tmpObj.PossibleActions = 'Add a new cert to IIS'                            
+                            $tmpObj.PossibleActions = 'Add a new certificate to IIS bindings'
                             [void]$resultObject.Add($tmpObj)
                         }
                     }
@@ -734,7 +734,7 @@ else
                         $tmpObj.Status = 'Warning'
                         $tmpObj.SiteCode = ""
                         $tmpObj.Description = 'No certificate bound to port: {0}' -f ($sslBinding.bindingInformation -replace '\*','' -replace ':','')
-                        $tmpObj.PossibleActions = 'Add a new cert to IIS'                            
+                        $tmpObj.PossibleActions = 'Add a new certificate to IIS bindings'
                         [void]$resultObject.Add($tmpObj)
                     }
                 }
@@ -742,7 +742,7 @@ else
             else 
             {
                 $tmpScriptStateObj.Status = 'Warning'
-                $tmpScriptStateObj.Description = 'No SSL bindings found in IIS'
+                $tmpScriptStateObj.Description = 'No SSL bindings found in IIS. Bind a certificate to the IIS site.'
             }
         }
     }
@@ -775,7 +775,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
                 $tmpObj.Status = 'Warning'
                 $tmpObj.SiteCode = ""
                 $tmpObj.Description = 'SQL certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
-                $tmpObj.PossibleActions = 'Renew certificate or request a new one'            
+                $tmpObj.PossibleActions = 'Renew certificate or request a new one. Bind the new certificate to the SQL instance via SQL Configuration Manager under SQL Server Network Configuration -> Protocols for <Instance> -> Properties -> Certificate tab'            
             }
 
             # check if it is a ConfigMgr managed certificate. Only if not, we will check the template
@@ -789,7 +789,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
                     $tmpObj.SystemName = $systemName
                     $tmpObj.Status = 'Warning'
                     $tmpObj.SiteCode = ""
-                    $tmpObj.Description = '{0} WRONG Template' -f $tmpObj.Description # Adding info to the description in case both checks are successful
+                    $tmpObj.Description = '{0} WRONG Template. Change the template definition for the script or request a certificate with the correct template. Bind the new certificate to the SQL instance via SQL Configuration Manager under SQL Server Network Configuration -> Protocols for <Instance> -> Properties -> Certificate tab' -f $tmpObj.Description # Adding info to the description in case both checks are successful
                 }
             }
             else
@@ -812,7 +812,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
             $tmpObj.Status = 'Error'
             $tmpObj.SiteCode = ""
             $tmpObj.Description = "SQL site certificate not found:  $($certPath)"
-            $tmpObj.PossibleActions = 'Add a new cert to SQL'                            
+            $tmpObj.PossibleActions = 'Request a new certificate and bind it to the SQL instance via SQL Configuration Manager under SQL Server Network Configuration -> Protocols for <Instance> -> Properties -> Certificate tab'                            
             [void]$resultObject.Add($tmpObj)
         }
     }
