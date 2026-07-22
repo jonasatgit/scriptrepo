@@ -31,6 +31,10 @@
     If $false, the script will only act on dedup if it is installed
     Default is $false
 
+.PARAMETER RunOptimizationJob
+    If $true, the script will start a dedup optimization job after setting all required settings. 
+    Default is $false
+
 .PARAMETER ExcludeConnectedCacheFolderFromDeDup
     If $true, the ConnectedCache Folder will be excluded from Dedup
     Default is $true
@@ -58,6 +62,10 @@ param
     # If $false, the script will only act on dedup if it is installed
     [Parameter(Mandatory=$false)]
     [bool]$RequireDedup = $false,
+
+    # If $true, the script will start a dedup optimization job after setting all required settings.
+    [Parameter(Mandatory=$false)]
+    [bool]$RunOptimizationJob = $false,
     
     #If $true, the ConnectedCache Folder will be excluded from Dedup
     [Parameter(Mandatory=$false)]
@@ -416,7 +424,10 @@ try
         {
             $null = Set-DedupVolume $ContentLibVolume -ExcludeFolder $DedupExcludeFolders -ErrorAction Stop
             # We could also start dedup optimization. If not manually started, the job will start a few hours later and will then run every hour. 
-            #$null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
+            if ($RunOptimizationJob)
+            {
+                $null = Start-DedupJob -Volume $ContentLibVolume -Type Optimization
+            }
         }
     }
 }
