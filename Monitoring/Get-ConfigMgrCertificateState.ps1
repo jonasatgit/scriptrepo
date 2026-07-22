@@ -438,6 +438,52 @@ function Get-SQLServerServiceCertitificates
 }
 #endregion
 
+#region Get-LocalCertificateBlob
+<#
+.SYNOPSIS
+    Get-LocalCertificateBlob retrieves a certificate from the local machine's certificate store based on its thumbprint.
+
+.DESCRIPTION
+    Sometimes Get-Item 'Cert:\LocalMachine\My\<Thumbprint>' will still return a certificate even though it is not visible in certlm.msc
+    This function attempts to retrieve the certificate using Get-ChildItem and filtering by thumbprint which is pre-filtered and shows only 
+    what is visible in certlm.msc. If the certificate is not found, it returns $null.
+
+.PARAMETER Thumbprint
+    The thumbprint of the certificate to retrieve. 
+
+.PARAMETER Path
+    The path to the certificate store. Default is 'LocalMachine\My'.
+#>
+Function Get-LocalCertificateBlob
+{
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Thumbprint,
+        [Parameter(Mandatory=$false)]
+        [string]$Path = 'LocalMachine\My'
+    )
+
+    $Path = "Cert:\$Path"
+
+    try 
+    {
+        $cert = Get-ChildItem -Path $Path -ErrorAction Stop | Where-Object { $_.Thumbprint -eq $Thumbprint }
+        if ($cert) 
+        {
+            return $cert
+        } 
+        else 
+        {
+            return $null
+        }
+    } 
+    catch 
+    {
+        return $null
+    }
+}
+#endregion
+
 
 #region log path
 if ($WriteLog)
@@ -621,9 +667,9 @@ else
                     if($sslBinding.certificateHash)
                     {
                         if($WriteLog){Write-CMTraceLog -Message ('Checking certificate for port: {0}' -f ($sslBinding.bindingInformation -replace '\*','' -replace ':','')) -Component ($MyInvocation.MyCommand)}
-                        $certPath = 'Cert:\LocalMachine\{0}\{1}' -f $sslBinding.certificateStoreName, $sslBinding.certificateHash
-                        if($WriteLog){Write-CMTraceLog -Message ('Checking certificate: {0}' -f ($certPath)) -Component ($MyInvocation.MyCommand)}
-                        $sslCert = Get-Item $certPath -ErrorAction SilentlyContinue
+                        $certPath = 'LocalMachine\{0}' -f $sslBinding.certificateStoreName 
+                        if($WriteLog){Write-CMTraceLog -Message ('Checking certificate: {0}\{1}' -f ($certPath), ($sslBinding.certificateHash)) -Component ($MyInvocation.MyCommand)}
+                        $sslCert = Get-LocalCertificateBlob -Thumbprint $sslBinding.certificateHash -Path $certPath
                         if ($sslCert)
                         {
                             $tmpObj = New-Object psobject | Select-Object $propertyList
@@ -667,13 +713,14 @@ else
                         }
                         else 
                         {
+                            $certPath = '{0}\{1}' -f ($certPath), ($sslBinding.certificateHash)
                             $tmpObj = New-Object psobject | Select-Object $propertyList
                             $tmpObj.CheckType = 'Certificate'
                             $tmpObj.Name = '{0}:{1}:{2}' -f $tmpObj.CheckType, $systemName, $certPath
                             $tmpObj.SystemName = $systemName
                             $tmpObj.Status = 'Error'
                             $tmpObj.SiteCode = ""
-                            $tmpObj.Description = "IIS site certificate not found:  $($certPath)"
+                            $tmpObj.Description = "IIS site certificate not found: $($certPath)"
                             $tmpObj.PossibleActions = 'Add a new cert to IIS'                            
                             [void]$resultObject.Add($tmpObj)
                         }
@@ -714,7 +761,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
 {
     try 
     {
-        $sslCert = Get-item "Cert:\LocalMachine\my\$($sqlInstance.Thumbprint)"  
+        $sslCert = Get-LocalCertificateBlob -Thumbprint $sqlInstance.Thumbprint -Path 'LocalMachine\My'
         if ($sslCert)
         {
             $tmpObj = New-Object psobject | Select-Object $propertyList
