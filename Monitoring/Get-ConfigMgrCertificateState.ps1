@@ -775,7 +775,7 @@ foreach ($sqlInstance in Get-SQLServerServiceCertitificates)
                 $tmpObj.Status = 'Warning'
                 $tmpObj.SiteCode = ""
                 $tmpObj.Description = 'SQL certificate is about to expire in {0} days! Thumbprint:{1}' -f $expireDays, ($sslCert.Thumbprint)
-                $tmpObj.PossibleActions = 'Renew certificate or request a new one. Bind the new certificate to the SQL instance via SQL Configuration Manager under SQL Server Network Configuration -> Protocols for <Instance> -> Properties -> Certificate tab'            
+                $tmpObj.PossibleActions = 'Renew certificate or request a new one. Bind the new certificate to the SQL instance via SQL Configuration Manager under SQL Server Network Configuration -> Protocols for <Instance> -> Properties -> Certificate tab. Add the SQL service account to the certificate private key permissions via certlm.msc -> Personal -> Certificates -> <Certificate> -> Right click -> All Tasks -> Manage Private Keys and add read permissions.'            
             }
 
             # check if it is a ConfigMgr managed certificate. Only if not, we will check the template
