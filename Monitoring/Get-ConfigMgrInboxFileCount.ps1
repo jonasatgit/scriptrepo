@@ -315,6 +315,11 @@ $referenceDataJSON = @'
                 "SkipCheck": true
             }, 
             {
+                "CounterName": "mmctrl.box",
+                "MaxValue": 500,
+                "SkipCheck": true
+            }, 
+            {
                 "CounterName": "schedule.box>outboxes>LAN",
                 "MaxValue": 500,
                 "SkipCheck": true
