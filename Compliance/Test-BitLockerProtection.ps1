@@ -18,9 +18,11 @@
 
 .PARAMETER Remediate
     Attempts to resume BitLocker when the operating system volume is fully encrypted,
-    protection is off, and at least one key protector exists. Keep the default value false
-    for the ConfigMgr discovery script. Set the default value to true in the copy used as
-    the ConfigMgr remediation script.
+    protection is off, at least one key protector exists, and the automatic-resume reboot
+    count has reached zero. Remediation is skipped while planned suspension reboots remain
+    or when the count cannot be determined. Keep the default value false for the ConfigMgr
+    discovery script. Set the default value to true in the copy used as the ConfigMgr
+    remediation script.
 
 .PARAMETER OutputType
     ComplianceState returns "Compliant" or a compact noncompliance description.
@@ -57,6 +59,14 @@
       below from $false to $true.
     - Run the scripts in the 64-bit PowerShell host on 64-bit clients.
 
+    Processing overview:
+    1. Read the live OS-volume encryption and protection states from the BitLocker WMI provider.
+    2. If the fully encrypted volume is suspended, read its remaining automatic-resume reboots.
+    3. Collect TPM state and recent BitLocker events to explain why protection is still off.
+    4. Correlate only relevant failures with the latest suspension and build likely reasons.
+    5. If remediation is enabled, resume protection only after conservative safety checks.
+    6. Return either a ConfigMgr string, a PowerShell object, or JSON.
+
 .LINK
     https://learn.microsoft.com/windows/win32/secprov/getsuspendcount-win32-encryptablevolume
 
@@ -88,6 +98,8 @@ $bitLockerNamespace = 'Root\CIMV2\Security\MicrosoftVolumeEncryption'
 $tpmNamespace = 'Root\CIMV2\Security\MicrosoftTpm'
 $mountPoint = $env:SystemDrive.TrimEnd('\')
 
+# BitLocker WMI methods return numeric status values. These tables make the final
+# diagnostic output understandable without requiring the reader to know the WMI API.
 $protectionStatusNames = @{
     0 = 'Off'
     1 = 'On'
@@ -117,6 +129,36 @@ $keyProtectorTypeNames = @{
     10 = 'Cng'
 }
 
+$entraKeyBackupEndpoints = @(
+    [pscustomobject]@{
+        Host = 'enterpriseregistration.windows.net'
+        Port = 443
+        Purpose = 'Microsoft Entra device registration and recovery-key escrow'
+    }
+    [pscustomobject]@{
+        Host = 'certauth.enterpriseregistration.windows.net'
+        Port = 443
+        Purpose = 'Certificate-authenticated Microsoft Entra device requests'
+    }
+    [pscustomobject]@{
+        Host = 'login.microsoftonline.com'
+        Port = 443
+        Purpose = 'Microsoft Entra authentication'
+    }
+    [pscustomobject]@{
+        Host = 'device.login.microsoftonline.com'
+        Port = 443
+        Purpose = 'Microsoft Entra device authentication'
+    }
+    [pscustomobject]@{
+        Host = 'graph.windows.net'
+        Port = 443
+        Purpose = 'Microsoft Entra device service dependency'
+    }
+)
+
+# Return a readable name for a WMI numeric value while preserving unexpected values
+# for troubleshooting newer or undocumented states.
 function Get-MappedValue
 {
     param
@@ -147,24 +189,29 @@ function Get-BitLockerEvents
         [int]$MaximumEvents
     )
 
+    # Windows versions use either the BitLocker or BitLocker-API channel names.
+    # Probe both families and read every enabled channel that exists.
     $logNames = @(
+        'Microsoft-Windows-BitLocker/BitLocker Management',
+        'Microsoft-Windows-BitLocker/BitLocker Operational',
         'Microsoft-Windows-BitLocker-API/Management',
         'Microsoft-Windows-BitLocker-API/Operational'
     )
     $events = [System.Collections.Generic.List[object]]::new()
     $errors = [System.Collections.Generic.List[string]]::new()
+    $logsRead = [System.Collections.Generic.List[string]]::new()
 
     foreach ($logName in $logNames)
     {
+        $log = Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue
+        if (-not $log -or -not $log.IsEnabled)
+        {
+            continue
+        }
+
         try
         {
-            $log = Get-WinEvent -ListLog $logName -ErrorAction Stop
-            if (-not $log.IsEnabled)
-            {
-                $errors.Add("Event log is disabled: $logName")
-                continue
-            }
-
+            $logsRead.Add($logName)
             $logEvents = Get-WinEvent -FilterHashtable @{
                 LogName = $logName
                 StartTime = $StartTime
@@ -177,6 +224,8 @@ function Get-BitLockerEvents
         }
         catch [System.Exception]
         {
+            # Get-WinEvent reports an empty time range as an error. It means that the
+            # channel was read successfully but had no events, so it is not a fault.
             if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*')
             {
                 continue
@@ -186,15 +235,25 @@ function Get-BitLockerEvents
         }
     }
 
+    if ($logsRead.Count -eq 0)
+    {
+        $errors.Add('No enabled supported BitLocker event log channel was found.')
+    }
+
     $orderedEvents = @($events | Sort-Object TimeCreated -Descending)
-    $failureEventIds = @(819, 820, 821, 822, 842, 844, 865, 904, 905)
+
+    # Keep resume failures separate from configuration failures. Event 854 can explain
+    # a WinRE/silent-encryption problem, but it does not itself prove that resume failed.
+    $resumeFailureEventIds = @(819, 820, 821, 822, 842, 844, 865, 904, 905)
+    $winREConfigurationEventIds = @(854)
+    $diagnosticEventIds = @($resumeFailureEventIds) + @($winREConfigurationEventIds)
     $diagnosticEvents = @(
         $orderedEvents |
-            Where-Object { $_.Level -in @(1, 2, 3) -or $_.Id -in $failureEventIds } |
+            Where-Object { $_.Level -in @(1, 2, 3) -or $_.Id -in $diagnosticEventIds } |
             Select-Object -First $MaximumEvents |
             ForEach-Object {
                 [pscustomobject]@{
-                    TimeCreated = $_.TimeCreated
+                    TimeCreated = $_.TimeCreated.ToString('o')
                     Id = $_.Id
                     Level = $_.LevelDisplayName
                     LogName = $_.LogName
@@ -203,52 +262,74 @@ function Get-BitLockerEvents
             }
     )
 
+    $lastSuspendEvent = $orderedEvents |
+        Where-Object { $_.Id -in @(773, 843) } |
+        Select-Object -First 1
+    $lastResumeEvent = $orderedEvents |
+        Where-Object { $_.Id -eq 774 } |
+        Select-Object -First 1
+
     return [pscustomobject]@{
-        LastSuspend = @(
-            $orderedEvents |
-                Where-Object { $_.Id -in @(773, 843) } |
-                Select-Object -First 1 |
-                ForEach-Object {
-                    [pscustomobject]@{
-                        TimeCreated = $_.TimeCreated
-                        Id = $_.Id
-                        LogName = $_.LogName
-                        InitiatedFrom = if ($_.Id -eq 843) { 'WindowsRecoveryEnvironment' } else { 'BitLockerApi-UnspecifiedCaller' }
-                        UserId = if ($_.UserId) { $_.UserId.Value } else { $null }
-                        ProcessId = $_.ProcessId
-                        Message = (($_.Message -replace '\s+', ' ').Trim())
-                    }
-                }
-        ) | Select-Object -First 1
-        LastResume = @(
-            $orderedEvents |
-                Where-Object { $_.Id -eq 774 } |
-                Select-Object -First 1 |
-                ForEach-Object {
-                    [pscustomobject]@{
-                        TimeCreated = $_.TimeCreated
-                        Id = $_.Id
-                        LogName = $_.LogName
-                        UserId = if ($_.UserId) { $_.UserId.Value } else { $null }
-                        ProcessId = $_.ProcessId
-                        Message = (($_.Message -replace '\s+', ' ').Trim())
-                    }
-                }
-        ) | Select-Object -First 1
+        LastSuspend = if ($lastSuspendEvent)
+        {
+            [pscustomobject]@{
+                TimeCreated = $lastSuspendEvent.TimeCreated.ToString('o')
+                Id = $lastSuspendEvent.Id
+                LogName = $lastSuspendEvent.LogName
+                InitiatedFrom = if ($lastSuspendEvent.Id -eq 843) { 'WindowsRecoveryEnvironment' } else { 'BitLockerApi-UnspecifiedCaller' }
+                UserId = if ($lastSuspendEvent.UserId) { $lastSuspendEvent.UserId.Value } else { $null }
+                ProcessId = $lastSuspendEvent.ProcessId
+                Message = (($lastSuspendEvent.Message -replace '\s+', ' ').Trim())
+            }
+        }
+        else
+        {
+            $null
+        }
+        LastResume = if ($lastResumeEvent)
+        {
+            [pscustomobject]@{
+                TimeCreated = $lastResumeEvent.TimeCreated.ToString('o')
+                Id = $lastResumeEvent.Id
+                LogName = $lastResumeEvent.LogName
+                UserId = if ($lastResumeEvent.UserId) { $lastResumeEvent.UserId.Value } else { $null }
+                ProcessId = $lastResumeEvent.ProcessId
+                Message = (($lastResumeEvent.Message -replace '\s+', ' ').Trim())
+            }
+        }
+        else
+        {
+            $null
+        }
         ResumeFailures = @(
             $orderedEvents |
-                Where-Object { $_.Id -in $failureEventIds } |
+                Where-Object { $_.Id -in $resumeFailureEventIds } |
                 Select-Object -First $MaximumEvents |
                 ForEach-Object {
                     [pscustomobject]@{
-                        TimeCreated = $_.TimeCreated
+                        TimeCreated = $_.TimeCreated.ToString('o')
                         Id = $_.Id
                         Level = $_.LevelDisplayName
                         Message = (($_.Message -replace '\s+', ' ').Trim())
                     }
                 }
         )
+        WinREConfigurationEvents = @(
+            $orderedEvents |
+                Where-Object { $_.Id -in $winREConfigurationEventIds } |
+                Select-Object -First $MaximumEvents |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        TimeCreated = $_.TimeCreated.ToString('o')
+                        Id = $_.Id
+                        Level = $_.LevelDisplayName
+                        LogName = $_.LogName
+                        Message = (($_.Message -replace '\s+', ' ').Trim())
+                    }
+                }
+        )
         DiagnosticEvents = $diagnosticEvents
+        EventLogsRead = @($logsRead)
         CollectionErrors = @($errors)
     }
 }
@@ -261,6 +342,8 @@ function Get-KeyProtectorTypes
         [Microsoft.Management.Infrastructure.CimInstance]$Volume
     )
 
+    # KeyProtectorType 0 asks WMI for every protector. Each returned ID then needs a
+    # second WMI call because GetKeyProtectors does not include the protector type.
     $protectorsResult = Invoke-CimMethod -InputObject $Volume -MethodName GetKeyProtectors -Arguments @{
         KeyProtectorType = [uint32]0
     }
@@ -289,9 +372,12 @@ function Get-KeyProtectorTypes
 $collectionErrors = [System.Collections.Generic.List[string]]::new()
 $likelyReasons = [System.Collections.Generic.List[string]]::new()
 $remediationResult = 'NotRequested'
+$entraKeyBackupConnectivityIssue = $false
 
 try
 {
+    # Query the OS volume directly through the BitLocker WMI provider. This distinguishes
+    # "fully encrypted but suspended" from "decrypted", which both report protection off.
     $escapedMountPoint = $mountPoint.Replace('\', '\\').Replace("'", "''")
     $volume = Get-CimInstance -Namespace $bitLockerNamespace -ClassName Win32_EncryptableVolume -Filter "DriveLetter = '$escapedMountPoint'"
     if (-not $volume)
@@ -319,6 +405,8 @@ try
     $remainingReboots = $null
     $originalPlannedReboots = $null
 
+    # GetSuspendCount only supports the OS volume while it is actually suspended.
+    # A count of 0 means indefinite suspension; a positive value is reboots remaining.
     if ($protectionStatus -eq 0 -and $conversionStatus -eq 1)
     {
         try
@@ -342,6 +430,8 @@ try
     $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem
     $lastBootTime = $operatingSystem.LastBootUpTime
 
+    # Prefer Get-Tpm because it exposes readiness and lockout. Fall back to the TPM WMI
+    # provider for Windows installations where the TrustedPlatformModule cmdlet is absent.
     $tpm = $null
     try
     {
@@ -355,7 +445,7 @@ try
                 Activated = [bool]$tpmState.TpmActivated
                 Owned = [bool]$tpmState.TpmOwned
                 LockedOut = [bool]$tpmState.LockedOut
-                ManufacturerVersion = $tpmState.ManufacturerVersion
+                ManufacturerVersion = ([string]$tpmState.ManufacturerVersion).Trim([char]0).Trim()
             }
         }
         else
@@ -371,7 +461,7 @@ try
                     Activated = [bool]$tpmState.IsActivated_InitialValue
                     Owned = [bool]$tpmState.IsOwned_InitialValue
                     LockedOut = $null
-                    ManufacturerVersion = $tpmState.ManufacturerVersion
+                    ManufacturerVersion = ([string]$tpmState.ManufacturerVersion).Trim([char]0).Trim()
                 }
             }
         }
@@ -387,13 +477,16 @@ try
         $collectionErrors.Add($eventError)
     }
 
+    # Windows exposes only the remaining count, not the original requested count. The
+    # original can be inferred only for indefinite suspension or when no reboot occurred
+    # after the latest recorded suspension.
     if ($null -ne $remainingReboots)
     {
         if ($remainingReboots -eq 0)
         {
             $originalPlannedReboots = 0
         }
-        elseif ($eventEvidence.LastSuspend -and $eventEvidence.LastSuspend.TimeCreated -ge $lastBootTime)
+        elseif ($eventEvidence.LastSuspend -and [datetime]$eventEvidence.LastSuspend.TimeCreated -ge $lastBootTime)
         {
             $originalPlannedReboots = $remainingReboots
         }
@@ -456,19 +549,57 @@ try
         }
     }
 
+    # Ignore failures that predate the latest suspension. They describe an older incident
+    # and would otherwise produce a misleading reason for the current state.
     foreach ($failure in @($eventEvidence.ResumeFailures))
     {
-        if (-not $eventEvidence.LastSuspend -or $failure.TimeCreated -ge $eventEvidence.LastSuspend.TimeCreated)
+        if (-not $eventEvidence.LastSuspend -or [datetime]$failure.TimeCreated -ge [datetime]$eventEvidence.LastSuspend.TimeCreated)
         {
-            $likelyReasons.Add("Resume failure event $($failure.Id) at $($failure.TimeCreated.ToString('s')): $($failure.Message)")
+            if ($failure.Message -match '(?i)0x80072ee2')
+            {
+                # 0x80072EE2 is a WinHTTP timeout. With event 822 it commonly means that
+                # required Entra recovery-key escrow could not finish, blocking auto-resume.
+                $entraKeyBackupConnectivityIssue = $true
+                $likelyReasons.Add(
+                    "Resume failure event $($failure.Id) at $($failure.TimeCreated) contains 0x80072EE2 (WinHTTP timeout). Recovery-key backup to Microsoft Entra ID could not complete. Check DNS, firewall, TLS inspection, and the Local System WinHTTP proxy path."
+                )
+            }
+            else
+            {
+                $likelyReasons.Add("Resume failure event $($failure.Id) at $($failure.TimeCreated): $($failure.Message)")
+            }
         }
     }
 
+    foreach ($winREEvent in @($eventEvidence.WinREConfigurationEvents))
+    {
+        # Treat event 854 as current only when it belongs to the latest suspension
+        # incident and has not been followed by a successful resume.
+        $occurredAfterLatestSuspend = -not $eventEvidence.LastSuspend -or
+            [datetime]$winREEvent.TimeCreated -ge [datetime]$eventEvidence.LastSuspend.TimeCreated
+        $notResolvedByLaterResume = -not $eventEvidence.LastResume -or
+            [datetime]$winREEvent.TimeCreated -ge [datetime]$eventEvidence.LastResume.TimeCreated
+
+        if ($occurredAfterLatestSuspend -and $notResolvedByLaterResume)
+        {
+            $likelyReasons.Add(
+                "BitLocker event 854 at $($winREEvent.TimeCreated) reports that Windows Recovery Environment is not configured correctly. Verify with 'reagentc.exe /info'."
+            )
+        }
+    }
+
+    # Remediation is intentionally conservative. Never start encryption and never invent
+    # protectors: only re-enable existing protectors on a confirmed suspended, fully
+    # encrypted volume whose automatic-resume reboot count has reached zero.
     if ($Remediate)
     {
         if ($protectionStatus -eq 1)
         {
             $remediationResult = 'AlreadyProtected'
+        }
+        elseif ($protectionStatus -ne 0)
+        {
+            $remediationResult = 'SkippedProtectionStatusNotOff'
         }
         elseif ($conversionStatus -ne 1)
         {
@@ -477,6 +608,14 @@ try
         elseif ($keyProtectorTypes.Count -eq 0)
         {
             $remediationResult = 'SkippedNoKeyProtectors'
+        }
+        elseif ($null -eq $remainingReboots)
+        {
+            $remediationResult = 'SkippedUnknownSuspendCount'
+        }
+        elseif ($remainingReboots -gt 0)
+        {
+            $remediationResult = 'SkippedPlannedSuspensionWindow'
         }
         elseif ($PSCmdlet.ShouldProcess($mountPoint, 'Resume BitLocker protection'))
         {
@@ -505,13 +644,14 @@ try
         }
     }
 
+    # A volume is compliant only when data is fully encrypted and key protection is active.
     $isCompliant = $protectionStatus -eq 1 -and $conversionStatus -eq 1
     $result = [pscustomobject]@{
         ComputerName = $env:COMPUTERNAME
-        CheckedAt = Get-Date
+        CheckedAt = (Get-Date).ToString('o')
         MountPoint = $mountPoint
         IsCompliant = $isCompliant
-        LastBootTime = $lastBootTime
+        LastBootTime = $lastBootTime.ToString('o')
         ProtectionStatus = Get-MappedValue -Map $protectionStatusNames -Value $protectionStatus
         ConversionStatus = Get-MappedValue -Map $conversionStatusNames -Value $conversionStatus
         EncryptionPercentage = [int]$conversionResult.EncryptionPercentage
@@ -522,7 +662,10 @@ try
         LastSuspendEvent = $eventEvidence.LastSuspend
         LastResumeEvent = $eventEvidence.LastResume
         ResumeFailureEvents = @($eventEvidence.ResumeFailures)
+        WinREConfigurationEvents = @($eventEvidence.WinREConfigurationEvents)
         RecentDiagnosticEvents = @($eventEvidence.DiagnosticEvents)
+        EventLogsRead = @($eventEvidence.EventLogsRead)
+        RequiredEntraKeyBackupEndpoints = if ($entraKeyBackupConnectivityIssue) { @($entraKeyBackupEndpoints) } else { @() }
         LikelyReasons = @($likelyReasons | Select-Object -Unique)
         CollectionErrors = @($collectionErrors)
         RemediationResult = $remediationResult
@@ -532,7 +675,7 @@ catch [System.Exception]
 {
     $result = [pscustomobject]@{
         ComputerName = $env:COMPUTERNAME
-        CheckedAt = Get-Date
+        CheckedAt = (Get-Date).ToString('o')
         MountPoint = $mountPoint
         IsCompliant = $false
         LastBootTime = $null
@@ -546,7 +689,10 @@ catch [System.Exception]
         LastSuspendEvent = $null
         LastResumeEvent = $null
         ResumeFailureEvents = @()
+        WinREConfigurationEvents = @()
         RecentDiagnosticEvents = @()
+        EventLogsRead = @()
+        RequiredEntraKeyBackupEndpoints = @()
         LikelyReasons = @('BitLocker state collection or remediation failed.')
         CollectionErrors = @($_.Exception.Message)
         RemediationResult = 'Failed'
@@ -557,6 +703,8 @@ switch ($OutputType)
 {
     'ComplianceState'
     {
+        # ConfigMgr compares this exact value with the compliance rule. Noncompliant
+        # devices return a compact current value that includes the most useful evidence.
         if ($result.IsCompliant)
         {
             Write-Output 'Compliant'
@@ -576,12 +724,18 @@ switch ($OutputType)
             }
             if ($result.LastSuspendEvent)
             {
-                $details.Add("Suspended=$($result.LastSuspendEvent.TimeCreated.ToString('s'))")
+                $details.Add("Suspended=$($result.LastSuspendEvent.TimeCreated)")
                 $details.Add("SuspendSource=$($result.LastSuspendEvent.InitiatedFrom)")
             }
             if ($result.LikelyReasons.Count -gt 0)
             {
                 $details.Add("Reason=$($result.LikelyReasons -join ' | ')")
+            }
+            if ($result.RequiredEntraKeyBackupEndpoints.Count -gt 0)
+            {
+                $requiredEndpoints = $result.RequiredEntraKeyBackupEndpoints |
+                    ForEach-Object { "$($_.Host):$($_.Port)" }
+                $details.Add("RequiredEntraEndpoints=$($requiredEndpoints -join ',')")
             }
             if ($result.CollectionErrors.Count -gt 0)
             {
