@@ -103,8 +103,14 @@ Connect-MgGraph -identity
 $uri = "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities?`$top=10&`$filter=contains(serialNumber,'$SerialNumber')"
 $graphDevice = Invoke-MgGraphRequest -Method Get -Uri $uri
 
+
 # This is the second check to ensure we have the correct device by matching the exact serial number and not relying solely on the 'contains' filter
 $deviceObj = $graphDevice.value | Where-Object { $_.serialNumber -ieq $SerialNumber } 
+
+if(-NOT ($deviceObj))
+{
+    throw "Device with serial number $SerialNumber not found."
+}
 
 # We will split the existing group tag string into its individual components for further validation
 $groupTagMandantString = $deviceObj.groupTag -split ','
