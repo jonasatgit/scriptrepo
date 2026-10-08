@@ -478,9 +478,9 @@ $propertyList += 'Status'
 $propertyList += 'Description'
 $propertyList += 'PossibleActions'
 
-if (-NOT($CachePath))
+if ([string]::IsNullOrEmpty($CachePath))
 {
-    $CachePath = $PSScriptRoot
+    $CachePath = $env:TEMP
 }
 #endregion
 
